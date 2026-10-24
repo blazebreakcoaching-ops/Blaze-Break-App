@@ -32,6 +32,26 @@ vi.mock('firebase-admin/firestore', async () => {
 });
 vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) }));
 
+// Phase 5I, directive §9 - the regression this mock exists to make
+// possible: server.ts's execute/undo routes now import a REAL connector
+// factory (nova-google-calendar-connector-factory.ts) capable of making
+// real Google Calendar API calls through a real fetch-backed transport.
+// Spying on both of its exports, rather than merely re-asserting
+// `execution_disabled` in the response (already covered below), is what
+// actually proves the production route never even CONSTRUCTS that real
+// transport while CALENDAR_PROTECTION_EXECUTION_ENABLED is false - the
+// response body alone could stay "disabled" even if a real network call
+// had already fired and been ignored, which is specifically the
+// scenario this test must rule out, not just the visible outcome.
+const { buildGoogleCalendarConnectorSpy, createRealGoogleCalendarHttpTransportSpy } = vi.hoisted(() => ({
+  buildGoogleCalendarConnectorSpy: vi.fn(),
+  createRealGoogleCalendarHttpTransportSpy: vi.fn(),
+}));
+vi.mock('./nova-google-calendar-connector-factory', () => ({
+  buildGoogleCalendarConnector: buildGoogleCalendarConnectorSpy,
+  createRealGoogleCalendarHttpTransport: createRealGoogleCalendarHttpTransportSpy,
+}));
+
 import request from 'supertest';
 import { app } from './server';
 import { resetStore, fakeDb } from './test/fake-firestore';
@@ -125,6 +145,47 @@ describe('full prepare -> present -> approve -> execute flow', () => {
     await request(app).post(`/api/nova/calendar-protection/${proposalId}/execute`).set(auth('user_a'));
     const undoRes = await request(app).post(`/api/nova/calendar-protection/${proposalId}/undo`).set(auth('user_a'));
     expect(undoRes.status).toBe(409);
+  });
+
+  // Phase 5I, directive §9 - the specific regression the directive asks
+  // for: "a regression test that proves the production execution route
+  // cannot reach the external Google transport while its execution gate
+  // is OFF." This goes further than asserting `execution_disabled` in
+  // the response (already covered above) - it proves the real connector
+  // factory server.ts now imports is never even CALLED on either route,
+  // which is what actually rules out a real Google API call having fired
+  // regardless of what the response body claims.
+  it('never calls the real Google Calendar connector factory on execute, approved proposal, while the kill-switch is off', async () => {
+    buildGoogleCalendarConnectorSpy.mockClear();
+    createRealGoogleCalendarHttpTransportSpy.mockClear();
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    const fingerprint = prepared.body.proposal.approvalFingerprint;
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/present`).set(auth('user_a'));
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/approve`).set(auth('user_a')).send({ approved: true, approvalFingerprint: fingerprint });
+
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/execute`).set(auth('user_a'));
+
+    expect(buildGoogleCalendarConnectorSpy).not.toHaveBeenCalled();
+    expect(createRealGoogleCalendarHttpTransportSpy).not.toHaveBeenCalled();
+  });
+
+  it('never calls the real Google Calendar connector factory on undo either, while the kill-switch is off', async () => {
+    buildGoogleCalendarConnectorSpy.mockClear();
+    createRealGoogleCalendarHttpTransportSpy.mockClear();
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    const fingerprint = prepared.body.proposal.approvalFingerprint;
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/present`).set(auth('user_a'));
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/approve`).set(auth('user_a')).send({ approved: true, approvalFingerprint: fingerprint });
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/execute`).set(auth('user_a'));
+
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/undo`).set(auth('user_a'));
+
+    expect(buildGoogleCalendarConnectorSpy).not.toHaveBeenCalled();
+    expect(createRealGoogleCalendarHttpTransportSpy).not.toHaveBeenCalled();
   });
 
   it('invalid (non-offset-qualified) start/end times are rejected with 400, not 500', async () => {

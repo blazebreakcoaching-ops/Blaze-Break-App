@@ -117,6 +117,51 @@ describe('NovaTakeTheLoad', () => {
     expect(await screen.findByText(/thanks - noted/i)).toBeInTheDocument();
   });
 
+  // Phase 5I, directive §5 - "Modify" re-opens the editable form pre-filled
+  // from the current proposal, and submitting it creates a genuinely NEW
+  // proposal (a fresh /propose call, never a PATCH of the old one) - so
+  // the prior proposal's approval can never be replayed against changed
+  // terms.
+  it('Modify pre-fills the form from the current proposal and submitting it prepares a brand-new proposal', async () => {
+    const ORIGINAL = {
+      proposalId: 'cpp_original', state: 'awaiting_approval', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',
+      title: 'Protected block', approvalFingerprint: 'fp-original', failureReason: null, retryCount: 0, externalEventId: null,
+    };
+    const MODIFIED = {
+      proposalId: 'cpp_modified', state: 'prepared', startIso: '2026-03-01T11:00:00.000Z', endIso: '2026-03-01T11:30:00.000Z',
+      title: 'Protected block (longer)', approvalFingerprint: 'fp-modified', failureReason: null, retryCount: 0, externalEventId: null,
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse(NOT_GRANTED)); // permission load
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: ORIGINAL })); // propose
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: MODIFIED })); // the modified re-propose
+
+    render(<NovaTakeTheLoad initialTitle="Protected block" />);
+    await screen.findByText('Not granted');
+
+    await userEvent.type(screen.getByLabelText(/start time/i), '2026-03-01T10:00');
+    await userEvent.type(screen.getByLabelText(/end time/i), '2026-03-01T10:30');
+    await userEvent.click(screen.getByRole('button', { name: /prepare this proposal/i }));
+    await screen.findByText(/awaiting your approval/i);
+
+    await userEvent.click(screen.getByRole('button', { name: /^modify$/i }));
+
+    // Back on the editable form, pre-filled with the original proposal's
+    // own title and times - never a blank form.
+    expect(screen.getByLabelText(/title for the protected time/i)).toHaveValue('Protected block');
+    expect(screen.getByLabelText(/start time/i)).toHaveValue('2026-03-01T10:00');
+    expect(screen.getByLabelText(/end time/i)).toHaveValue('2026-03-01T10:30');
+
+    await userEvent.type(screen.getByLabelText(/title for the protected time/i), ' (longer)');
+    await userEvent.click(screen.getByRole('button', { name: /prepare this proposal/i }));
+
+    // A genuinely new proposal - different id and fingerprint, not the
+    // original one mutated in place.
+    await waitFor(() => expect(screen.getByText(/prepared - not yet shown for approval/i)).toBeInTheDocument());
+    const lastCall = vi.mocked(secureApiFetch).mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe('/api/nova/calendar-protection/propose');
+    expect((lastCall?.[1] as any)?.data?.idempotencyKey).not.toBe((vi.mocked(secureApiFetch).mock.calls[1]?.[1] as any)?.data?.idempotencyKey);
+  });
+
   it('a fingerprint mismatch on approve shows a clear error instead of silently approving', async () => {
     const PROPOSAL = {
       proposalId: 'cpp_test2', state: 'awaiting_approval', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',

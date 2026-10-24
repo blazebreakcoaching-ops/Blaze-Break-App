@@ -5969,11 +5969,7 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
 // hardened Phase 5D, directive §3/§4).
 //
 // The first complete Agentic Nova workflow: prepare -> approve -> execute,
-// server-authorised at every step. `CALENDAR_PROTECTION_EXECUTION_ENABLED`
-// is hardcoded false in nova-calendar-protection-service.ts, so the
-// execute route below always passes `null` for the connector - this file
-// imports NO connector, real or fake, of any kind. No real external
-// calendar modification is reachable from any route in this app today.
+// server-authorised at every step.
 //
 // Permission boundary (Phase 5D, directive §3): `allowCalendarSignals` is
 // a READ-signal consent flag and was never meant to authorise a write -
@@ -5986,25 +5982,73 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
 // recorded when the proposal was prepared is not treated as still valid
 // by the time execution is attempted.
 //
-// Honest limitation (recorded here and in this phase's delivery report,
-// not hidden): directive §3 also asks the server to re-check "ownership
-// of the connected calendar" and "provider-granted scopes" at execute
-// time. Google Calendar is NOT one of this file's OAUTH_PROVIDERS
-// entries - there is no server-side storage of a Google OAuth token or
-// its granted scopes anywhere in this codebase (the only connection is
-// the client-side Firebase popup flow, whose token lives only in
-// transient React state). Those two specific checks are therefore not
-// implementable server-side today, and this file does not pretend
-// otherwise with a fabricated check. `allowCalendarActions` plus the
-// permanent execution kill-switch are what actually stand in for that
-// gap until real server-side Google OAuth infrastructure exists.
+// Phase 5I CORRECTION of this block's own prior claim: an earlier version
+// of this comment said Google Calendar was "NOT one of this file's
+// OAUTH_PROVIDERS entries" and that there was "no server-side storage of
+// a Google OAuth token." That was already false by the time it was
+// written (OAUTH_PROVIDERS.google_calendar_actions, above in this file,
+// was added in the same Phase 5E commit this very calendar-protection
+// block existed in) and is corrected here rather than left to mislead a
+// future reader - see nova-google-calendar-adapter.ts's own Phase 5H
+// correction of the same claim.
+//
+// What the execute/undo routes below actually do, honestly: `connector`
+// is built via `resolveGoogleCalendarConnectorForExecution` ONLY when
+// `CALENDAR_PROTECTION_EXECUTION_ENABLED` is true - checked HERE, at the
+// call site, before that function (which would call the real, existing
+// getValidAccessToken refresh mechanism and perform real Google API
+// calls to verify account/scope/calendar reachability) is ever invoked.
+// Since that flag is hardcoded `false` in nova-calendar-protection-
+// service.ts and is not flipped by anything in this phase, `connector` is
+// always `null` in every environment today, exactly as before this
+// phase's wiring - the only change is that a real, DI-ready connector
+// factory now EXISTS and is correctly gated, not that it is reachable.
+// `executeCalendarProtectionProposal`'s own kill-switch check (first thing
+// it does, before ever touching its `connector` parameter) is the second,
+// independent layer of the same guarantee - this call site's own
+// conditional is defence-in-depth, not the only thing standing between a
+// real token and a real write.
 // ============================================================================
 import {
   prepareCalendarProtectionProposal, presentCalendarProtectionForApproval,
   recordCalendarProtectionApproval, executeCalendarProtectionProposal,
   retryCalendarProtectionExecution, undoCalendarProtectionProposal,
+  CALENDAR_PROTECTION_EXECUTION_ENABLED,
 } from './nova-calendar-protection-service';
 import { getCalendarActionPermission, setCalendarActionPermission } from './nova-calendar-action-permission';
+import { buildGoogleCalendarConnector, createRealGoogleCalendarHttpTransport } from './nova-google-calendar-connector-factory';
+import type { NovaExternalConnector } from './nova-take-the-load-connector-contract';
+
+// Phase 5I, directive §2 - the real connector factory's only production
+// call site. Reuses `getValidAccessToken` (this file's own existing
+// refresh/expiry/revocation mechanism, already relied on by
+// Slack/Jira/Asana/Monday/Calendly) rather than any new token-handling
+// logic, and the connected account's own recorded email (set at connect
+// time by the /callback route above) as the "correct target account"
+// check (directive §3). Never logs the token or the email - only the
+// readiness status, which is safe to log by construction (see
+// nova-google-calendar-connector-factory.ts's own readiness union).
+//
+// NEVER CALLED IN PRODUCTION TODAY: both of this function's two call
+// sites (execute/undo below) only invoke it when
+// CALENDAR_PROTECTION_EXECUTION_ENABLED is true, which it is not.
+async function resolveGoogleCalendarConnectorForExecution(uid: string): Promise<NovaExternalConnector | null> {
+  const db = getDb();
+  const integrationDoc = await db.collection('users').doc(uid).collection('integrations').doc('google_calendar_actions').get();
+  const expectedAccountEmail: string | null = integrationDoc.exists ? (integrationDoc.data()?.connectedAccountEmail ?? null) : null;
+
+  const readiness = await buildGoogleCalendarConnector({
+    getAccessToken: () => getValidAccessToken(uid, 'google_calendar_actions'),
+    expectedAccountEmail,
+    transport: createRealGoogleCalendarHttpTransport(),
+  });
+
+  if (readiness.status !== 'ready') {
+    logger.warning(`[CalendarProtection] Google Calendar connector not ready for execution: ${readiness.status}`, { uid });
+    return null;
+  }
+  return readiness.connector;
+}
 
 const NovaCalendarProposeSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -6119,9 +6163,12 @@ app.post("/api/nova/calendar-protection/:proposalId/execute", verifyAppCheck, au
     if (!(await getCalendarActionPermission(db, uid)).granted) {
       return res.status(403).json({ error: "Calendar action permission is no longer granted - this action cannot be executed.", code: "calendar_action_permission_required" });
     }
-    // `null`: see this block's own header - no connector of any kind is
-    // ever imported into this route, so execution always reports disabled.
-    const outcome = await executeCalendarProtectionProposal(db, uid, req.params.proposalId, null);
+    // See this block's own header - `connector` is only ever non-null
+    // when CALENDAR_PROTECTION_EXECUTION_ENABLED is true, which it is not
+    // in any environment today, so this always resolves to null and
+    // execution always reports disabled.
+    const connector = CALENDAR_PROTECTION_EXECUTION_ENABLED ? await resolveGoogleCalendarConnectorForExecution(uid) : null;
+    const outcome = await executeCalendarProtectionProposal(db, uid, req.params.proposalId, connector);
     res.json(outcome);
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
@@ -6226,7 +6273,9 @@ app.post("/api/nova/calendar-protection/:proposalId/undo", verifyAppCheck, authe
     // execution disabled, no proposal can ever reach 'confirmed' via this
     // route, so this always throws "Can only undo a confirmed proposal."
     // (the service's own real behaviour), never performing a real action.
-    const proposal = await undoCalendarProtectionProposal(getDb(), uid, req.params.proposalId, null);
+    // Same conditional gate as the execute route above.
+    const connector = CALENDAR_PROTECTION_EXECUTION_ENABLED ? await resolveGoogleCalendarConnectorForExecution(uid) : null;
+    const proposal = await undoCalendarProtectionProposal(getDb(), uid, req.params.proposalId, connector);
     res.json({ proposal });
   } catch (err: any) {
     res.status(409).json({ error: err.message || "Could not undo this proposal." });

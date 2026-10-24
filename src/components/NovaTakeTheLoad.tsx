@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CalendarClock, ShieldCheck, ShieldOff, History, Undo2, RotateCcw, AlertTriangle, CheckCircle2, XCircle, HelpCircle, ThumbsUp } from 'lucide-react';
+import { CalendarClock, ShieldCheck, ShieldOff, History, Undo2, RotateCcw, AlertTriangle, CheckCircle2, XCircle, HelpCircle, ThumbsUp, Pencil } from 'lucide-react';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api.ts';
 
 // Nova Take the Load - Calendar Protection UI (Phase 5D, directive §2).
@@ -23,6 +23,12 @@ import { secureApiFetch, SecureApiError } from '../lib/secure-api.ts';
 // happened - and since real execution stays disabled, this component
 // will never show that state in production use. `execution_disabled` is
 // shown as its own explained state, not folded into a generic error.
+//
+// Phase 5I, directive §5 added a "Modify" pathway (on awaiting_approval
+// and approved) that pre-fills the editable form from the current
+// proposal and, on resubmit, creates a genuinely new proposal with its
+// own fresh approval fingerprint - the prior proposal's approval state
+// is never reused against changed terms.
 //
 // OFFLINE AT THIS PHASE: not mounted into App.tsx's live navigation -
 // see NheiPhase5Preview.tsx, which also wires Nova Invisible Load's
@@ -129,6 +135,18 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
     if (!local) return '';
     const d = new Date(local);
     return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+  };
+
+  // Inverse of localToIso, for pre-filling the form with an existing
+  // proposal's own times (Phase 5I, directive §5's "Modify" pathway).
+  // Builds the `datetime-local` input's expected local-time string
+  // (no timezone suffix) from the local getters, not from the ISO
+  // string's own UTC digits.
+  const isoToLocalInputValue = (iso: string): string => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
   const propose = async () => {
@@ -283,6 +301,24 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
     }
   };
 
+  // Phase 5I, directive §5 — "Modify" re-opens the editable form,
+  // pre-filled with this proposal's own title/start/end. Submitting it
+  // calls `propose()` with a brand-new idempotencyKey, so it creates a
+  // genuinely new proposal with its own fresh fingerprint - the prior
+  // proposal's approval (if any) can never be replayed against changed
+  // terms, because a new proposal starts at `prepared` and has never
+  // been approved. The old proposal is left exactly as it was, still
+  // visible in history.
+  const requestModify = () => {
+    if (!proposal) return;
+    setTitle(proposal.title);
+    setStartLocal(isoToLocalInputValue(proposal.startIso));
+    setEndLocal(isoToLocalInputValue(proposal.endIso));
+    setProposal(null);
+    setExecuteOutcome(null);
+    setError(null);
+  };
+
   const startOver = () => {
     setProposal(null);
     setExecuteOutcome(null);
@@ -362,9 +398,12 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
           )}
 
           {proposal.state === 'awaiting_approval' && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button onClick={() => decide(true)} disabled={busy} className="btn-primary min-h-11 px-4 text-xs flex items-center gap-1.5 disabled:opacity-50">
                 <CheckCircle2 className="w-3.5 h-3.5" /> Approve exactly this
+              </button>
+              <button onClick={requestModify} disabled={busy} className="min-h-11 px-4 text-xs rounded-lg border border-border text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50">
+                <Pencil className="w-3.5 h-3.5" /> Modify
               </button>
               <button onClick={() => decide(false)} disabled={busy} className="min-h-11 px-4 text-xs rounded-lg border border-border text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50">
                 <XCircle className="w-3.5 h-3.5" /> Decline
@@ -377,9 +416,14 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
           )}
 
           {proposal.state === 'approved' && (
-            <button onClick={execute} disabled={busy} className="btn-primary min-h-11 px-4 text-xs disabled:opacity-50">
-              Try to apply this
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={execute} disabled={busy} className="btn-primary min-h-11 px-4 text-xs disabled:opacity-50">
+                Try to apply this
+              </button>
+              <button onClick={requestModify} disabled={busy} className="min-h-11 px-4 text-xs rounded-lg border border-border text-text-muted hover:text-text-main flex items-center gap-1.5 disabled:opacity-50">
+                <Pencil className="w-3.5 h-3.5" /> Modify instead
+              </button>
+            </div>
           )}
 
           {executeOutcome === 'execution_disabled' && (

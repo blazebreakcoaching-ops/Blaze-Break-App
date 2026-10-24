@@ -191,6 +191,106 @@ describe('findGoogleCalendarEventByProposalId - reconciliation support for an am
   });
 });
 
+// Phase 5I, directive §4 - fills in the specific HTTP status codes the
+// directive names (401, 404, 409, 429, 5xx) that the existing suite above
+// only covered for checkReady/reconciliation, not execute/undo. No new
+// production behaviour: createGoogleCalendarConnector already handles any
+// non-2xx/non-204/410 status generically via parseGoogleErrorDetail - these
+// tests prove that generic handling is in fact correct for each of these
+// specific real-world status codes, closing a coverage gap rather than
+// changing anything.
+describe('createGoogleCalendarConnector - execute, full HTTP status matrix (directive §4)', () => {
+  it('401 (invalid/expired token) is reported as ok:false with the real detail', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 401, body: { error: { message: 'Invalid Credentials' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).execute(REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Invalid Credentials' });
+  });
+
+  it('404 (calendar not found) is reported as ok:false with the real detail', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 404, body: { error: { message: 'Not Found' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).execute(REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Not Found' });
+  });
+
+  it('409 (conflict) is reported as ok:false with the real detail, not silently retried', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 409, body: { error: { message: 'The requested identifier already exists.' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).execute(REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'The requested identifier already exists.' });
+  });
+
+  it('429 (rate limited) is reported as ok:false with the real detail - the service layer\'s own retry cap governs any retry, this connector never retries on its own', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 429, body: { error: { message: 'Rate Limit Exceeded' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).execute(REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Rate Limit Exceeded' });
+  });
+
+  it('5xx (provider-side failure) is reported as ok:false with the real detail', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 503, body: { error: { message: 'Service Unavailable' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).execute(REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Service Unavailable' });
+  });
+});
+
+describe('createGoogleCalendarConnector - undo, full HTTP status matrix (directive §4)', () => {
+  const UNDO_REQUEST = { ...REQUEST, proposedChangeDescription: 'evt_123' };
+
+  it('401 (invalid/expired token) is reported as ok:false, not a false success', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 401, body: { error: { message: 'Invalid Credentials' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).undo(UNDO_REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Invalid Credentials' });
+  });
+
+  it('404 (event not found, and not the 410-already-deleted case) is reported as ok:false', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 404, body: { error: { message: 'Not Found' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).undo(UNDO_REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Not Found' });
+  });
+
+  it('409 (conflict) is reported as ok:false', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 409, body: { error: { message: 'Conflict' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).undo(UNDO_REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Conflict' });
+  });
+
+  it('429 (rate limited) is reported as ok:false', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 429, body: { error: { message: 'Rate Limit Exceeded' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).undo(UNDO_REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Rate Limit Exceeded' });
+  });
+
+  it('5xx (provider-side failure) is reported as ok:false', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({ status: 500, body: { error: { message: 'Backend Error' } } });
+    const outcome = await createGoogleCalendarConnector('fake-token', transport).undo(UNDO_REQUEST);
+    expect(outcome).toEqual({ ok: false, detail: 'Backend Error' });
+  });
+});
+
+// Phase 5I, directive §4's "all-day events" - proves reconciliation's own
+// lookup functions correctly extract an event's id/existence regardless of
+// whether Google represents it as a timed event (start.dateTime/
+// end.dateTime) or an all-day one (start.date/end.date - no time-of-day or
+// offset at all). Neither function reads start/end at all - they only ever
+// need an id and a count of matches - so this proves that is genuinely true
+// for a realistic all-day-shaped response, not merely assumed.
+describe('reconciliation against an all-day event response shape (directive §4)', () => {
+  it('verifyGoogleCalendarEventExists reports exists for a 200 all-day event body', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({
+      status: 200,
+      body: { id: 'evt_allday_1', start: { date: '2026-11-03' }, end: { date: '2026-11-04' } },
+    });
+    expect(await verifyGoogleCalendarEventExists('fake-token', 'evt_allday_1', transport)).toEqual({ status: 'exists' });
+  });
+
+  it('findGoogleCalendarEventByProposalId reports found with the real id for an all-day match', async () => {
+    const transport: GoogleCalendarHttpTransport = async () => ({
+      status: 200,
+      body: { items: [{ id: 'evt_allday_found', start: { date: '2026-11-03' }, end: { date: '2026-11-04' } }] },
+    });
+    const result = await findGoogleCalendarEventByProposalId('fake-token', 'cpp_allday', transport);
+    expect(result).toEqual({ status: 'found', eventId: 'evt_allday_found' });
+  });
+});
+
 describe('buildGoogleCalendarEventGetRequest', () => {
   it('builds a real-shaped GET request, URL-encoding the event id', () => {
     const req = buildGoogleCalendarEventGetRequest('fake-token', 'evt with spaces');
