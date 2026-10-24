@@ -470,9 +470,11 @@ describe('admin pilot-eligibility routes (Phase 5J, directive §4)', () => {
     expect(getDocRaw('users/user_a/platform_pilot_access/calendar_protection')).toBeUndefined();
   });
 
-  it('refuses an unauthenticated caller', async () => {
-    const res = await request(app).post(ROUTE('user_a')).send({ eligible: true });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+  it('refuses an unauthenticated caller on both POST and GET', async () => {
+    const postRes = await request(app).post(ROUTE('user_a')).send({ eligible: true });
+    expect(postRes.status).toBeGreaterThanOrEqual(400);
+    const getRes = await request(app).get(ROUTE('user_a'));
+    expect(getRes.status).toBeGreaterThanOrEqual(400);
   });
 
   it('GET defaults to not-eligible for a user with no document yet', async () => {
