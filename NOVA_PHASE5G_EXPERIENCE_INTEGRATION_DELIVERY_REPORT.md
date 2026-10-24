@@ -8,8 +8,12 @@ modes, enable any real external write, or touch PR #140.
 
 - **Starting SHA**: `38d3444` (NHEI Phase 5F Agentic Expansion tip, confirmed
   already pushed to `origin/claude/nhei-phase-1` before this phase began).
-- **Ending SHA**: `fc16a64` ("NHEI Phase 5G Experience Integration:
-  proactive suggestions UI, journey fixes, honest outcome feedback").
+- **Ending SHA**: the substantive work landed in `fc16a64` ("NHEI Phase
+  5G Experience Integration: proactive suggestions UI, journey fixes,
+  honest outcome feedback"); the actual `HEAD` pushed to
+  `origin/claude/nhei-phase-1` is one commit later than that (this report
+  itself was committed separately), visible as the tip of
+  `git log origin/claude/nhei-phase-1`.
 
 ## 2. Files changed
 
