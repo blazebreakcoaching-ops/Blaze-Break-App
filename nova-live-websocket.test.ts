@@ -278,6 +278,44 @@ describe('handleNovaLiveConnection - successful session', () => {
     ws.emit('close');
   });
 
+  // Phase 5K (directive §3) - offer_practical_assistance is dispatched
+  // through the exact same executeNovaTool as text chat, and its relay to
+  // the client (practicalAssistanceOffer) mirrors offer_guardian_support's
+  // own existing relay pattern - this proves voice gets the same
+  // coordinator capability text chat's planTrace already exposes.
+  it('dispatches an offer_practical_assistance tool call and relays practicalAssistanceOffer to the client', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=plate_user'));
+    await flush();
+
+    h.lastCallbacks.onmessage({
+      toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: 'User said they are behind on three deadlines this week.' } }] },
+    });
+    await flush();
+
+    expect(h.fakeLiveSession.sendToolResponse).toHaveBeenCalledTimes(1);
+    const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
+    expect(functionResponses).toEqual([{ id: 'call_1', name: 'offer_practical_assistance', response: { offered: true, reason: 'User said they are behind on three deadlines this week.' } }]);
+
+    const offerMessage = ws.sent.find((m) => m.practicalAssistanceOffer);
+    expect(offerMessage.practicalAssistanceOffer).toEqual({ reason: 'User said they are behind on three deadlines this week.' });
+    ws.emit('close');
+  });
+
+  it('never relays practicalAssistanceOffer when the tool refuses a missing reason', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=plate_user_2'));
+    await flush();
+
+    h.lastCallbacks.onmessage({
+      toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: '' } }] },
+    });
+    await flush();
+
+    expect(ws.sent.find((m) => m.practicalAssistanceOffer)).toBeUndefined();
+    ws.emit('close');
+  });
+
   it('caps remember_about_user at 5 saves per call, independent of the Firestore-backed memory permission', async () => {
     seedDoc('users/cap_user/nova_permissions/current', { allowNovaMemory: true, allowNovaUseSavedMemories: true });
     const ws = new FakeClientSocket();

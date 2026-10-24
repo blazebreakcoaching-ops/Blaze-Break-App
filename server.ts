@@ -36,6 +36,7 @@ import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, 
 import { deriveEffectiveSharing, computeCapsuleExpiresAt, DEFAULT_SHARED_CATEGORIES } from './support-capsules';
 import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, isInviteExpired } from './recovery-ally-consent';
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
+import { validatePracticalAssistanceOffer } from './nova-practical-assistance-offer';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
 import { sanitiseExportDoc, sanitiseExportCollectionsMap, extractOAuthFailureDiagnostics } from './export-credential-sanitiser';
@@ -2739,6 +2740,17 @@ const NOVA_TOOLS: any[] = [
       required: ["reason"],
     },
   },
+  {
+    name: "offer_practical_assistance",
+    description: "Offer the user an OPTIONAL, dismissible on-screen card inviting them into Nova's practical assistance workflow - naming one specific pressing commitment, then optionally reviewing a proposal to protect calendar time for it or defer/reprioritise it. This never starts, proposes, or changes anything itself; the user decides whether to open it, and every real action inside it still requires its own separate review and approval before anything happens. Call this when the user describes feeling overloaded, behind on specific commitments, or asks for help organising what's on their plate - not for a general bad mood or a single passing complaint with nothing concrete to act on. Do not call this reflexively or more than once without the user raising it again.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        reason: { type: Type.STRING, description: "A short, specific reason tied to what the user just said - under 200 characters, not generic." },
+      },
+      required: ["reason"],
+    },
+  },
 ];
 
 // Mirrors the exact permission check and category filtering already
@@ -2847,6 +2859,24 @@ function executeOfferGuardianSupport(args: Record<string, unknown>): { offered: 
   return { offered: true, reason: args.reason as string };
 }
 
+// Phase 5K - mirrors executeOfferGuardianSupport exactly, minus a feature
+// flag: unlike Guardian Support (a separate, optional safety feature)
+// and unlike NHEI (explicitly required to stay gated behind its own
+// unreviewed-mode flags), the workflow this offers - Invisible Load,
+// Calendar Protection, Task Deferral - is already real, already tested,
+// and already safe to show (CALENDAR_PROTECTION_EXECUTION_ENABLED and
+// Task Deferral's equivalent stay hardcoded off regardless of whether
+// this card is ever shown), so no additional off-by-default switch is
+// warranted here - only the same pure argument validation every other
+// self-gating tool in this file already does.
+function executeOfferPracticalAssistance(args: Record<string, unknown>): { offered: boolean; reason?: string; error?: string } {
+  const validation = validatePracticalAssistanceOffer(args);
+  if (!validation.valid) {
+    return { offered: false, error: validation.error };
+  }
+  return { offered: true, reason: args.reason as string };
+}
+
 async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
   if (!uid) return { error: "No authenticated user for this tool call." };
   try {
@@ -2861,6 +2891,8 @@ async function executeNovaTool(name: string, args: Record<string, unknown>, uid:
         return await executeRememberAboutUser(uid, firestoreDb, args);
       case "offer_guardian_support":
         return executeOfferGuardianSupport(args);
+      case "offer_practical_assistance":
+        return executeOfferPracticalAssistance(args);
       default:
         return { error: `Unknown tool: ${name}` };
     }
@@ -17740,9 +17772,10 @@ export async function handleNovaLiveConnection(clientWs: any, req: any): Promise
         outputAudioTranscription: {},
         systemInstruction: liveSystemInstruction,
         // Same tool set text chat uses (search_nova_memories,
-        // propose_recovery_action, remember_about_user, suggest_feature),
-        // dispatched through the same executeNovaTool so voice can never
-        // do anything text chat couldn't already do.
+        // propose_recovery_action, remember_about_user, suggest_feature,
+        // offer_guardian_support, offer_practical_assistance), dispatched
+        // through the same executeNovaTool so voice can never do anything
+        // text chat couldn't already do.
         tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
       },
       callbacks: {
@@ -17840,6 +17873,22 @@ export async function handleNovaLiveConnection(clientWs: any, req: any): Promise
                     try {
                       clientWs.send(JSON.stringify({
                         guardianSupportOffer: { reason: output.reason },
+                      }));
+                    } catch (e) {
+                      // Best-effort - the call continues even if this relay fails.
+                    }
+                  }
+                  // Phase 5K - same relay pattern again, so a voice
+                  // conversation can offer the practical-assistance
+                  // workflow (Invisible Load / Calendar Protection / Task
+                  // Deferral) exactly like text chat does via planTrace.
+                  // Nothing executes from this message alone - it only
+                  // lets the client render the same dismissible, optional
+                  // card voice users would otherwise never see.
+                  if (name === "offer_practical_assistance" && output.offered) {
+                    try {
+                      clientWs.send(JSON.stringify({
+                        practicalAssistanceOffer: { reason: output.reason },
                       }));
                     } catch (e) {
                       // Best-effort - the call continues even if this relay fails.

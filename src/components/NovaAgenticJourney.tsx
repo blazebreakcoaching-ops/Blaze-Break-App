@@ -6,6 +6,8 @@ import { NovaInvisibleLoad } from './NovaInvisibleLoad';
 import { NovaTakeTheLoad } from './NovaTakeTheLoad';
 import { NovaTaskDeferral } from './NovaTaskDeferral';
 import { NovaProactiveSuggestions } from './NovaProactiveSuggestions';
+import type { UserProfileData } from '../types';
+import type { NovaQuestioningStyle } from './NovaStyleControl';
 import type { NovaTemporaryBeforeWordsContext } from '../../nova-before-words-temporary-context';
 import type { NovaStatedPracticalProblem } from '../../nova-take-the-load-types';
 import { initNovaInvisibleLoadContext, type NovaInvisibleLoadContext } from '../../nova-invisible-load-contract';
@@ -98,6 +100,34 @@ import { initNovaInvisibleLoadContext, type NovaInvisibleLoadContext } from '../
 
 type JourneyStep = 'entry' | 'before_words' | 'chat' | 'invisible_load' | 'proactive_options' | 'calendar_protection' | 'task_deferral';
 
+// Phase 5K (directive §§2,4,6): this sequencer is now the real production
+// mount for Nova's text chat (App.tsx's "nova" tab), not only the
+// dev-preview harness noted in the header comment above. Two additions,
+// still with NO new business logic of its own:
+//  - `initialStep` lets a host open straight into ordinary chat (App.tsx
+//    does) while the dev preview keeps its own default `entry` behaviour
+//    unchanged (it never passes this prop).
+//  - The full NovaChat prop passthrough below lets this wrapper carry
+//    every real capability NovaChat already had (tone/style controls,
+//    saved-profile sync, award points, suggest_feature navigation, voice
+//    auto-open) straight through, so swapping App.tsx's bare `<NovaChat>`
+//    for this sequencer changes nothing about what Nova chat itself can
+//    do - it only adds the "continue to what's on your plate" capability
+//    on top.
+interface NovaAgenticJourneyProps {
+  initialStep?: JourneyStep;
+  systemInstruction?: string;
+  initialMessage?: string;
+  fingerprint?: any;
+  profile?: UserProfileData;
+  onAwardPoints?: (amount: number, reason: string) => void;
+  onNavigate?: (tab: string) => void;
+  onToneChange?: (tone: string) => void;
+  onStyleChange?: (style: NovaQuestioningStyle | undefined) => void;
+  autoOpenVoice?: boolean;
+  onVoiceAutoOpened?: () => void;
+}
+
 const STAGE_LABELS = [
   'Understanding', 'Suggesting', 'Preparing', 'Awaiting permission',
   'Executing', 'Confirmed', 'Failed', 'Uncertain', 'Reversed',
@@ -129,8 +159,20 @@ function StageBar({ step }: { step: JourneyStep }) {
   );
 }
 
-export const NovaAgenticJourney = () => {
-  const [step, setStep] = useState<JourneyStep>('entry');
+export const NovaAgenticJourney = ({
+  initialStep,
+  systemInstruction,
+  initialMessage,
+  fingerprint,
+  profile,
+  onAwardPoints,
+  onNavigate,
+  onToneChange,
+  onStyleChange,
+  autoOpenVoice,
+  onVoiceAutoOpened,
+}: NovaAgenticJourneyProps = {}) => {
+  const [step, setStep] = useState<JourneyStep>(initialStep ?? 'entry');
   const [history, setHistory] = useState<JourneyStep[]>([]);
   const [beforeWordsContext, setBeforeWordsContext] = useState<NovaTemporaryBeforeWordsContext | null>(null);
   const [calendarProblem, setCalendarProblem] = useState<NovaStatedPracticalProblem | null>(null);
@@ -153,7 +195,7 @@ export const NovaAgenticJourney = () => {
   };
 
   const startOver = () => {
-    setStep('entry');
+    setStep(initialStep ?? 'entry');
     setHistory([]);
     setBeforeWordsContext(null);
     setCalendarProblem(null);
@@ -170,7 +212,7 @@ export const NovaAgenticJourney = () => {
               <ArrowLeft className="w-3 h-3" /> Back
             </button>
           )}
-          {step !== 'entry' && (
+          {step !== (initialStep ?? 'entry') && (
             <button onClick={startOver} className="shrink-0 text-[11px] font-bold text-text-muted hover:text-text-main flex items-center gap-1">
               <RotateCcw className="w-3 h-3" /> Start over
             </button>
@@ -202,8 +244,19 @@ export const NovaAgenticJourney = () => {
       {step === 'chat' && (
         <div className="space-y-2.5">
           <NovaChat
+            systemInstruction={systemInstruction}
+            initialMessage={initialMessage}
+            fingerprint={fingerprint}
+            profile={profile}
+            onAwardPoints={onAwardPoints}
+            onNavigate={onNavigate}
+            onToneChange={onToneChange}
+            onStyleChange={onStyleChange}
+            autoOpenVoice={autoOpenVoice}
+            onVoiceAutoOpened={onVoiceAutoOpened}
             temporaryBeforeWordsContext={beforeWordsContext}
             onTemporaryBeforeWordsContextConsumed={() => setBeforeWordsContext(null)}
+            onRequestPracticalAssistance={() => goTo('invisible_load')}
           />
           <button
             onClick={() => goTo('invisible_load')}
@@ -235,6 +288,12 @@ export const NovaAgenticJourney = () => {
           >
             <Lightbulb className="w-3.5 h-3.5" /> See what Nova might proactively suggest
           </button>
+          <button
+            onClick={() => goTo('chat')}
+            className="text-[11px] text-text-muted/70 hover:text-text-muted underline self-start flex items-center gap-1"
+          >
+            <MessageCircle className="w-3 h-3" /> Return to Nova chat
+          </button>
         </div>
       )}
 
@@ -258,6 +317,12 @@ export const NovaAgenticJourney = () => {
           >
             Back to what's on your plate
           </button>
+          <button
+            onClick={() => goTo('chat')}
+            className="text-[11px] text-text-muted/70 hover:text-text-muted underline self-start flex items-center gap-1"
+          >
+            <MessageCircle className="w-3 h-3" /> Return to Nova chat
+          </button>
         </div>
       )}
 
@@ -270,6 +335,12 @@ export const NovaAgenticJourney = () => {
           >
             Something else is on your plate too
           </button>
+          <button
+            onClick={() => goTo('chat')}
+            className="text-[11px] text-text-muted/70 hover:text-text-muted underline self-start flex items-center gap-1"
+          >
+            <MessageCircle className="w-3 h-3" /> Return to Nova chat
+          </button>
         </div>
       )}
 
@@ -281,6 +352,12 @@ export const NovaAgenticJourney = () => {
             className="text-[11px] text-text-muted/70 hover:text-text-muted underline self-start"
           >
             Something else is on your plate too
+          </button>
+          <button
+            onClick={() => goTo('chat')}
+            className="text-[11px] text-text-muted/70 hover:text-text-muted underline self-start flex items-center gap-1"
+          >
+            <MessageCircle className="w-3 h-3" /> Return to Nova chat
           </button>
         </div>
       )}

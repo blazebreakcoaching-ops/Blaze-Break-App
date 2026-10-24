@@ -174,6 +174,20 @@ async function mockExecuteOnce(page: Page, body: Record<string, unknown>) {
   }, { times: 1 });
 }
 
+// Phase 5K (directive §3/§6) - simulates Nova's offer_practical_assistance
+// tool firing on the very next chat turn, the same planTrace shape
+// server.ts's real POST /api/nova/chat returns when the model calls it.
+async function mockChatOfferPracticalAssistanceOnce(page: Page, reason: string) {
+  await page.route('**/api/nova/chat', async (route) => {
+    await route.fulfill({
+      json: {
+        text: 'Want help getting this off your plate?',
+        planTrace: [{ tool: 'offer_practical_assistance', result: { offered: true, reason } }],
+      },
+    });
+  }, { times: 1 });
+}
+
 async function enterMockAuthAndGoto(page: Page) {
   await page.addInitScript(() => { (window as any).__E2E_MOCK_AUTH__ = true; });
   await page.goto('/dev-nhei-phase5-preview.html');
@@ -637,5 +651,40 @@ test.describe('NHEI Phase 5E integrated journey (directive §8)', () => {
     await journey.getByRole('button', { name: /show my history/i }).click();
     await journey.getByRole('button', { name: /^resume$/i }).click();
     await expect(journey.getByText('Declined - nothing was changed', { exact: true })).toBeVisible();
+  });
+
+  // Phase 5K (directive §2/§3/§4/§6) - the new unified-assistance coordinator
+  // tool, demonstrated end to end: Nova offers the practical-assistance
+  // workflow naturally inside the conversation (never forced), the user
+  // chooses to open it, the existing Invisible Load/Calendar Protection
+  // workflow opens with real progress, and the user can return to the
+  // conversation at any point via "Return to Nova chat" without having to
+  // start over or lose anything.
+  test('offer_practical_assistance: Nova\'s card opens Invisible Load; "Return to Nova chat" returns without losing progress', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await mockChatOfferPracticalAssistanceOnce(page, 'User said they are behind on three deadlines this week.');
+    await journey.getByPlaceholder(/./).first().fill('I am so behind on everything.');
+    await journey.getByRole('button', { name: 'Send message' }).click();
+
+    // The card is optional and dismissible, never forced - but accepting
+    // it opens the real Invisible Load step, not a dead end.
+    await expect(journey.getByText('User said they are behind on three deadlines this week.')).toBeVisible();
+    await journey.getByRole('button', { name: /review what's on my plate/i }).click();
+    await expect(journey.getByLabel('Describe an obligation, commitment, or friction')).toBeVisible();
+
+    // Add real progress, then confirm it is still there after returning
+    // to chat and coming back - this link is conversational continuity,
+    // not a reset.
+    await journey.getByLabel('Describe an obligation, commitment, or friction').fill('Finish the quarterly board deck');
+    await journey.getByRole('button', { name: /^add$/i }).click();
+    await journey.getByRole('button', { name: /return to nova chat/i }).click();
+    await expect(journey.getByPlaceholder(/./).first()).toBeVisible();
+
+    await journey.getByRole('button', { name: /continue to what's on your plate/i }).click();
+    await expect(journey.getByText('Finish the quarterly board deck')).toBeVisible();
   });
 });

@@ -18,7 +18,15 @@ vi.mock('./NheiBeforeWords', () => ({
     </div>
   ),
 }));
-vi.mock('./NovaChat', () => ({ NovaChat: () => <div data-testid="nova-chat" /> }));
+vi.mock('./NovaChat', () => ({
+  NovaChat: ({ onRequestPracticalAssistance }: { onRequestPracticalAssistance?: () => void }) => (
+    <div data-testid="nova-chat">
+      {onRequestPracticalAssistance && (
+        <button onClick={onRequestPracticalAssistance}>Simulate practical assistance offer accepted</button>
+      )}
+    </div>
+  ),
+}));
 vi.mock('./NovaInvisibleLoad', () => ({
   NovaInvisibleLoad: ({ onProtectTime, onDeferTask }: { onProtectTime: (p: any) => void; onDeferTask: (t: string) => void }) => (
     <div data-testid="invisible-load">
@@ -127,5 +135,58 @@ describe('NovaAgenticJourney - sequencing', () => {
     await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
     await userEvent.click(screen.getByRole('button', { name: /start over/i }));
     expect(screen.getByRole('button', { name: /just talk to nova/i })).toBeInTheDocument();
+  });
+});
+
+// Phase 5K: initialStep (App.tsx now mounts this with initialStep="chat"
+// for production Nova chat), the onRequestPracticalAssistance handoff from
+// NovaChat's offer_practical_assistance card, and the "Return to Nova
+// chat" links added at every practical-assistance step.
+describe('NovaAgenticJourney - Phase 5K production mount additions', () => {
+  it('initialStep="chat" opens straight into chat, with no entry screen and no premature "Start over"', () => {
+    render(<NovaAgenticJourney initialStep="chat" />);
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /just talk to nova/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /start over/i })).not.toBeInTheDocument();
+  });
+
+  it('Start over with initialStep="chat" returns to chat, not the entry screen', async () => {
+    render(<NovaAgenticJourney initialStep="chat" />);
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /start over/i }));
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /just talk to nova/i })).not.toBeInTheDocument();
+  });
+
+  it('accepting NovaChat\'s practical-assistance offer opens Invisible Load', async () => {
+    render(<NovaAgenticJourney initialStep="chat" />);
+    await userEvent.click(screen.getByRole('button', { name: /simulate practical assistance offer accepted/i }));
+    expect(screen.getByTestId('invisible-load')).toBeInTheDocument();
+  });
+
+  it('"Return to Nova chat" is reachable from Invisible Load, Proactive Options, Calendar Protection, and Task Deferral', async () => {
+    render(<NovaAgenticJourney />);
+    await userEvent.click(screen.getByRole('button', { name: /just talk to nova/i }));
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /return to nova chat/i }));
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^protect$/i }));
+    expect(screen.getByTestId('calendar-protection')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /return to nova chat/i }));
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^defer$/i }));
+    expect(screen.getByTestId('task-deferral')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /return to nova chat/i }));
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    await userEvent.click(screen.getByRole('button', { name: /see what nova might proactively suggest/i }));
+    expect(screen.getByTestId('proactive-suggestions')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /return to nova chat/i }));
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
   });
 });

@@ -6,15 +6,24 @@ import ReactMarkdown from 'react-markdown';
 import { getNovaBrain } from '../lib/nova-brain';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaVoiceCall } from './NovaVoiceCall';
+import { GuardianSupportInvitation } from './GuardianSupportInvitation';
+import { NovaPracticalAssistanceOffer } from './NovaPracticalAssistanceOffer';
+import { useGuardianSupportInvitationEnabled } from '../lib/useGuardianSupportInvitationEnabled';
+import { logGuardianSupportEvent } from '../lib/guardian-support-analytics';
 import { useFocusTrap } from '../lib/useFocusTrap';
 
 interface OmniNovaProps {
   activeTab: string;
   fingerprint: any;
   stats: any;
+  // Phase 5K: without this, OmniNova's suggest_feature/offer_guardian_support/
+  // offer_practical_assistance cards (below) would have nowhere real to send
+  // the user - optional, so a host that can't navigate simply never renders
+  // their "open" actions, same as NovaChat's own onNavigate.
+  onNavigate?: (tab: string) => void;
 }
 
-export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
+export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNovaProps) => {
   // Computed once rather than inline in the animate prop - regenerating
   // these on every render would make the waveform's rhythm visibly jump if
   // anything causes this component to re-render while it's showing.
@@ -32,6 +41,19 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const panelRef = useFocusTrap(isOpen);
+
+  // Phase 5K: this widget used to never read data.planTrace at all, so
+  // suggest_feature/offer_guardian_support/offer_practical_assistance never
+  // rendered here even though the exact same tool calls were already
+  // firing server-side - the user just never saw them. Same
+  // "offered/shown once per session" state and rules as NovaChat.tsx's own
+  // handling of the identical planTrace entries.
+  const [activeToolSuggestion, setActiveToolSuggestion] = useState<{ featureId: string; label: string; reason: string } | null>(null);
+  const [activeGuardianOffer, setActiveGuardianOffer] = useState<{ reason: string } | null>(null);
+  const guardianOfferShownRef = useRef(false);
+  const guardianInvitationEnabled = useGuardianSupportInvitationEnabled();
+  const [activePracticalAssistanceOffer, setActivePracticalAssistanceOffer] = useState<{ reason: string } | null>(null);
+  const practicalAssistanceOfferShownRef = useRef(false);
 
   // Dedicated to the speak-aloud TTS feature (reading a written reply out
   // loud) - unrelated to the live call above.
@@ -206,7 +228,26 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
 
       if (!response.ok) throw new Error('Failed to connect to Nova.');
       const data = await response.json();
-      
+
+      // Phase 5K: same planTrace cards NovaChat.tsx renders for text chat -
+      // this widget is the other real text surface, so it gets the same
+      // capabilities rather than a silently reduced experience.
+      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested);
+      setActiveToolSuggestion(suggestFeatureCall ? { featureId: suggestFeatureCall.result.featureId, label: suggestFeatureCall.result.label, reason: suggestFeatureCall.result.reason } : null);
+
+      const guardianOfferCall = (data.planTrace || []).find((t: any) => t.tool === 'offer_guardian_support' && t.result?.offered);
+      if (guardianOfferCall && guardianInvitationEnabled && !guardianOfferShownRef.current) {
+        guardianOfferShownRef.current = true;
+        setActiveGuardianOffer({ reason: guardianOfferCall.result.reason });
+        logGuardianSupportEvent('invitation_shown');
+      }
+
+      const practicalAssistanceOfferCall = (data.planTrace || []).find((t: any) => t.tool === 'offer_practical_assistance' && t.result?.offered);
+      if (practicalAssistanceOfferCall && onNavigate && !practicalAssistanceOfferShownRef.current) {
+        practicalAssistanceOfferShownRef.current = true;
+        setActivePracticalAssistanceOffer({ reason: practicalAssistanceOfferCall.result.reason });
+      }
+
       setMessages(prev => [...prev, { role: 'model', text: data.text, privacyMetadata: data.privacyMetadata }]);
     } catch (err: any) {
       setMessages(prev => [...prev, { role: 'model', text: 'Could not connect to voice chat. Please check your API key in Settings.' }]);
@@ -355,6 +396,51 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
               </div>
             )}
 
+            <div className="px-4 pt-3 space-y-2.5">
+              <AnimatePresence>
+                {activeToolSuggestion && onNavigate && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-1.5"
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" aria-hidden="true" /> Nova suggests
+                    </span>
+                    <p className="text-xs font-bold text-text-main">{activeToolSuggestion.label}</p>
+                    <p className="text-[11px] text-text-muted leading-relaxed">{activeToolSuggestion.reason}</p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={() => { onNavigate(activeToolSuggestion.featureId); setActiveToolSuggestion(null); }}
+                        className="px-3 py-1.5 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-black text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25"
+                      >
+                        Open
+                      </button>
+                      <button
+                        onClick={() => setActiveToolSuggestion(null)}
+                        className="px-2 py-1.5 text-text-muted hover:text-text-main text-[11px] font-bold uppercase tracking-wider rounded-lg transition-colors"
+                      >
+                        Ignore
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+                {activeGuardianOffer && (
+                  <GuardianSupportInvitation
+                    onDismiss={() => setActiveGuardianOffer(null)}
+                  />
+                )}
+                {activePracticalAssistanceOffer && onNavigate && (
+                  <NovaPracticalAssistanceOffer
+                    reason={activePracticalAssistanceOffer.reason}
+                    onOpen={() => { setActivePracticalAssistanceOffer(null); onNavigate('nova'); }}
+                    onDismiss={() => setActivePracticalAssistanceOffer(null)}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="p-4 bg-card border-t border-border">
               <div className="flex gap-2">
                 <input
@@ -384,6 +470,8 @@ export const OmniNova = ({ activeTab, fingerprint, stats }: OmniNovaProps) => {
         isOpen={showVoiceCall}
         onClose={() => setShowVoiceCall(false)}
         buildInitialPrompt={buildVoiceContext}
+        onNavigate={onNavigate}
+        onRequestPracticalAssistance={onNavigate ? () => onNavigate('nova') : undefined}
       />
     </>
   );

@@ -28,6 +28,7 @@ import { NovaStyleControl, QUESTIONING_STYLE_OPTIONS, NovaQuestioningStyle } fro
 import { ConfirmDialog } from "./ConfirmDialog";
 import { getFeatureFlags } from "../lib/feature-flags";
 import { GuardianSupportInvitation } from "./GuardianSupportInvitation";
+import { NovaPracticalAssistanceOffer } from "./NovaPracticalAssistanceOffer";
 import { useGuardianSupportInvitationEnabled } from "../lib/useGuardianSupportInvitationEnabled";
 import { logGuardianSupportEvent } from "../lib/guardian-support-analytics";
 import type { NovaTemporaryBeforeWordsContext } from "../../nova-before-words-temporary-context";
@@ -87,6 +88,7 @@ export const NovaChat = ({
   onVoiceAutoOpened,
   temporaryBeforeWordsContext,
   onTemporaryBeforeWordsContextConsumed,
+  onRequestPracticalAssistance,
 }: {
   systemInstruction?: string;
   initialMessage?: string;
@@ -126,6 +128,14 @@ export const NovaChat = ({
   // for something that isn't its own data.
   temporaryBeforeWordsContext?: NovaTemporaryBeforeWordsContext | null;
   onTemporaryBeforeWordsContextConsumed?: () => void;
+  // Phase 5K: lets a host screen (App.tsx's NovaAgenticJourney mount) open
+  // Nova's existing practical-assistance workflow (Invisible Load ->
+  // Calendar Protection / Task Deferral) when the user accepts the
+  // offer_practical_assistance card below. Optional - when absent (e.g. the
+  // dev-preview or other embeddings that don't mount the full journey), the
+  // card simply never renders at all, same as onNavigate being absent for
+  // suggest_feature.
+  onRequestPracticalAssistance?: () => void;
 }) => {
   // How Nova should sound, re-tunable at any time. Source of truth for the
   // chat's own context is localStorage's blaze_profile (what getDynamicContext
@@ -359,6 +369,10 @@ export const NovaChat = ({
   const [activeGuardianOffer, setActiveGuardianOffer] = useState<{ reason: string } | null>(null);
   const guardianOfferShownRef = useRef(false);
   const guardianInvitationEnabled = useGuardianSupportInvitationEnabled();
+  // Phase 5K: same "offered once per session unless raised again" rule as
+  // the Guardian Support Invitation above, for offer_practical_assistance.
+  const [activePracticalAssistanceOffer, setActivePracticalAssistanceOffer] = useState<{ reason: string } | null>(null);
+  const practicalAssistanceOfferShownRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -818,6 +832,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         logGuardianSupportEvent('invitation_shown');
       }
 
+      // Phase 5K - same planTrace pattern again, for the new
+      // offer_practical_assistance coordinator tool. Only renders when
+      // onRequestPracticalAssistance is actually provided, so this card
+      // never appears for a host that hasn't wired a destination for it.
+      const practicalAssistanceOfferCall = (data.planTrace || []).find((t: any) => t.tool === 'offer_practical_assistance' && t.result?.offered);
+      if (practicalAssistanceOfferCall && onRequestPracticalAssistance && !practicalAssistanceOfferShownRef.current) {
+        practicalAssistanceOfferShownRef.current = true;
+        setActivePracticalAssistanceOffer({ reason: practicalAssistanceOfferCall.result.reason });
+      }
+
       const newMessages = [...messages, userMsg, botMessage];
       setMessages(newMessages);
 
@@ -1265,6 +1289,21 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                         />
                       </div>
                     )}
+
+                  {activePracticalAssistanceOffer &&
+                    i === messages.length - 1 &&
+                    msg.role === "model" && (
+                      <div className="relative z-10 pt-1">
+                        <NovaPracticalAssistanceOffer
+                          reason={activePracticalAssistanceOffer.reason}
+                          onOpen={() => {
+                            setActivePracticalAssistanceOffer(null);
+                            onRequestPracticalAssistance?.();
+                          }}
+                          onDismiss={() => setActivePracticalAssistanceOffer(null)}
+                        />
+                      </div>
+                    )}
                 </div>
               </div>
             </motion.div>
@@ -1424,6 +1463,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         buildInitialPrompt={buildVoiceContext}
         onNavigate={onNavigate}
         onAwardPoints={onAwardPoints}
+        onRequestPracticalAssistance={onRequestPracticalAssistance}
       />
 
       <ConfirmDialog

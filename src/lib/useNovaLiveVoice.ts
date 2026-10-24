@@ -46,6 +46,14 @@ export interface VoiceGuardianSupportOffer {
   reason: string;
 }
 
+// Phase 5K: the voice-side counterpart of offer_practical_assistance's
+// planTrace entry on the text side - same shape, relayed over the socket
+// instead (see server.ts's practicalAssistanceOffer relay in the Live
+// onmessage handler).
+export interface VoicePracticalAssistanceOffer {
+  reason: string;
+}
+
 export interface UseNovaLiveVoiceOptions {
   // Optional context to prime the session with before the person speaks
   // (burnout fingerprint, recent chat, preferred tone). Saved-memory content
@@ -98,6 +106,10 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   // own saved contacts (see GuardianSupportInvitation.tsx).
   const [guardianSupportOffer, setGuardianSupportOffer] = useState<VoiceGuardianSupportOffer | null>(null);
   const guardianOfferShownRef = useRef(false);
+  // Phase 5K: same "shown once per call unless raised again" rule, for
+  // the practical-assistance offer.
+  const [practicalAssistanceOffer, setPracticalAssistanceOffer] = useState<VoicePracticalAssistanceOffer | null>(null);
+  const practicalAssistanceOfferShownRef = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -363,6 +375,10 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
             guardianOfferShownRef.current = true;
             setGuardianSupportOffer(msg.guardianSupportOffer);
           }
+          if (msg.practicalAssistanceOffer && !practicalAssistanceOfferShownRef.current) {
+            practicalAssistanceOfferShownRef.current = true;
+            setPracticalAssistanceOffer(msg.practicalAssistanceOffer);
+          }
           if (msg.turnComplete) { lastTranscriptRoleRef.current = null; turnCountRef.current += 1; }
           if (msg.error) {
             setError(msg.error);
@@ -414,6 +430,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
 
   const dismissFeatureSuggestion = useCallback(() => setFeatureSuggestion(null), []);
   const dismissGuardianSupportOffer = useCallback(() => setGuardianSupportOffer(null), []);
+  const dismissPracticalAssistanceOffer = useCallback(() => setPracticalAssistanceOffer(null), []);
 
   // Tear everything down if the host component unmounts mid-call.
   useEffect(() => () => {
@@ -423,5 +440,5 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     cleanupAudio();
   }, [cleanupAudio, recordSession]);
 
-  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, guardianSupportOffer, dismissGuardianSupportOffer, start, stop, toggleMute };
+  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, guardianSupportOffer, dismissGuardianSupportOffer, practicalAssistanceOffer, dismissPracticalAssistanceOffer, start, stop, toggleMute };
 }

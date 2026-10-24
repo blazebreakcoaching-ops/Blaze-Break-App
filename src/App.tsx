@@ -68,6 +68,7 @@ const MyBoundaries = lazy(() => import("./components/MyBoundaries.tsx").then(m =
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
 const ActionEngine = lazy(() => import("./components/ActionEngine.tsx").then(m => ({ default: m.ActionEngine })));
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
+const NovaAgenticJourney = lazy(() => import("./components/NovaAgenticJourney.tsx").then(m => ({ default: m.NovaAgenticJourney })));
 const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => ({ default: m.Walkthrough })));
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
@@ -2797,7 +2798,21 @@ export default function App() {
 
             {activeTab === "nova" && (
               <div className="space-y-32">
-                <NovaChat
+                {/* Phase 5K (directive §§2,4,6): production mount for Nova's
+                    unified text-chat + practical-assistance experience.
+                    This used to be a bare <NovaChat> - the exact same
+                    component, same props, same backend - with Invisible
+                    Load/Calendar Protection/Task Deferral/Before Words
+                    (all already built and tested since Phase 5D-5J) left
+                    reachable only through the dev-preview harness. Wrapping
+                    it in NovaAgenticJourney with initialStep="chat" opens
+                    directly into ordinary Nova chat (identical first paint
+                    to before) and only ADDS the "Continue to what's on your
+                    plate" path plus the offer_practical_assistance card's
+                    "Open" action - it introduces no new business logic of
+                    its own (see that file's own header comment). */}
+                <NovaAgenticJourney
+                  initialStep="chat"
                   fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
                   profile={isDemoSession ? undefined : stats.profile}
                   systemInstruction={`You are Nova, the recovery coach.
@@ -3066,6 +3081,7 @@ export default function App() {
               activeTab={activeTab}
               fingerprint={fingerprint}
               stats={stats}
+              onNavigate={safeSetActiveTab}
             />
             <NovaFeedbackModal />
           </Suspense>
