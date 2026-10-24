@@ -16,6 +16,14 @@ import { defineConfig, devices } from '@playwright/test';
 // downloading a new one - see each project's launchOptions below.
 export default defineConfig({
   testDir: './tests/e2e',
+  // Phase 5M (directive §8) - without this, this config's own testDir scan
+  // also picked up real-app-*.spec.ts (playwright.realapp.config.ts's own
+  // specs, added this phase for the REAL App.tsx, a different webServer
+  // entirely) and ran them against THIS config's dev-preview webServer,
+  // where none of their real-app buttons exist - 14 failures that were a
+  // test-discovery collision, not a regression. Scoped back to exactly
+  // this config's own two files.
+  testMatch: [/nhei-phase5-journey\.spec\.ts/, /calendar-protection\.spec\.ts/],
   timeout: 30_000,
   fullyParallel: false,
   retries: 0,
