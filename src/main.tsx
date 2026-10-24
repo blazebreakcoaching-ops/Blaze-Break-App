@@ -18,7 +18,27 @@ if (typeof window !== 'undefined') {
   const ALLOWED_AUTHED_KEYS = [
     'blaze_dark_mode',
     'blaze_notification_preferences',
-    'blaze_feature_flags'
+    'blaze_feature_flags',
+    // Phase 5M (directive §4/§5) - a real signed-in (non-anonymous)
+    // account's Nova conversation was being silently discarded on every
+    // page load: this "Secure Account mode" block is correct to stop a
+    // shared/demo-mode localStorage profile (blaze_profile and friends)
+    // leaking into a newly-signed-in real account, but it was never meant
+    // to make Nova's own chat history and in-chat preferences
+    // unrecoverable the moment a real account exists - nothing elsewhere
+    // persists them to Firestore as a fallback, so blocking these keys
+    // just destroyed the conversation outright, discovered only once a
+    // real browser test actually exercised src/main.tsx's real entry point
+    // (the dev-preview harness used in earlier phases never ran this file
+    // at all). These five keys are all Nova-chat-specific and scoped to
+    // one person's own device; none of them carry another person's data
+    // the way a shared-device blaze_profile leak would.
+    'nova_chat_history',
+    'nova_chat_ratings',
+    'nova_chat_feedback_notes',
+    'nova_chat_feedback_tags',
+    'nova_chat_feedback_submitted',
+    'nova_voice_enabled',
   ];
 
   localStorage.getItem = function (key: string) {
