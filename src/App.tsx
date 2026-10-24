@@ -120,6 +120,8 @@ import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalen
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
+import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
+import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
 const NovaFeedbackModal = lazy(() => import("./components/NovaFeedbackModal.tsx").then(m => ({ default: m.NovaFeedbackModal })));
@@ -1486,6 +1488,10 @@ export default function App() {
   // set to demo content - only what gets passed to <HomeSection> below is
   // swapped for sample data when this is true.
   const isDemoSession = isDemoUser(user?.isAnonymous, stats.profile?.fullName);
+  // Phase 5L (directive §§1,2) - fail-closed release gate for the Phase 5K
+  // NovaAgenticJourney production mount; see the hook's own comment and
+  // NOVA_AGENTIC_JOURNEY_ENABLED in server.ts.
+  const novaAgenticJourneyEnabled = useNovaAgenticJourneyEnabled();
 
   // Pulse Alert System
   useEffect(() => {
@@ -2668,7 +2674,8 @@ export default function App() {
 
             {activeTab === "communicate" && (
               <div className="space-y-32">
-                <div className="flex justify-end">
+                <div className="flex justify-between items-center gap-3">
+                  <ReturnToNovaLink onNavigate={safeSetActiveTab} />
                   <button
                     onClick={() => setShowMyBoundaries((v) => !v)}
                     className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"
@@ -2796,26 +2803,33 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === "nova" && (
-              <div className="space-y-32">
-                {/* Phase 5K (directive §§2,4,6): production mount for Nova's
-                    unified text-chat + practical-assistance experience.
-                    This used to be a bare <NovaChat> - the exact same
-                    component, same props, same backend - with Invisible
-                    Load/Calendar Protection/Task Deferral/Before Words
-                    (all already built and tested since Phase 5D-5J) left
-                    reachable only through the dev-preview harness. Wrapping
-                    it in NovaAgenticJourney with initialStep="chat" opens
-                    directly into ordinary Nova chat (identical first paint
-                    to before) and only ADDS the "Continue to what's on your
-                    plate" path plus the offer_practical_assistance card's
-                    "Open" action - it introduces no new business logic of
-                    its own (see that file's own header comment). */}
-                <NovaAgenticJourney
-                  initialStep="chat"
-                  fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
-                  profile={isDemoSession ? undefined : stats.profile}
-                  systemInstruction={`You are Nova, the recovery coach.
+            {activeTab === "nova" && (() => {
+              // Phase 5K (directive §§2,4,6) built NovaAgenticJourney
+              // (Invisible Load/Calendar Protection/Task Deferral/Before
+              // Words, already built and tested since Phase 5D-5J but
+              // previously reachable only through the dev-preview harness)
+              // as a drop-in wrapper around the exact same <NovaChat> -
+              // same props, same backend - adding only the "Continue to
+              // what's on your plate" path and the offer_practical_assistance
+              // card's "Open" action.
+              //
+              // Phase 5L correction (directive §§1,2): Phase 5K then mounted
+              // that wrapper for every production user unconditionally, with
+              // no release flag - "do not treat a passing automated test as
+              // production-release authorisation." Every other previously-
+              // dev-only or newly-introduced Nova surface in this codebase
+              // (Guardian Support Invitation, NHEI's own modes) defaults OFF
+              // until a human explicitly turns it on; this one should have
+              // too. novaAgenticJourneyEnabled (useNovaAgenticJourneyEnabled,
+              // backed by NOVA_AGENTIC_JOURNEY_ENABLED in server.ts) now
+              // fails closed to the existing, already-approved plain
+              // <NovaChat> - identical props either way, so turning the flag
+              // on later changes nothing about what a user sees except
+              // adding the practical-assistance path on top.
+              const sharedNovaChatProps = {
+                fingerprint: isDemoSession ? DEMO_FINGERPRINT : fingerprint,
+                profile: isDemoSession ? undefined : stats.profile,
+                systemInstruction: `You are Nova, the recovery coach.
                   User's current stats: Points: ${isDemoSession ? DEMO_STATS.points : stats.points}.
                   Recovery Debt Profile: ${JSON.stringify((isDemoSession ? DEMO_STATS.debts : stats.debts) || [])}.
                   Use this data to give direct, grounded advice. If Sleep Shortfall is high, recommend rest. If Mental Fatigue is high, recommend a break before anything that needs focus.
@@ -2823,21 +2837,27 @@ export default function App() {
                     isDemoSession
                       ? " This visitor is previewing a sample account before signing up - the stats above are illustrative example data, not their own real progress. It's fine to naturally mention signing up, but never claim these sample numbers are the visitor's own history."
                       : ""
-                  }`}
-                  initialMessage={
-                    (isDemoSession ? DEMO_FINGERPRINT : fingerprint)
-                      ? `Hey! As a "${(isDemoSession ? DEMO_FINGERPRINT : fingerprint)!.profile}", today's recovery is critical. How can I help you set boundaries?`
-                      : "I'm Nova. I help high achievers recover without losing their ambition. What's draining you today?"
-                  }
-                  onAwardPoints={awardPoints}
-                  onNavigate={safeSetActiveTab as any}
-                  onToneChange={handleNovaToneChange}
-                  onStyleChange={handleNovaStyleChange}
-                  autoOpenVoice={novaAutoVoiceRequested}
-                  onVoiceAutoOpened={() => setNovaAutoVoiceRequested(false)}
-                />
-              </div>
-            )}
+                  }`,
+                initialMessage: (isDemoSession ? DEMO_FINGERPRINT : fingerprint)
+                  ? `Hey! As a "${(isDemoSession ? DEMO_FINGERPRINT : fingerprint)!.profile}", today's recovery is critical. How can I help you set boundaries?`
+                  : "I'm Nova. I help high achievers recover without losing their ambition. What's draining you today?",
+                onAwardPoints: awardPoints,
+                onNavigate: safeSetActiveTab as any,
+                onToneChange: handleNovaToneChange,
+                onStyleChange: handleNovaStyleChange,
+                autoOpenVoice: novaAutoVoiceRequested,
+                onVoiceAutoOpened: () => setNovaAutoVoiceRequested(false),
+              };
+              return (
+                <div className="space-y-32">
+                  {novaAgenticJourneyEnabled ? (
+                    <NovaAgenticJourney initialStep="chat" {...sharedNovaChatProps} />
+                  ) : (
+                    <NovaChat {...sharedNovaChatProps} />
+                  )}
+                </div>
+              );
+            })()}
 
             {activeTab === "subscription" && (
               <div className="space-y-32">
@@ -2847,6 +2867,7 @@ export default function App() {
 
             {activeTab === "anxiety_reset" && (
               <div className="space-y-32">
+                <ReturnToNovaLink onNavigate={safeSetActiveTab} />
                 <AnxietyResetMode
                   onAwardPoints={awardPoints}
                   onNavigate={safeSetActiveTab as any}
@@ -2860,6 +2881,7 @@ export default function App() {
 
             {activeTab === "reset" && (
               <div className="space-y-32">
+                <ReturnToNovaLink onNavigate={safeSetActiveTab} />
                 <ResetStudio
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}

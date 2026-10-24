@@ -68,6 +68,12 @@ export const NheiPhase5Preview = () => {
   // This is the "connect meaningfully to Nova's actual conversation
   // system" step the directive asks for - not a second, parallel preview.
   const [beforeWordsContext, setBeforeWordsContext] = useState<NovaTemporaryBeforeWordsContext | null>(null);
+  // Phase 5L (directive §8) - a visible, assertable stand-in for
+  // App.tsx's real safeSetActiveTab, so Playwright can prove Nova's
+  // suggest_feature offer (Boundary Architect/Anxiety Reset/Reset
+  // Studio/etc) actually fires "Open Tool" with the right featureId,
+  // without this offline harness needing a real tab system of its own.
+  const [lastNavTarget, setLastNavTarget] = useState<string>('');
   return (
   <div className="max-w-2xl mx-auto space-y-10 p-6">
     <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-start gap-3">
@@ -143,7 +149,9 @@ export const NheiPhase5Preview = () => {
       <NovaChat
         temporaryBeforeWordsContext={beforeWordsContext}
         onTemporaryBeforeWordsContextConsumed={() => setBeforeWordsContext(null)}
+        onNavigate={setLastNavTarget}
       />
+      <p data-testid="nova-chat-nav-target" className="text-xs text-text-muted">Navigated to: {lastNavTarget || '(nowhere yet)'}</p>
     </section>
 
     <section className="space-y-3">
@@ -158,7 +166,8 @@ export const NheiPhase5Preview = () => {
         plate - Take the Load/Calendar Protection - approval - result, with an explicit stage label at every step.
         The sections above remain for reviewing each piece on its own; this is the one a real user would actually see.
       </p>
-      <NovaAgenticJourney />
+      <NovaAgenticJourney onNavigate={setLastNavTarget} />
+      <p data-testid="journey-nav-target" className="text-xs text-text-muted">Navigated to: {lastNavTarget || '(nowhere yet)'}</p>
     </section>
   </div>
   );

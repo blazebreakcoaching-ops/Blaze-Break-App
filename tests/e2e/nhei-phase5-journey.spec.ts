@@ -188,6 +188,37 @@ async function mockChatOfferPracticalAssistanceOnce(page: Page, reason: string) 
   }, { times: 1 });
 }
 
+// Phase 5L (directive §3/§4/§8) - the same planTrace shape for
+// suggest_feature, Nova's existing coordinator for Boundary Architect
+// ('communicate'), Anxiety Reset, and Reset Studio among others.
+async function mockChatSuggestFeatureOnce(page: Page, featureId: string, label: string, reason: string) {
+  await page.route('**/api/nova/chat', async (route) => {
+    await route.fulfill({
+      json: {
+        text: `Want to try ${label}?`,
+        planTrace: [{ tool: 'suggest_feature', result: { suggested: true, featureId, label, reason } }],
+      },
+    });
+  }, { times: 1 });
+}
+
+// Phase 5L (directive §6/§8) - a turn where BOTH a safety-related Guardian
+// offer and a generic feature suggestion fire at once, proving only the
+// higher-priority one renders rather than stacking both.
+async function mockChatGuardianAndSuggestFeatureOnce(page: Page, guardianReason: string, featureId: string, label: string) {
+  await page.route('**/api/nova/chat', async (route) => {
+    await route.fulfill({
+      json: {
+        text: 'I hear you.',
+        planTrace: [
+          { tool: 'offer_guardian_support', result: { offered: true, reason: guardianReason } },
+          { tool: 'suggest_feature', result: { suggested: true, featureId, label, reason: 'A specific, concrete reason.' } },
+        ],
+      },
+    });
+  }, { times: 1 });
+}
+
 async function enterMockAuthAndGoto(page: Page) {
   await page.addInitScript(() => { (window as any).__E2E_MOCK_AUTH__ = true; });
   await page.goto('/dev-nhei-phase5-preview.html');
@@ -686,5 +717,104 @@ test.describe('NHEI Phase 5E integrated journey (directive §8)', () => {
 
     await journey.getByRole('button', { name: /continue to what's on your plate/i }).click();
     await expect(journey.getByText('Finish the quarterly board deck')).toBeVisible();
+  });
+
+  // Phase 5L (directive §3/§8), Journey A: the user describes a boundary/
+  // workload-management need, Nova offers the existing Boundary Architect
+  // via suggest_feature (featureId 'communicate' - no new tool, per the
+  // mission's "do not rebuild existing recovery engines"), and "Open Tool"
+  // hands off via the same onNavigate contract offer_practical_assistance
+  // already uses - never sending a message or touching a calendar itself.
+  test('Journey A: suggest_feature(communicate) offers Boundary Architect and "Open Tool" navigates there without losing the conversation', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await mockChatSuggestFeatureOnce(page, 'communicate', 'Boundary Architect', 'User described needing to say no to a new request without feeling guilty.');
+    await journey.getByPlaceholder(/./).first().fill('I keep saying yes to things I do not have capacity for.');
+    await journey.getByRole('button', { name: 'Send message' }).click();
+
+    // The offer explains the benefit and is clearly optional, never forced.
+    await expect(journey.getByText('Start Boundary Architect?')).toBeVisible();
+    await expect(journey.getByText(/needing to say no to a new request/i)).toBeVisible();
+
+    await journey.getByRole('button', { name: 'Open Tool' }).click();
+    await expect(page.getByTestId('journey-nav-target')).toHaveText('Navigated to: communicate');
+
+    // Opening the tool is a real handoff, not a reset - the conversation
+    // underneath it is exactly where the user left it.
+    await expect(journey.getByText('I keep saying yes to things I do not have capacity for.')).toBeVisible();
+  });
+
+  // Phase 5L (directive §4/§8), Journey B: the user asks for immediate
+  // grounding help, Nova offers the existing Anxiety Reset interface the
+  // same way, with no diagnostic label and no claim about the user's
+  // internal state beyond the reason the model itself gave.
+  test('Journey B: suggest_feature(anxiety_reset) offers Anxiety Reset and "Open Tool" navigates there', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await mockChatSuggestFeatureOnce(page, 'anxiety_reset', 'Anxiety Reset', 'User asked for something to help them calm down right now.');
+    await journey.getByPlaceholder(/./).first().fill('I need something to calm down right now.');
+    await journey.getByRole('button', { name: 'Send message' }).click();
+
+    await expect(journey.getByText('Start Anxiety Reset?')).toBeVisible();
+    await journey.getByRole('button', { name: 'Open Tool' }).click();
+    await expect(page.getByTestId('journey-nav-target')).toHaveText('Navigated to: anxiety_reset');
+  });
+
+  // Phase 5L (directive §6/§8), Journey D: once the user has declined a
+  // specific suggestion, Nova must not keep re-offering that exact
+  // featureId - the dismissedFeatureIdsRef mechanism added this phase.
+  test('Journey D: declining a suggest_feature offer stops that same featureId from being re-offered', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await mockChatSuggestFeatureOnce(page, 'reset', 'Reset Studio', 'User described feeling scattered and unable to focus.');
+    await journey.getByPlaceholder(/./).first().fill('I cannot focus on anything right now.');
+    await journey.getByRole('button', { name: 'Send message' }).click();
+    await expect(journey.getByText('Start Reset Studio?')).toBeVisible();
+
+    await journey.getByRole('button', { name: 'Ignore' }).click();
+    await expect(journey.getByText('Start Reset Studio?')).not.toBeVisible();
+
+    // The model offers the exact same featureId again on the very next
+    // turn - Nova must respect the earlier decision rather than repeating it.
+    await mockChatSuggestFeatureOnce(page, 'reset', 'Reset Studio', 'User described feeling scattered and unable to focus.');
+    await journey.getByPlaceholder(/./).first().fill('Still cannot focus.');
+    await journey.getByRole('button', { name: 'Send message' }).click();
+    await expect(journey.getByText('Still cannot focus.')).toBeVisible();
+    await expect(journey.getByText('Start Reset Studio?')).not.toBeVisible();
+  });
+
+  // Phase 5L (directive §6/§8) - mutual exclusion: when a safety-related
+  // Guardian offer and a generic feature suggestion both fire on the same
+  // turn, only the higher-priority Guardian offer renders, never both
+  // stacked at once. The client only renders the Guardian card when
+  // useGuardianSupportInvitationEnabled's own config fetch says it's on
+  // (defaults closed otherwise), so this test mocks that config route
+  // directly rather than relying on this run's real server-side flag.
+  test('mutual exclusion: a suggest_feature offer never renders alongside an active Guardian Support offer', async ({ page }) => {
+    await mockApis(page);
+    await page.route('**/api/guardian/config', async (route) => {
+      await route.fulfill({ json: { invitationEnabled: true } });
+    });
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await mockChatGuardianAndSuggestFeatureOnce(page, 'User described feeling unsafe.', 'anxiety_reset', 'Anxiety Reset');
+    await journey.getByPlaceholder(/./).first().fill('I feel unsafe right now.');
+    await journey.getByRole('button', { name: 'Send message' }).click();
+
+    // The Guardian offer (higher priority) renders...
+    await expect(journey.getByRole('region', { name: 'Guardian support invitation' })).toBeVisible();
+    // ...and the generic suggest_feature card never stacks alongside it.
+    await expect(journey.getByText('Start Anxiety Reset?')).not.toBeVisible();
   });
 });

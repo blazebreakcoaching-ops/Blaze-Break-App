@@ -360,6 +360,18 @@ export const NovaChat = ({
     tab?: string;
     description: string;
   } | null>(null);
+  // Phase 5L (directive §6) - "prevent repetitive prompting after
+  // dismissal": once the user has explicitly closed a suggestion for a
+  // specific feature (Start or Ignore - either way they've addressed it),
+  // that exact featureId is never auto-offered again this session. Mirrors
+  // the guardian/practical-assistance "shown once" refs below, just keyed
+  // per-feature since suggest_feature can legitimately suggest several
+  // different features across one conversation.
+  const dismissedFeatureIdsRef = useRef<Set<string>>(new Set());
+  const dismissActiveToolSuggestion = () => {
+    if (activeToolSuggestion?.tab) dismissedFeatureIdsRef.current.add(activeToolSuggestion.tab);
+    setActiveToolSuggestion(null);
+  };
   // Guardian Support Invitation: whether Nova has offered it in THIS
   // session already - never re-offered more than once in a conversation
   // unless the user raises it again themselves (matches
@@ -799,7 +811,10 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
 
       if (data.error) throw new Error(data.error);
 
-      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested);
+      // Phase 5L (directive §6) - never re-offer a specific feature the
+      // user already explicitly closed this session (see
+      // dismissedFeatureIdsRef's own comment above).
+      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested && !dismissedFeatureIdsRef.current.has(t.result.featureId));
       const botMessage: Message = {
         role: "model",
         parts: [{ text: data.text }],
@@ -1216,7 +1231,17 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                     )}
                   </div>
 
+                  {/* Phase 5L (directive §6) - "prevent duplicate offers
+                      from competing tools": these three cards all attach
+                      to this same last model message, but only ever render
+                      one at a time, in a fixed priority - a safety-related
+                      Guardian offer outranks the organisational Practical
+                      Assistance offer, which outranks a generic feature
+                      suggestion - rather than stacking whichever happened
+                      to fire. */}
                   {activeToolSuggestion &&
+                    !activeGuardianOffer &&
+                    !activePracticalAssistanceOffer &&
                     i === messages.length - 1 &&
                     msg.role === "model" && (
                       <motion.div
@@ -1252,6 +1277,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                     `Navigated to ${activeToolSuggestion.name} via Coach Nudge`,
                                   );
                                 }
+                                dismissActiveToolSuggestion();
                               }}
                               className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25 cursor-pointer"
                             >
@@ -1263,14 +1289,14 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                               handleSend(
                                 `Start ${activeToolSuggestion.name}.`,
                               );
-                              setActiveToolSuggestion(null);
+                              dismissActiveToolSuggestion();
                             }}
                             className="px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-all cursor-pointer"
                           >
                             Start
                           </button>
                           <button
-                            onClick={() => setActiveToolSuggestion(null)}
+                            onClick={dismissActiveToolSuggestion}
                             className="px-3 py-2 border border-border text-text-muted hover:text-text-main font-medium text-[11px] uppercase tracking-wider rounded-lg hover:bg-surface transition-colors cursor-pointer"
                           >
                             Ignore
@@ -1291,6 +1317,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                     )}
 
                   {activePracticalAssistanceOffer &&
+                    !activeGuardianOffer &&
                     i === messages.length - 1 &&
                     msg.role === "model" && (
                       <div className="relative z-10 pt-1">

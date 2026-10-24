@@ -29,7 +29,7 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
-import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, NovaMemoryDoc } from './nova-tools';
+import { memoryToolIsAllowed, searchMemories, isValidRecoveryDuration, validateMemoryWrite, validateFeatureSuggestion, SUGGESTABLE_FEATURES, toolsAreEnabled, liveVoiceIsEnabled, novaAgenticJourneyEnabled, NovaMemoryDoc } from './nova-tools';
 import { toClaudeTools, GeminiStyleToolDeclaration } from './nova-claude-tools';
 import { suggestStructuralRecognitionPrompts } from './positive-reinforcement';
 import { isRealGuardian, isValidGuardianPhone, buildGuardianCallRequestMessage, buildGuardianTestPingMessage, extractFirstName, nudgeSchedulerIsEnabled, guardianAlertsEnabled } from './guardian-alert';
@@ -1126,6 +1126,21 @@ app.get("/api/guardian/config", authenticateFirebaseUser, async (_req, res) => {
     // Guardian via the existing Ally tab or the always-available crisis
     // button - only the proactive offer.
     invitationEnabled: guardianSupportInvitationEnabled(process.env.GUARDIAN_SUPPORT_INVITATION_ENABLED),
+  });
+});
+
+// Phase 5L (directive §§1,2) - same reasoning as /api/guardian/config just
+// above: the frontend cannot read process.env itself, so this is the one
+// authoritative place it learns whether NOVA_AGENTIC_JOURNEY_ENABLED is
+// actually on before it decides to mount NovaAgenticJourney instead of the
+// existing, already-approved plain NovaChat. authenticateFirebaseUser
+// only - same trust level as any other UI-gating flag read in this app;
+// the real enforcement for the one capability this gates
+// (offer_practical_assistance) still happens server-side in
+// executeOfferPracticalAssistance regardless of what this returns.
+app.get("/api/nova/journey-config", authenticateFirebaseUser, async (_req, res) => {
+  res.json({
+    agenticJourneyEnabled: novaAgenticJourneyEnabled(process.env.NOVA_AGENTIC_JOURNEY_ENABLED),
   });
 });
 
@@ -2864,12 +2879,25 @@ function executeOfferGuardianSupport(args: Record<string, unknown>): { offered: 
 // and unlike NHEI (explicitly required to stay gated behind its own
 // unreviewed-mode flags), the workflow this offers - Invisible Load,
 // Calendar Protection, Task Deferral - is already real, already tested,
-// and already safe to show (CALENDAR_PROTECTION_EXECUTION_ENABLED and
-// Task Deferral's equivalent stay hardcoded off regardless of whether
-// this card is ever shown), so no additional off-by-default switch is
-// warranted here - only the same pure argument validation every other
-// self-gating tool in this file already does.
+// and already safe from a pure EXECUTION standpoint
+// (CALENDAR_PROTECTION_EXECUTION_ENABLED and Task Deferral's equivalent
+// stay hardcoded off regardless of whether this card is ever shown).
+//
+// Phase 5L correction (directive §§1,2): that reasoning justified skipping
+// an execution-safety flag, but it is not the same thing as this surface
+// having gone through this project's own release process - every other
+// previously-dev-only or newly-introduced Nova surface in this codebase
+// defaults OFF until a human explicitly turns it on, and mounting
+// NovaAgenticJourney to every production user without one was a release-
+// process gap, not a safety one. Now gated the same way
+// executeOfferGuardianSupport gates on GUARDIAN_SUPPORT_INVITATION_ENABLED:
+// self-refuses, independent of whatever the client happens to render, so
+// voice, a future client build, or any other path into this tool gets the
+// same fail-closed answer.
 function executeOfferPracticalAssistance(args: Record<string, unknown>): { offered: boolean; reason?: string; error?: string } {
+  if (!novaAgenticJourneyEnabled(process.env.NOVA_AGENTIC_JOURNEY_ENABLED)) {
+    return { offered: false };
+  }
   const validation = validatePracticalAssistanceOffer(args);
   if (!validation.valid) {
     return { offered: false, error: validation.error };

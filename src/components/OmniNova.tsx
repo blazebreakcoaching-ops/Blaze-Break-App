@@ -49,6 +49,14 @@ export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNova
   // "offered/shown once per session" state and rules as NovaChat.tsx's own
   // handling of the identical planTrace entries.
   const [activeToolSuggestion, setActiveToolSuggestion] = useState<{ featureId: string; label: string; reason: string } | null>(null);
+  // Phase 5L (directive §6) - mirrors NovaChat.tsx's identical fix: never
+  // re-offer a specific feature the user already explicitly closed this
+  // session.
+  const dismissedFeatureIdsRef = useRef<Set<string>>(new Set());
+  const dismissActiveToolSuggestion = () => {
+    if (activeToolSuggestion?.featureId) dismissedFeatureIdsRef.current.add(activeToolSuggestion.featureId);
+    setActiveToolSuggestion(null);
+  };
   const [activeGuardianOffer, setActiveGuardianOffer] = useState<{ reason: string } | null>(null);
   const guardianOfferShownRef = useRef(false);
   const guardianInvitationEnabled = useGuardianSupportInvitationEnabled();
@@ -232,7 +240,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNova
       // Phase 5K: same planTrace cards NovaChat.tsx renders for text chat -
       // this widget is the other real text surface, so it gets the same
       // capabilities rather than a silently reduced experience.
-      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested);
+      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested && !dismissedFeatureIdsRef.current.has(t.result.featureId));
       setActiveToolSuggestion(suggestFeatureCall ? { featureId: suggestFeatureCall.result.featureId, label: suggestFeatureCall.result.label, reason: suggestFeatureCall.result.reason } : null);
 
       const guardianOfferCall = (data.planTrace || []).find((t: any) => t.tool === 'offer_guardian_support' && t.result?.offered);
@@ -397,8 +405,13 @@ export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNova
             )}
 
             <div className="px-4 pt-3 space-y-2.5">
+              {/* Phase 5L (directive §6) - "prevent duplicate offers from
+                  competing tools": only one card at a time, in a fixed
+                  priority - safety (Guardian) outranks the organisational
+                  Practical Assistance offer, which outranks a generic
+                  feature suggestion. */}
               <AnimatePresence>
-                {activeToolSuggestion && onNavigate && (
+                {activeToolSuggestion && onNavigate && !activeGuardianOffer && !activePracticalAssistanceOffer && (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -412,13 +425,13 @@ export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNova
                     <p className="text-[11px] text-text-muted leading-relaxed">{activeToolSuggestion.reason}</p>
                     <div className="flex items-center gap-2 pt-1">
                       <button
-                        onClick={() => { onNavigate(activeToolSuggestion.featureId); setActiveToolSuggestion(null); }}
+                        onClick={() => { onNavigate(activeToolSuggestion.featureId); dismissActiveToolSuggestion(); }}
                         className="px-3 py-1.5 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-black text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25"
                       >
                         Open
                       </button>
                       <button
-                        onClick={() => setActiveToolSuggestion(null)}
+                        onClick={dismissActiveToolSuggestion}
                         className="px-2 py-1.5 text-text-muted hover:text-text-main text-[11px] font-bold uppercase tracking-wider rounded-lg transition-colors"
                       >
                         Ignore
@@ -431,7 +444,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNova
                     onDismiss={() => setActiveGuardianOffer(null)}
                   />
                 )}
-                {activePracticalAssistanceOffer && onNavigate && (
+                {activePracticalAssistanceOffer && onNavigate && !activeGuardianOffer && (
                   <NovaPracticalAssistanceOffer
                     reason={activePracticalAssistanceOffer.reason}
                     onOpen={() => { setActivePracticalAssistanceOffer(null); onNavigate('nova'); }}

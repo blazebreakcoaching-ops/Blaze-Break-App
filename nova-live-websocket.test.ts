@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
 
 // QA Batch 2 - the Nova Live WebSocket relay (handleNovaLiveConnection in
@@ -283,37 +283,95 @@ describe('handleNovaLiveConnection - successful session', () => {
   // the client (practicalAssistanceOffer) mirrors offer_guardian_support's
   // own existing relay pattern - this proves voice gets the same
   // coordinator capability text chat's planTrace already exposes.
-  it('dispatches an offer_practical_assistance tool call and relays practicalAssistanceOffer to the client', async () => {
-    const ws = new FakeClientSocket();
-    await handleNovaLiveConnection(ws, fakeReq('token=plate_user'));
-    await flush();
-
-    h.lastCallbacks.onmessage({
-      toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: 'User said they are behind on three deadlines this week.' } }] },
+  //
+  // Phase 5L (directive §§1,2) added NOVA_AGENTIC_JOURNEY_ENABLED - these
+  // tests now exercise that flag explicitly rather than assuming the tool
+  // always offers, so voice can't become a bypass route around the gate.
+  describe('offer_practical_assistance - NOVA_AGENTIC_JOURNEY_ENABLED gate', () => {
+    const ORIGINAL_ENV = process.env.NOVA_AGENTIC_JOURNEY_ENABLED;
+    afterEach(() => {
+      if (ORIGINAL_ENV === undefined) delete process.env.NOVA_AGENTIC_JOURNEY_ENABLED;
+      else process.env.NOVA_AGENTIC_JOURNEY_ENABLED = ORIGINAL_ENV;
     });
-    await flush();
 
-    expect(h.fakeLiveSession.sendToolResponse).toHaveBeenCalledTimes(1);
-    const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
-    expect(functionResponses).toEqual([{ id: 'call_1', name: 'offer_practical_assistance', response: { offered: true, reason: 'User said they are behind on three deadlines this week.' } }]);
+    it('never relays practicalAssistanceOffer when the flag is off (the default), even with a valid reason', async () => {
+      delete process.env.NOVA_AGENTIC_JOURNEY_ENABLED;
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq('token=plate_user_off'));
+      await flush();
 
-    const offerMessage = ws.sent.find((m) => m.practicalAssistanceOffer);
-    expect(offerMessage.practicalAssistanceOffer).toEqual({ reason: 'User said they are behind on three deadlines this week.' });
-    ws.emit('close');
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: 'User said they are behind on three deadlines this week.' } }] },
+      });
+      await flush();
+
+      const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
+      expect(functionResponses).toEqual([{ id: 'call_1', name: 'offer_practical_assistance', response: { offered: false } }]);
+      expect(ws.sent.find((m) => m.practicalAssistanceOffer)).toBeUndefined();
+      ws.emit('close');
+    });
+
+    it('dispatches an offer_practical_assistance tool call and relays practicalAssistanceOffer to the client once the flag is on', async () => {
+      process.env.NOVA_AGENTIC_JOURNEY_ENABLED = 'true';
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq('token=plate_user'));
+      await flush();
+
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: 'User said they are behind on three deadlines this week.' } }] },
+      });
+      await flush();
+
+      expect(h.fakeLiveSession.sendToolResponse).toHaveBeenCalledTimes(1);
+      const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
+      expect(functionResponses).toEqual([{ id: 'call_1', name: 'offer_practical_assistance', response: { offered: true, reason: 'User said they are behind on three deadlines this week.' } }]);
+
+      const offerMessage = ws.sent.find((m) => m.practicalAssistanceOffer);
+      expect(offerMessage.practicalAssistanceOffer).toEqual({ reason: 'User said they are behind on three deadlines this week.' });
+      ws.emit('close');
+    });
+
+    it('never relays practicalAssistanceOffer when the tool refuses a missing reason, even with the flag on', async () => {
+      process.env.NOVA_AGENTIC_JOURNEY_ENABLED = 'true';
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq('token=plate_user_2'));
+      await flush();
+
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: '' } }] },
+      });
+      await flush();
+
+      expect(ws.sent.find((m) => m.practicalAssistanceOffer)).toBeUndefined();
+      ws.emit('close');
+    });
   });
 
-  it('never relays practicalAssistanceOffer when the tool refuses a missing reason', async () => {
-    const ws = new FakeClientSocket();
-    await handleNovaLiveConnection(ws, fakeReq('token=plate_user_2'));
-    await flush();
+  // Phase 5L (directive §8) - suggest_feature is how Nova offers Boundary
+  // Architect ('communicate'), Anxiety Reset, and Reset Studio (among
+  // others); this proves voice gets the same featureSuggestion relay text
+  // chat's planTrace already exposes for every one of those featureIds,
+  // not only the ones that happened to have their own dedicated test
+  // before this phase.
+  describe.each(['communicate', 'anxiety_reset', 'reset', 'recover', 'fuel'])('suggest_feature(%s) - voice relay', (featureId) => {
+    it(`relays featureSuggestion to the client for featureId=${featureId}`, async () => {
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq(`token=suggest_${featureId}`));
+      await flush();
 
-    h.lastCallbacks.onmessage({
-      toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: '' } }] },
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'suggest_feature', args: { featureId, reason: 'User described a specific, concrete need this tool addresses.' } }] },
+      });
+      await flush();
+
+      const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
+      expect(functionResponses[0].response.suggested).toBe(true);
+      expect(functionResponses[0].response.featureId).toBe(featureId);
+
+      const suggestionMessage = ws.sent.find((m) => m.featureSuggestion);
+      expect(suggestionMessage.featureSuggestion.featureId).toBe(featureId);
+      ws.emit('close');
     });
-    await flush();
-
-    expect(ws.sent.find((m) => m.practicalAssistanceOffer)).toBeUndefined();
-    ws.emit('close');
   });
 
   it('caps remember_about_user at 5 saves per call, independent of the Firestore-backed memory permission', async () => {
