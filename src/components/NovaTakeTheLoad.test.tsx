@@ -75,6 +75,83 @@ describe('NovaTakeTheLoad', () => {
     expect(await screen.findByText(/nothing was actually sent to your calendar/i)).toBeInTheDocument();
   });
 
+  // Calendar Pilot readiness audit, Task 3 - found while building dedicated
+  // Playwright coverage: pilot_not_eligible, already_executing, and
+  // transaction_support_required had no render branch at all before this
+  // fix, so a real pilot account denied or mid-race would see nothing
+  // explaining why "Try to apply this" didn't do anything.
+  it('a pilot-ineligible account sees an honest explanation, not a silent no-op', async () => {
+    const PROPOSAL = {
+      proposalId: 'cpp_pilot', state: 'prepared', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',
+      title: 'Protected block', approvalFingerprint: 'fp123', failureReason: null, retryCount: 0, externalEventId: null,
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse(NOT_GRANTED));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: PROPOSAL }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: { ...PROPOSAL, state: 'awaiting_approval' } }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'approved', proposal: { ...PROPOSAL, state: 'approved' } }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'pilot_not_eligible' }));
+
+    render(<NovaTakeTheLoad initialTitle="Protected block" />);
+    await screen.findByText('Not granted');
+    await userEvent.type(screen.getByLabelText(/start time/i), '2026-03-01T10:00');
+    await userEvent.type(screen.getByLabelText(/end time/i), '2026-03-01T10:30');
+    await userEvent.click(screen.getByRole('button', { name: /prepare this proposal/i }));
+    const presentButton = screen.queryByRole('button', { name: /show for approval/i });
+    if (presentButton) await userEvent.click(presentButton);
+    await userEvent.click(await screen.findByRole('button', { name: /approve exactly this/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /try to apply this/i }));
+
+    expect(await screen.findByText(/isn't part of the Calendar Protection pilot/i)).toBeInTheDocument();
+  });
+
+  it('a second attempt that lands while the first is still in flight sees an honest "already being applied" message, not silence', async () => {
+    const PROPOSAL = {
+      proposalId: 'cpp_race', state: 'prepared', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',
+      title: 'Protected block', approvalFingerprint: 'fp123', failureReason: null, retryCount: 0, externalEventId: null,
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse(NOT_GRANTED));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: PROPOSAL }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: { ...PROPOSAL, state: 'awaiting_approval' } }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'approved', proposal: { ...PROPOSAL, state: 'approved' } }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'already_executing', proposal: { ...PROPOSAL, state: 'executing' } }));
+
+    render(<NovaTakeTheLoad initialTitle="Protected block" />);
+    await screen.findByText('Not granted');
+    await userEvent.type(screen.getByLabelText(/start time/i), '2026-03-01T10:00');
+    await userEvent.type(screen.getByLabelText(/end time/i), '2026-03-01T10:30');
+    await userEvent.click(screen.getByRole('button', { name: /prepare this proposal/i }));
+    const presentButton = screen.queryByRole('button', { name: /show for approval/i });
+    if (presentButton) await userEvent.click(presentButton);
+    await userEvent.click(await screen.findByRole('button', { name: /approve exactly this/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /try to apply this/i }));
+
+    expect(await screen.findByText(/already being applied from another attempt/i)).toBeInTheDocument();
+  });
+
+  it('a transaction-support failure (test/infra only) is shown as a temporary issue, not silence', async () => {
+    const PROPOSAL = {
+      proposalId: 'cpp_txn', state: 'prepared', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',
+      title: 'Protected block', approvalFingerprint: 'fp123', failureReason: null, retryCount: 0, externalEventId: null,
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse(NOT_GRANTED));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: PROPOSAL }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: { ...PROPOSAL, state: 'awaiting_approval' } }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'approved', proposal: { ...PROPOSAL, state: 'approved' } }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ status: 'transaction_support_required' }));
+
+    render(<NovaTakeTheLoad initialTitle="Protected block" />);
+    await screen.findByText('Not granted');
+    await userEvent.type(screen.getByLabelText(/start time/i), '2026-03-01T10:00');
+    await userEvent.type(screen.getByLabelText(/end time/i), '2026-03-01T10:30');
+    await userEvent.click(screen.getByRole('button', { name: /prepare this proposal/i }));
+    const presentButton = screen.queryByRole('button', { name: /show for approval/i });
+    if (presentButton) await userEvent.click(presentButton);
+    await userEvent.click(await screen.findByRole('button', { name: /approve exactly this/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /try to apply this/i }));
+
+    expect(await screen.findByText(/temporary server issue/i)).toBeInTheDocument();
+  });
+
   // Phase 5G, directive §8 - "an outcome confirmed by the user" needs to
   // be reachable here too, the same as it already is in Task Deferral,
   // but only once a REAL action (not a disabled/simulated one) actually

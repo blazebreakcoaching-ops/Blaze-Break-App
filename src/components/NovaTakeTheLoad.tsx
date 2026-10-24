@@ -498,6 +498,28 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
           {executeOutcome === 'superseded' && (
             <p className="text-xs text-text-muted flex items-start gap-1.5"><HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> This proposal was replaced by a newer version before it could be applied - nothing was sent to your calendar.</p>
           )}
+          {/* Calendar Pilot readiness audit, Task 3 - these three outcomes
+              (pilot_not_eligible, transaction_support_required,
+              already_executing) previously had no render branch at all:
+              executeOutcome would be set to one of them, proposal.state
+              would stay whatever it already was (none of pilot_not_eligible/
+              transaction_support_required carry a proposal to update it,
+              and 'executing' itself has no state branch either), and the
+              user would see nothing - a silent dead end with the same
+              "Try to apply this" button still sitting there unexplained.
+              Dormant today (the kill switch always wins first in
+              production), but exactly the outcomes a real pilot account
+              could hit for real - found while building this phase's
+              dedicated Calendar Protection Playwright coverage. */}
+          {executeOutcome === 'pilot_not_eligible' && (
+            <p className="text-xs text-text-muted flex items-start gap-1.5"><HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> This account isn't part of the Calendar Protection pilot, so this wasn't applied.</p>
+          )}
+          {executeOutcome === 'already_executing' && (
+            <p className="text-xs text-text-muted flex items-start gap-1.5"><HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> This is already being applied from another attempt - please check back in a moment rather than trying again.</p>
+          )}
+          {executeOutcome === 'transaction_support_required' && (
+            <p className="text-xs text-destructive">This couldn't be applied right now due to a temporary server issue - please try again shortly.</p>
+          )}
 
           {proposal.state === 'failed' && (
             <div className="space-y-2">
