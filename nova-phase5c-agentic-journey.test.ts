@@ -22,13 +22,23 @@ import {
 } from './nova-calendar-protection-service';
 import { createFakeConnectorForTesting } from './nova-take-the-load-connector-contract';
 import { resetStore, fakeDb } from './test/fake-firestore';
+import { setCalendarProtectionPilotEligibility } from './nova-calendar-pilot-eligibility';
 import type { NheiRecoveryBridgeInput } from './nhei-recovery-bridge-types';
 import type { NheiPersonalContextSummary } from './nhei-context-integration';
 import type { CalendarSignalState } from './calendar-workload-defence-engine';
 
 const UID = 'journey_user';
 
-beforeEach(() => resetStore());
+// Phase 5J, directive §4 added a pilot-eligibility check to
+// executeCalendarProtectionProposal (see nova-calendar-pilot-eligibility.ts).
+// This journey test predates that layer and exercises execute via
+// TEST_ONLY_FORCE_EXECUTION_ENABLED, so UID must be seeded as eligible or
+// every execute call in this file reports pilot_not_eligible instead of
+// the outcome each test is actually trying to prove.
+beforeEach(async () => {
+  resetStore();
+  await setCalendarProtectionPilotEligibility(fakeDb as any, UID, true, 'test-admin');
+});
 
 function confirmedEmotionalContext(overrides?: Partial<NheiPersonalContextSummary>): NheiPersonalContextSummary {
   return {
