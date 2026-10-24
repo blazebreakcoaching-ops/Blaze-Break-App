@@ -6018,6 +6018,7 @@ import {
 import { getCalendarActionPermission, setCalendarActionPermission } from './nova-calendar-action-permission';
 import { buildGoogleCalendarConnector, createRealGoogleCalendarHttpTransport } from './nova-google-calendar-connector-factory';
 import type { NovaExternalConnector } from './nova-take-the-load-connector-contract';
+import { getCalendarProtectionPilotEligibility, setCalendarProtectionPilotEligibility } from './nova-calendar-pilot-eligibility';
 
 // Phase 5I, directive §2 - the real connector factory's only production
 // call site. Reuses `getValidAccessToken` (this file's own existing
@@ -6055,6 +6056,14 @@ const NovaCalendarProposeSchema = z.object({
   startIso: z.string(),
   endIso: z.string(),
   title: z.string().min(1).max(200),
+  // Phase 5J, directive §2 - set only by the "Modify" pathway, never by a
+  // fresh proposal. Ownership is enforced structurally, not by this
+  // schema: prepareCalendarProtectionProposal looks the original up
+  // under THIS caller's own uid path, so a supplied id belonging to
+  // another user's proposal simply does not exist from here and is
+  // refused as cannot_supersede, never silently superseding someone
+  // else's proposal.
+  supersedesProposalId: z.string().min(1).max(200).optional(),
 }).strict();
 
 app.get("/api/nova/calendar-protection/action-permission", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -6102,10 +6111,21 @@ app.post("/api/nova/calendar-protection/propose", verifyAppCheck, authenticateFi
     }
     let proposal;
     try {
-      proposal = await prepareCalendarProtectionProposal(db, uid, parsed.data.idempotencyKey, parsed.data);
+      proposal = await prepareCalendarProtectionProposal(
+        db, uid, parsed.data.idempotencyKey, parsed.data,
+        parsed.data.supersedesProposalId ? { supersedesProposalId: parsed.data.supersedesProposalId } : undefined,
+      );
     } catch (prepareErr: any) {
       if (typeof prepareErr?.message === 'string' && prepareErr.message.startsWith('invalid_time_range:')) {
         return res.status(400).json({ error: prepareErr.message });
+      }
+      // Phase 5J, directive §2 - a Modify request against an original
+      // that is already executed/executing/superseded/etc. is an honest
+      // state conflict, not a validation error or an unexpected server
+      // fault - 409, matching this feature's existing fingerprint_mismatch
+      // convention on /approve.
+      if (typeof prepareErr?.message === 'string' && prepareErr.message.startsWith('cannot_supersede:')) {
+        return res.status(409).json({ error: prepareErr.message });
       }
       throw prepareErr;
     }
@@ -6261,8 +6281,16 @@ app.post("/api/nova/calendar-protection/:proposalId/retry", verifyAppCheck, auth
     const proposal = await retryCalendarProtectionExecution(getDb(), uid, req.params.proposalId);
     res.json({ proposal });
   } catch (err: any) {
-    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    // Phase 5J, directive §2/§5 - every error this function actually
+    // throws (not-failed, retry cap reached, superseded) is an honest,
+    // expected state conflict the user should see verbatim, not a
+    // generic 500 - the same 409 convention /undo already uses just
+    // below. "No such calendar protection proposal" also lands here as
+    // 409 rather than 404 - acceptable, since it is itself just one more
+    // reason this specific state transition is refused, and the message
+    // itself is never ownership-revealing (this file's own doc path
+    // already scopes lookups to the caller's own uid).
+    res.status(409).json({ error: err.message || "This could not be retried." });
   }
 });
 
@@ -7885,6 +7913,54 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
     const planChange = isUpgrade(previousPlan, plan) ? 'upgrade' : isDowngrade(previousPlan, plan) ? 'downgrade' : 'lateral';
     await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange });
     res.json({ success: true });
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
+  }
+});
+
+// Phase 5J, directive §4 - the ONLY writer of Calendar Protection's
+// pilot-eligibility gate (nova-calendar-pilot-eligibility.ts's own
+// header explains why this is a fifth, admin-only layer distinct from
+// allowCalendarActions). requireAdmin here is what makes "never user
+// self-service" actually true - no other route in this codebase writes
+// to users/{uid}/platform_pilot_access/calendar_protection at all.
+// Granting this to any uid still authorises nothing on its own:
+// CALENDAR_PROTECTION_EXECUTION_ENABLED stays hardcoded false in
+// nova-calendar-protection-service.ts regardless, so this route exists
+// and is tested without itself making any real execution reachable.
+const NovaCalendarPilotEligibilitySchema = z.object({ eligible: z.boolean() }).strict();
+
+app.post("/api/admin/users/:uid/calendar-protection-pilot-eligibility", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const admin = requireAdmin(req);
+    const targetUid = req.params.uid;
+    const parsed = NovaCalendarPilotEligibilitySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: '"eligible" (boolean) is required.' });
+    }
+    const state = await setCalendarProtectionPilotEligibility(getDb(), targetUid, parsed.data.eligible, admin.uid);
+    await logAdminAction(req, parsed.data.eligible ? "grant_calendar_protection_pilot_eligibility" : "revoke_calendar_protection_pilot_eligibility", targetUid, "", {});
+    res.json({ success: true, state });
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      res.status(403).json({ error: err.message });
+    } else {
+      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+    }
+  }
+});
+
+app.get("/api/admin/users/:uid/calendar-protection-pilot-eligibility", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requireAdmin(req);
+    const state = await getCalendarProtectionPilotEligibility(getDb(), req.params.uid);
+    res.json({ state });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });

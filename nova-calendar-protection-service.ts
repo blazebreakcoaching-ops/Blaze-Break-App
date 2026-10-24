@@ -6,22 +6,38 @@
 //
 // AUDIT FINDING THIS FILE IS BUILT AROUND (recorded in Phase 5C's
 // delivery report): `signInWithCalendar` (src/lib/auth.tsx) already
-// requests BOTH `calendar.readonly` AND `calendar.events` (a WRITE-
-// capable scope) at sign-in time, for every user who has ever connected
-// their calendar through CalendarDefenseView.tsx/MicroRecovery.tsx/
-// IntegrationsDashboard.tsx - this is a real, already-granted OAuth
-// scope, not a hypothetical future one. Despite that, NO code anywhere
-// in this codebase has ever made a write call with it (confirmed by
-// grep: every existing fetch against googleapis.com/calendar is a GET).
-// This file does not change that. `CALENDAR_PROTECTION_EXECUTION_ENABLED`
-// below is hardcoded `false` - the directive's own instruction ("keep
-// the execution path disabled... without separate explicit
-// authorisation") is enforced structurally: `executeCalendarProtection`
-// checks this flag BEFORE ever calling a connector, real or fake, in
-// production code. Only this file's own test suite flips it, through a
-// loudly-named test-only override, to exercise the execution path
-// against the fake connector contract (nova-take-the-load-connector-
-// contract.ts) - never a real Google Calendar write.
+// requests `calendar.events` (a WRITE-capable scope) at sign-in time,
+// for every user who has ever connected their calendar through
+// CalendarDefenseView.tsx/MicroRecovery.tsx/IntegrationsDashboard.tsx -
+// this is a real, already-granted OAuth scope, not a hypothetical future
+// one.
+//
+// Phase 5J CORRECTION of this comment's own prior claim: an earlier
+// version said "NO code anywhere in this codebase has ever made a write
+// call with it" - that was already false when written. Boundary
+// Autopilot's `declineCalendarEvent` (src/lib/boundary-autopilot.ts) is
+// a real, live, already-shipped feature that PATCHes a calendar event's
+// attendee response using this exact client-held scope - a genuine
+// write, reachable today from App.tsx's live navigation. That write is
+// unrelated to Calendar Protection's own category and does not use any
+// function in this file; it simply means the broader claim "this scope
+// has never been used for a write" was never true. See
+// NOVA_PHASE5J_PILOT_SAFETY_REPORT.md for the full scope audit (which
+// also removed the separate, genuinely redundant `calendar.readonly`
+// scope auth.tsx used to request alongside `calendar.events`).
+//
+// What remains true, and is what this file's own kill-switch exists for:
+// `CALENDAR_PROTECTION_EXECUTION_ENABLED` below is hardcoded `false` -
+// the directive's own instruction ("keep the execution path disabled...
+// without separate explicit authorisation") is enforced structurally:
+// `executeCalendarProtectionProposal` checks this flag BEFORE ever
+// calling a connector, real or fake, in production code, regardless of
+// what other, unrelated features in this codebase do with their own
+// separately-scoped client-held tokens. Only this file's own test suite
+// flips it, through a loudly-named test-only override, to exercise the
+// execution path against the fake connector contract
+// (nova-take-the-load-connector-contract.ts) - never a real Google
+// Calendar write.
 //
 // SECOND AUDIT FINDING, Phase 5D: the `getCalendarConnectionState`
 // permission check server.ts's routes used through Phase 5C
@@ -41,6 +57,17 @@
 //    file - every function takes it as an already-verified value, the
 //    same contract every other NHEI/Nova persistence function in this
 //    codebase uses.
+//  - Phase 5J, directive §4: `executeCalendarProtectionProposal` checks
+//    pilot eligibility (nova-calendar-pilot-eligibility.ts) immediately
+//    after the kill switch and transaction-support checks, before any
+//    per-proposal state is touched - see that file's own header for the
+//    full five-layer precedence (global kill switch, pilot eligibility,
+//    provider connection, allowCalendarActions, this proposal's own
+//    approval). Modifying a proposal (Phase 5J, directive §2) is a
+//    further, independent check layered on top of all five: a proposal's
+//    own `supersededBy` field, once set, blocks its approval from being
+//    acted on by execute/approve/retry regardless of what any of those
+//    five layers would otherwise allow.
 //  - Approval is tied to a specific proposal's exact parameters via
 //    `approvalFingerprint` (a hash of the proposal's own id + start/end
 //    time + title) - `recordCalendarProtectionApproval` REJECTS a
@@ -99,6 +126,7 @@
 import type { CalendarSignalState, RedZone } from './calendar-workload-defence-engine';
 import { computeRedZones, hasAnyElevatedZone } from './calendar-workload-defence-engine';
 import type { NovaExternalConnector, NovaExternalConnectorRequest } from './nova-take-the-load-connector-contract';
+import { isCalendarProtectionPilotEligible } from './nova-calendar-pilot-eligibility';
 import crypto from 'node:crypto';
 
 // Structural kill-switch - see this file's own header. Never read from an
@@ -145,7 +173,47 @@ export interface NovaCalendarProtectionProposal {
   /** Populated only from a genuine `ok: true` connector execution outcome - see this file's own header on undo. */
   externalEventId: string | null;
   lastTransitionAt: string;
+  /**
+   * Phase 5J, directive §2 - the proposal this one REPLACES, if it was
+   * created via Modify rather than from scratch. Null for an ordinary
+   * fresh proposal. Purely a backward-pointing audit link - it does not
+   * itself change this proposal's own authorisation.
+   */
+  supersedes: string | null;
+  /**
+   * Phase 5J, directive §2 - set the moment ANOTHER proposal supersedes
+   * THIS one (via Modify). Once set, this proposal's own approval - even
+   * a still-valid, unexpired one - can never again authorise an execute,
+   * an undo-eligible confirm, or a retry: see
+   * `NON_SUPERSEDABLE_STATES`/the `supersedes` guard inside
+   * `executeCalendarProtectionProposal`, `recordCalendarProtectionApproval`,
+   * and `retryCalendarProtectionExecution`. Deliberately a SEPARATE field
+   * from `state` - `state` keeps recording the truthful history of what
+   * this proposal actually was (e.g. "approved"), while this field is the
+   * authoritative, independent gate that an already-approved state can no
+   * longer be acted on. A proposal can be superseded at most once - this
+   * is never overwritten after being set.
+   */
+  supersededBy: string | null;
 }
+
+/**
+ * States a proposal can be superseded FROM (directive §2's "Modify").
+ * Deliberately excludes every state where something real has already
+ * happened, or might still be happening, or is genuinely unknown whether
+ * it happened - `confirmed`/`executing`/`undoing`/`undone` because the
+ * real world has already been (or is being) touched, and `ambiguous`
+ * because whether it was touched is not yet known - walking away from an
+ * ambiguous proposal via Modify, before reconciliation ever resolves it,
+ * would let a real, unresolved external action go permanently
+ * unreconciled. Every other state - `prepared`, `awaiting_approval`,
+ * `approved`, `declined`, `failed` - represents a point where nothing
+ * real has happened yet (or, for `declined`/`failed`, nothing real ever
+ * will from that specific proposal), so replacing it is always safe.
+ */
+const NON_SUPERSEDABLE_STATES: ReadonlySet<NovaCalendarProtectionState> = new Set([
+  'confirmed', 'executing', 'undoing', 'undone', 'ambiguous',
+]);
 
 export interface FirestoreDocRefLike {
   get(): Promise<{ exists: boolean; data(): any }>;
@@ -234,12 +302,31 @@ async function requireTransaction<T>(db: FirestoreLike, fn: (tx: FirestoreTransa
  * existing proposal rather than creating a duplicate, so a double-tap or
  * a retried request can never produce two competing proposals for the
  * same intent.
+ *
+ * `options.supersedesProposalId` (Phase 5J, directive §2) - set when this
+ * proposal is being created by "Modify" against an earlier one. When
+ * given, the ORIGINAL proposal's `supersededBy` is set to this new
+ * proposal's id in the SAME Firestore transaction that creates this new
+ * proposal - either both happen, or neither does. The two writes are
+ * forced through the real transaction's own optimistic-concurrency
+ * conflict detection, which is what actually makes "modify this proposal
+ * while someone else concurrently executes/modifies the very same one"
+ * resolve safely: whichever transaction's read of the original commits
+ * first wins, and the loser re-reads the now-current state and reacts to
+ * it (either refusing to supersede an already-superseded/already-
+ * executing original, or - for a concurrent execute - seeing
+ * `supersededBy` already set and refusing to execute). Throws a
+ * `cannot_supersede: ...`-prefixed Error (matching this function's
+ * existing `invalid_time_range: ...` convention) rather than returning a
+ * union type, so every existing caller that never passes `options` keeps
+ * its exact current return shape.
  */
 export async function prepareCalendarProtectionProposal(
   db: FirestoreLike,
   uid: string,
   idempotencyKey: string,
   change: { startIso: string; endIso: string; title: string },
+  options?: { supersedesProposalId?: string },
 ): Promise<NovaCalendarProtectionProposal> {
   const timeValidation = validateCalendarChangeTimes(change);
   if (timeValidation.ok === false) {
@@ -248,22 +335,53 @@ export async function prepareCalendarProtectionProposal(
   // Idempotency lookup by doc-id convention (derived deterministically
   // from the idempotency key) rather than a Firestore query, so this
   // works identically against any FirestoreLike implementation,
-  // including simple test doubles with no query engine.
+  // including simple test doubles with no query engine. Checked BEFORE
+  // any supersession work, so a retried request with the same key never
+  // attempts to supersede the original a second time.
   const proposalId = `cpp_${idempotencyKey}`;
-  const existing = await proposalDoc(db, uid, proposalId).get();
+  const newRef = proposalDoc(db, uid, proposalId);
+  const existing = await newRef.get();
   if (existing.exists) {
     return existing.data() as NovaCalendarProtectionProposal;
   }
   const approvalFingerprint = computeApprovalFingerprint({ proposalId, ...change });
   const now = new Date().toISOString();
+  const supersedesProposalId = options?.supersedesProposalId ?? null;
   const proposal: NovaCalendarProtectionProposal = {
     proposalId, idempotencyKey, uid, state: 'prepared',
     startIso: change.startIso, endIso: change.endIso, title: change.title,
     approvalFingerprint, failureReason: null, retryCount: 0,
     approvedAt: null, approvalExpiresAt: null, activeAttemptId: null,
     externalEventId: null, lastTransitionAt: now,
+    supersedes: supersedesProposalId, supersededBy: null,
   };
-  await proposalDoc(db, uid, proposalId).set(proposal);
+
+  if (supersedesProposalId) {
+    if (supersedesProposalId === proposalId) {
+      throw new Error('cannot_supersede: a proposal cannot supersede itself.');
+    }
+    const originalRef = proposalDoc(db, uid, supersedesProposalId);
+    await requireTransaction(db, async (tx) => {
+      const originalSnap = await tx.get(originalRef);
+      if (!originalSnap.exists) {
+        throw new Error('cannot_supersede: the original proposal does not exist.');
+      }
+      const original = originalSnap.data() as NovaCalendarProtectionProposal;
+      if (original.supersededBy) {
+        throw new Error('cannot_supersede: this proposal has already been superseded by another.');
+      }
+      if (NON_SUPERSEDABLE_STATES.has(original.state)) {
+        throw new Error(`cannot_supersede: a proposal in state "${original.state}" can no longer be modified.`);
+      }
+      tx.set(originalRef, { ...original, supersededBy: proposalId, lastTransitionAt: new Date().toISOString() });
+      tx.set(newRef, proposal);
+    });
+    await recordAuditEntry(db, uid, supersedesProposalId, 'superseded', { supersededBy: proposalId });
+    await recordAuditEntry(db, uid, proposalId, 'prepared', { startIso: change.startIso, endIso: change.endIso, title: change.title, supersedes: supersedesProposalId });
+    return proposal;
+  }
+
+  await newRef.set(proposal);
   await recordAuditEntry(db, uid, proposalId, 'prepared', { startIso: change.startIso, endIso: change.endIso, title: change.title });
   return proposal;
 }
@@ -283,7 +401,9 @@ export type NovaCalendarApprovalOutcome =
   | { status: 'approved'; proposal: NovaCalendarProtectionProposal }
   | { status: 'declined'; proposal: NovaCalendarProtectionProposal }
   | { status: 'fingerprint_mismatch' } // the directive's own named attack: "modified approval parameters"
-  | { status: 'not_awaiting_approval' };
+  | { status: 'not_awaiting_approval' }
+  | { status: 'superseded'; proposal: NovaCalendarProtectionProposal } // Phase 5J, directive §2
+  | { status: 'transaction_support_required' };
 
 /**
  * The server-side authorisation gate. `approved: true` ALONE is never
@@ -291,6 +411,14 @@ export type NovaCalendarApprovalOutcome =
  * this proposal was prepared with. A caller that approves a DIFFERENT
  * fingerprint than the one actually shown to the user (whether by bug,
  * tampering, or a stale UI) is rejected outright, never partially honoured.
+ *
+ * Phase 5J, directive §2 - now runs inside a real transaction (previously
+ * a plain read-then-write) and checks `supersededBy` before honouring a
+ * decision. Without the transaction, a concurrent Modify call that
+ * supersedes this exact proposal between this function's own read and
+ * write could have its `supersededBy` write silently clobbered by this
+ * function's un-transactional `.set()` - the same class of race directive
+ * §2 names for execute, just one step earlier in the lifecycle.
  */
 export async function recordCalendarProtectionApproval(
   db: FirestoreLike,
@@ -298,34 +426,49 @@ export async function recordCalendarProtectionApproval(
   proposalId: string,
   decision: { approved: boolean; approvalFingerprint: string },
 ): Promise<NovaCalendarApprovalOutcome> {
-  const snap = await proposalDoc(db, uid, proposalId).get();
-  if (!snap.exists) throw new Error('No such calendar protection proposal.');
-  const proposal = snap.data() as NovaCalendarProtectionProposal;
-  if (proposal.state !== 'awaiting_approval') return { status: 'not_awaiting_approval' };
-  if (decision.approvalFingerprint !== proposal.approvalFingerprint) {
-    await recordAuditEntry(db, uid, proposalId, 'approval_fingerprint_mismatch', { suppliedFingerprint: decision.approvalFingerprint });
-    return { status: 'fingerprint_mismatch' };
+  if (!db.runTransaction) {
+    return { status: 'transaction_support_required' };
   }
-  const now = new Date().toISOString();
-  const nextState: NovaCalendarProtectionState = decision.approved ? 'approved' : 'declined';
-  const next: NovaCalendarProtectionProposal = {
-    ...proposal, state: nextState, lastTransitionAt: now,
-    approvedAt: decision.approved ? now : null,
-    approvalExpiresAt: decision.approved ? new Date(Date.now() + CALENDAR_PROTECTION_APPROVAL_TTL_MS).toISOString() : null,
-  };
-  await proposalDoc(db, uid, proposalId).set(next);
-  await recordAuditEntry(db, uid, proposalId, decision.approved ? 'approved' : 'declined', {});
-  return { status: nextState, proposal: next };
+  const ref = proposalDoc(db, uid, proposalId);
+  let fingerprintMismatch = false;
+  const result = await db.runTransaction(async (tx): Promise<NovaCalendarApprovalOutcome> => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error('No such calendar protection proposal.');
+    const proposal = snap.data() as NovaCalendarProtectionProposal;
+    if (proposal.state !== 'awaiting_approval') return { status: 'not_awaiting_approval' };
+    if (proposal.supersededBy) return { status: 'superseded', proposal };
+    if (decision.approvalFingerprint !== proposal.approvalFingerprint) {
+      fingerprintMismatch = true;
+      return { status: 'fingerprint_mismatch' };
+    }
+    const now = new Date().toISOString();
+    const nextState: NovaCalendarProtectionState = decision.approved ? 'approved' : 'declined';
+    const next: NovaCalendarProtectionProposal = {
+      ...proposal, state: nextState, lastTransitionAt: now,
+      approvedAt: decision.approved ? now : null,
+      approvalExpiresAt: decision.approved ? new Date(Date.now() + CALENDAR_PROTECTION_APPROVAL_TTL_MS).toISOString() : null,
+    };
+    tx.set(ref, next);
+    return { status: nextState, proposal: next };
+  });
+  if (fingerprintMismatch) {
+    await recordAuditEntry(db, uid, proposalId, 'approval_fingerprint_mismatch', { suppliedFingerprint: decision.approvalFingerprint });
+  } else if (result.status === 'approved' || result.status === 'declined') {
+    await recordAuditEntry(db, uid, proposalId, result.status, {});
+  }
+  return result;
 }
 
 export type NovaCalendarExecutionOutcome =
   | { status: 'execution_disabled' } // the hardcoded kill-switch - no connector was ever called
+  | { status: 'pilot_not_eligible' } // Phase 5J, directive §4 - layer 2: this account is not one of the explicitly chosen pilot accounts
   | { status: 'transaction_support_required' }
   | { status: 'already_executed'; proposal: NovaCalendarProtectionProposal } // idempotent replay - no second connector call
   | { status: 'already_executing'; proposal: NovaCalendarProtectionProposal } // another in-flight attempt currently holds the claim
   | { status: 'ambiguous'; proposal: NovaCalendarProtectionProposal } // the connector call's outcome is genuinely unknown
   | { status: 'approval_expired'; proposal: NovaCalendarProtectionProposal }
   | { status: 'not_approved' }
+  | { status: 'superseded'; proposal: NovaCalendarProtectionProposal } // Phase 5J, directive §2 - replaced by a newer proposal via Modify; this approval can no longer authorise anything
   | { status: 'confirmed'; proposal: NovaCalendarProtectionProposal }
   | { status: 'failed'; proposal: NovaCalendarProtectionProposal };
 
@@ -355,8 +498,24 @@ export async function executeCalendarProtectionProposal(
   if (!executionEnabled || !connector) {
     return { status: 'execution_disabled' };
   }
+  // Transaction support is a more fundamental infrastructure capability
+  // than pilot eligibility - checked first, before this function ever
+  // attempts a Firestore READ (the pilot-eligibility check immediately
+  // below) against a `db` that may not support the full feature set this
+  // function needs at all.
   if (!db.runTransaction) {
     return { status: 'transaction_support_required' };
+  }
+  // Phase 5J, directive §4 - layer 2 of the restricted-pilot contract,
+  // checked immediately after the global kill switch and the transaction-
+  // support check, and before every per-request check below (state,
+  // expiry, supersession). See nova-calendar-pilot-eligibility.ts's own
+  // header for the full five-layer precedence this sits in. Never
+  // reachable in production today since layer 1 above already always
+  // short-circuits first - exercised here only via
+  // TEST_ONLY_FORCE_EXECUTION_ENABLED.
+  if (!(await isCalendarProtectionPilotEligible(db, uid))) {
+    return { status: 'pilot_not_eligible' };
   }
 
   const ref = proposalDoc(db, uid, proposalId);
@@ -373,6 +532,15 @@ export async function executeCalendarProtectionProposal(
     }
     if (proposal.state === 'executing') {
       return { kind: 'short_circuit' as const, outcome: { status: 'already_executing', proposal } as NovaCalendarExecutionOutcome };
+    }
+    // Phase 5J, directive §2 - checked BEFORE the generic not_approved
+    // fallthrough below, and inside this same transaction, so a
+    // concurrent Modify call that supersedes this exact proposal can
+    // never lose the race silently: whichever of this claim or that
+    // supersession commits first to Firestore wins, and the other
+    // re-reads the now-current document and reacts to it here.
+    if (proposal.supersededBy) {
+      return { kind: 'short_circuit' as const, outcome: { status: 'superseded', proposal } as NovaCalendarExecutionOutcome };
     }
     if (proposal.state !== 'approved') {
       return { kind: 'short_circuit' as const, outcome: { status: 'not_approved' } as NovaCalendarExecutionOutcome };
@@ -450,26 +618,44 @@ export async function executeCalendarProtectionProposal(
   return finalOutcome;
 }
 
+// Phase 5J, directive §2 - now transactional (previously a plain
+// read-then-write), for the same reason recordCalendarProtectionApproval
+// became transactional: a 'failed' proposal is supersedable, so a
+// concurrent Modify call racing against a retry on the exact same
+// proposal must not have one silently clobber the other's write.
 export async function retryCalendarProtectionExecution(db: FirestoreLike, uid: string, proposalId: string): Promise<NovaCalendarProtectionProposal> {
-  const snap = await proposalDoc(db, uid, proposalId).get();
-  if (!snap.exists) throw new Error('No such calendar protection proposal.');
-  const proposal = snap.data() as NovaCalendarProtectionProposal;
-  // Deliberately `!== 'failed'` only - an 'ambiguous' outcome is NOT a
-  // 'failed' one, so it is structurally excluded from retry here. See
-  // this file's own header on why that is the intended, conservative
-  // behaviour rather than a gap to close.
-  if (proposal.state !== 'failed') throw new Error('Can only retry a failed proposal.');
-  if (proposal.retryCount >= CALENDAR_PROTECTION_MAX_RETRIES) {
-    throw new Error(`This proposal has already been retried ${proposal.retryCount} times, the maximum allowed (${CALENDAR_PROTECTION_MAX_RETRIES}). It cannot be retried automatically again.`);
-  }
-  const next: NovaCalendarProtectionProposal = {
-    ...proposal, state: 'approved', retryCount: proposal.retryCount + 1, failureReason: null,
-    lastTransitionAt: new Date().toISOString(),
-    approvalExpiresAt: new Date(Date.now() + CALENDAR_PROTECTION_APPROVAL_TTL_MS).toISOString(),
-  };
-  await proposalDoc(db, uid, proposalId).set(next);
-  await recordAuditEntry(db, uid, proposalId, 'retry_requested', { retryCount: next.retryCount });
-  return next;
+  return requireTransaction(db, async (tx) => {
+    const ref = proposalDoc(db, uid, proposalId);
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error('No such calendar protection proposal.');
+    const proposal = snap.data() as NovaCalendarProtectionProposal;
+    if (proposal.supersededBy) {
+      throw new Error('This proposal has been superseded by a newer version and can no longer be retried.');
+    }
+    // Deliberately `!== 'failed'` only - an 'ambiguous' outcome is NOT a
+    // 'failed' one, so it is structurally excluded from retry here. See
+    // this file's own header on why that is the intended, conservative
+    // behaviour rather than a gap to close.
+    if (proposal.state !== 'failed') throw new Error('Can only retry a failed proposal.');
+    if (proposal.retryCount >= CALENDAR_PROTECTION_MAX_RETRIES) {
+      throw new Error(`This proposal has already been retried ${proposal.retryCount} times, the maximum allowed (${CALENDAR_PROTECTION_MAX_RETRIES}). It cannot be retried automatically again.`);
+    }
+    const next: NovaCalendarProtectionProposal = {
+      ...proposal, state: 'approved', retryCount: proposal.retryCount + 1, failureReason: null,
+      lastTransitionAt: new Date().toISOString(),
+      approvalExpiresAt: new Date(Date.now() + CALENDAR_PROTECTION_APPROVAL_TTL_MS).toISOString(),
+    };
+    tx.set(ref, next);
+    // Firestore transaction update functions must not perform I/O other
+    // than through `tx` (the real SDK forbids arbitrary async work inside
+    // one, since it may be retried) - the audit write happens after this
+    // transaction resolves, same as every other audit write in this file
+    // that follows a transactional state change.
+    return next;
+  }).then(async (next) => {
+    await recordAuditEntry(db, uid, proposalId, 'retry_requested', { retryCount: next.retryCount });
+    return next;
+  });
 }
 
 /**

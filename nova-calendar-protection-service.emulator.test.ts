@@ -43,6 +43,7 @@ import {
   reconcileAmbiguousCalendarProtectionProposal, type NovaCalendarProtectionProposal,
 } from './nova-calendar-protection-service';
 import { createFakeConnectorForTesting } from './nova-take-the-load-connector-contract';
+import { setCalendarProtectionPilotEligibility } from './nova-calendar-pilot-eligibility';
 
 const EMULATOR_HOST = '127.0.0.1:8080';
 const PROJECT_ID = 'demo-blaze-break-test';
@@ -97,7 +98,18 @@ beforeEach(async (ctx) => {
 
 const CHANGE = { startIso: '2026-03-02T14:00:00.000Z', endIso: '2026-03-02T14:30:00.000Z', title: 'Protected recovery block' };
 
+// Phase 5J, directive §4 added a pilot-eligibility check to
+// executeCalendarProtectionProposal, positioned after the kill switch and
+// transaction-support checks but before the proposal's own approval is
+// read. Every test in this file that goes on to call execute does so via
+// this helper, so seeding eligibility for `uid` here - exactly once, right
+// after a real proposal exists for it - covers every caller without
+// touching the individual test bodies below, matching this phase's own
+// precedence contract (eligibility is necessary but never sufficient:
+// TEST_ONLY_FORCE_EXECUTION_ENABLED still has to be passed separately by
+// each test, and the real kill switch stays hardcoded off outside tests).
 async function approvedProposal(uid: string, key: string): Promise<NovaCalendarProtectionProposal> {
+  await setCalendarProtectionPilotEligibility(db, uid, true, 'emulator-test-admin');
   const prepared = await prepareCalendarProtectionProposal(db, uid, key, CHANGE);
   await presentCalendarProtectionForApproval(db, uid, prepared.proposalId);
   const outcome = await recordCalendarProtectionApproval(db, uid, prepared.proposalId, { approved: true, approvalFingerprint: prepared.approvalFingerprint });
@@ -162,6 +174,80 @@ describe('Firestore emulator: concurrent execution claims', () => {
     // real but not the only real timing.
     const losingStatus = statuses.find((s) => s !== 'confirmed');
     expect(['already_executing', 'already_executed']).toContain(losingStatus);
+  });
+});
+
+// Phase 5J, directive §2 - "Add real Firestore emulator tests for
+// relevant races" for the Modify/supersession mechanism, against the
+// real Admin SDK's actual optimistic-concurrency transaction semantics,
+// not the in-memory fake's FIFO-serialised approximation of them (see
+// nova-calendar-protection-service.test.ts's own supersession describe
+// block for the fast, serialised version of these same scenarios).
+describe('Firestore emulator: concurrent Modify (supersede) vs execute', () => {
+  it('a concurrent supersede and execute attempt on the same approved proposal never both succeed - either the connector is invoked exactly once, or the proposal is correctly left superseded with the connector never touched', async () => {
+    const uid = 'emu_user_concurrent_supersede_execute';
+    const proposal = await approvedProposal(uid, 'concurrent-supersede-execute-original');
+    let connectorCallCount = 0;
+    const countingConnector = {
+      ...createFakeConnectorForTesting(),
+      execute: async (req: any) => { connectorCallCount += 1; return createFakeConnectorForTesting().execute(req); },
+    };
+
+    const [executeResult, supersedeResult] = await Promise.all([
+      executeCalendarProtectionProposal(db, uid, proposal.proposalId, countingConnector as any, TEST_ONLY_FORCE_EXECUTION_ENABLED),
+      prepareCalendarProtectionProposal(
+        db, uid, 'concurrent-supersede-execute-replacement', CHANGE,
+        { supersedesProposalId: proposal.proposalId },
+      ).catch((err) => ({ cannotSupersede: true, message: err.message })),
+    ]);
+
+    // Whichever of the two transactions commits its read of the original
+    // first wins. The connector is NEVER invoked more than once, and the
+    // two outcomes are mutually exclusive against the real emulator, not
+    // just in the fake's own serialised approximation:
+    expect(connectorCallCount).toBeLessThanOrEqual(1);
+    if (connectorCallCount === 1) {
+      // Execute won the race and claimed the proposal before supersede's
+      // transaction could mark it - genuinely confirmed, and supersede
+      // then correctly refuses (the proposal is no longer in a
+      // supersedable state once 'executing'/'confirmed').
+      expect(executeResult.status).toBe('confirmed');
+      expect((supersedeResult as any).cannotSupersede).toBe(true);
+      expect((supersedeResult as any).message).toMatch(/cannot_supersede/);
+    } else {
+      // Supersede won the race - execute must see supersededBy already
+      // set and refuse, never reaching (or having reached) the connector.
+      expect(executeResult.status).toBe('superseded');
+      expect((supersedeResult as any).proposalId).toBeTruthy();
+    }
+  });
+});
+
+describe('Firestore emulator: concurrent Modify (supersede) attempts on the same original', () => {
+  it('two concurrent Modify clicks against the same original proposal - exactly one supersedes it, the other is refused, never a silently overwritten link', async () => {
+    const uid = 'emu_user_concurrent_double_supersede';
+    const original = await approvedProposal(uid, 'concurrent-double-supersede-original');
+
+    const [first, second] = await Promise.all([
+      prepareCalendarProtectionProposal(db, uid, 'concurrent-double-supersede-replacement-a', CHANGE, { supersedesProposalId: original.proposalId })
+        .catch((err) => ({ cannotSupersede: true, message: err.message })),
+      prepareCalendarProtectionProposal(db, uid, 'concurrent-double-supersede-replacement-b', CHANGE, { supersedesProposalId: original.proposalId })
+        .catch((err) => ({ cannotSupersede: true, message: err.message })),
+    ]);
+
+    const results = [first, second];
+    const succeeded = results.filter((r: any) => !r.cannotSupersede);
+    const failed = results.filter((r: any) => r.cannotSupersede);
+    // Exactly one of the two concurrent supersede attempts actually
+    // commits, no matter how the real emulator's transactions interleave
+    // - the other is refused outright, never silently re-pointing the
+    // original's supersededBy a second time.
+    expect(succeeded.length).toBe(1);
+    expect(failed.length).toBe(1);
+    expect((failed[0] as any).message).toMatch(/cannot_supersede/);
+
+    const originalAfter = await db.collection(`users/${uid}/calendar_protection_proposals`).doc(original.proposalId).get();
+    expect(originalAfter.data()!.supersededBy).toBe((succeeded[0] as any).proposalId);
   });
 });
 

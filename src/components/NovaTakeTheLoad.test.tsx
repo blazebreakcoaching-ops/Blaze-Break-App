@@ -160,6 +160,39 @@ describe('NovaTakeTheLoad', () => {
     const lastCall = vi.mocked(secureApiFetch).mock.calls.at(-1);
     expect(lastCall?.[0]).toBe('/api/nova/calendar-protection/propose');
     expect((lastCall?.[1] as any)?.data?.idempotencyKey).not.toBe((vi.mocked(secureApiFetch).mock.calls[1]?.[1] as any)?.data?.idempotencyKey);
+    // Phase 5J, directive §2 - the actual server-authoritative fix: the
+    // re-propose call tells the server which original this replaces, so
+    // the server can mark it superseded (never just a client-side-only
+    // "forget about it", which left the original's own approval live).
+    expect((lastCall?.[1] as any)?.data?.supersedesProposalId).toBe('cpp_original');
+  });
+
+  // Phase 5J, directive §2 - once the SERVER has refused to act on a
+  // superseded proposal's approval, the UI must show that honestly
+  // rather than a generic error or (worse) a successful-looking state.
+  // Exercises this via Resume (the real path a user would hit a stale,
+  // already-superseded proposal through - e.g. an old browser tab still
+  // showing it, or picking it from history), the same pattern the
+  // existing "resuming a history entry" test already uses.
+  it('resuming a proposal that was superseded by a later Modify shows the honest "replaced" state and offers no further action buttons', async () => {
+    const SUPERSEDED = {
+      proposalId: 'cpp_original', state: 'approved', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',
+      title: 'Protected block', approvalFingerprint: 'fp-original', failureReason: null, retryCount: 0, externalEventId: null,
+      supersedes: null, supersededBy: 'cpp_replacement',
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse(NOT_GRANTED)); // permission load
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposals: [SUPERSEDED] })); // history
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: SUPERSEDED })); // resume
+
+    render(<NovaTakeTheLoad />);
+    await screen.findByText('Not granted');
+    await userEvent.click(screen.getByRole('button', { name: /show my history/i }));
+    await screen.findByText(/protected block/i);
+    await userEvent.click(screen.getByRole('button', { name: /^resume$/i }));
+
+    expect(await screen.findByText(/replaced by a newer version/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /try to apply this/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /modify instead/i })).not.toBeInTheDocument();
   });
 
   it('a fingerprint mismatch on approve shows a clear error instead of silently approving', async () => {

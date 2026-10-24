@@ -109,11 +109,21 @@ describe('signInWithGoogleCalendar', () => {
     // calendar/gmail scopes this variant adds beyond signInWithGoogle.
     const providerArg = (linkWithPopup as any).mock.calls[0][1];
     expect(providerArg.scopes).toEqual(expect.arrayContaining([
-      'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/calendar.events',
       'https://www.googleapis.com/auth/gmail.readonly',
     ]));
     expect(result).toBe(fakeResult);
+  });
+
+  // Phase 5J, directive §3 - calendar.readonly was removed as genuinely
+  // redundant (every real caller only ever reads calendars/primary/events,
+  // which calendar.events already covers for reading) - this proves it
+  // is gone, not just that the two still-needed scopes are present.
+  it('no longer requests the redundant calendar.readonly scope', async () => {
+    (linkWithPopup as any).mockResolvedValue(fakeResult);
+    await signInWithGoogleCalendar(fakeAuth({ isAnonymous: true }));
+    const providerArg = (linkWithPopup as any).mock.calls[0][1];
+    expect(providerArg.scopes).not.toContain('https://www.googleapis.com/auth/calendar.readonly');
   });
 
   it('falls back to signing into the real account on a collision, same as signInWithGoogle', async () => {

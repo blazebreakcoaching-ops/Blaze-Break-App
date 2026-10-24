@@ -14,14 +14,14 @@ vi.mock('express-rate-limit', () => ({ default: () => (_req: any, _res: any, nex
 vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{}] }));
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
 
-const USERS: Record<string, { email: string }> = { user_a: { email: 'a@test.dev' } };
+const USERS: Record<string, { email: string; role?: string }> = { user_a: { email: 'a@test.dev' } };
 
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
     verifyIdToken: async (t: string) => {
       const u = USERS[t];
       if (!u) throw new Error('unknown test uid');
-      return { uid: t, email: u.email };
+      return { uid: t, email: u.email, role: u.role };
     },
     getUser: async () => ({ customClaims: {} }),
   }),
@@ -54,14 +54,23 @@ vi.mock('./nova-google-calendar-connector-factory', () => ({
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, fakeDb } from './test/fake-firestore';
+import { resetStore, fakeDb, allPaths, getDocRaw } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 const CHANGE = { idempotencyKey: 'route-test-1', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z', title: 'Protected block' };
 
+// requireAdmin (server.ts) accepts any of: user.platform_admin === true,
+// user.admin === true, isPlatformAdminRole(user.role), or
+// isOwnerBootstrapEmail(user.email). 'platform_owner' is a real member of
+// PLATFORM_ADMIN_ROLES (admin-roles.ts) - same pattern used by
+// evolution-registry.route.test.ts's OWNER fixture - so this uid passes
+// requireAdmin without needing to fake a bootstrap email or custom claim.
+const ADMIN = 'admin_1';
+
 beforeEach(async () => {
   resetStore();
   USERS.user_a = { email: 'a@test.dev' };
+  USERS[ADMIN] = { email: 'admin@test.dev', role: 'platform_owner' };
 });
 
 async function connectCalendar() {
@@ -194,6 +203,111 @@ describe('full prepare -> present -> approve -> execute flow', () => {
       idempotencyKey: 'bad-times', startIso: '2026-03-01T10:00:00', endIso: '2026-03-01T10:30:00', title: 'No offset',
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// Phase 5J, directive §2 - route-level proof of the stale-approval fix,
+// through the real propose/approve/execute routes (not calling the
+// service functions directly, the way nova-calendar-protection-service.test.ts
+// does) - this is what an actual Modify click on the real app does.
+describe('Modify/supersession (Phase 5J, directive §2)', () => {
+  it('proposing with supersedesProposalId marks the original superseded and the new one records the link', async () => {
+    await connectCalendar();
+    const original = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const originalId = original.body.proposal.proposalId;
+
+    const replacement = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send({
+      idempotencyKey: 'route-test-replacement', startIso: '2026-03-01T11:00:00.000Z', endIso: '2026-03-01T11:30:00.000Z', title: 'Protected block (moved)',
+      supersedesProposalId: originalId,
+    });
+    expect(replacement.status).toBe(200);
+    expect(replacement.body.proposal.supersedes).toBe(originalId);
+
+    const originalAfter = await request(app).get(`/api/nova/calendar-protection/${originalId}`).set(auth('user_a'));
+    expect(originalAfter.body.proposal.supersededBy).toBe(replacement.body.proposal.proposalId);
+  });
+
+  // NOTE on what this route-level test can and cannot prove: with
+  // CALENDAR_PROTECTION_EXECUTION_ENABLED hardcoded false,
+  // executeCalendarProtectionProposal's very first check
+  // (`!executionEnabled || !connector`) short-circuits to
+  // execution_disabled BEFORE it ever reaches the supersededBy check - so
+  // through the REAL production route today, a superseded original still
+  // reports execution_disabled, same as always, never "superseded". That
+  // is correct and not a gap: the kill switch is a stronger, unconditional
+  // guarantee than the supersession check, and checking it first is this
+  // file's own established fail-closed pattern. The actual proof that
+  // supersession independently blocks execution - i.e. what happens the
+  // day the kill switch is ever lifted - is
+  // nova-calendar-protection-service.test.ts's own
+  // TEST_ONLY_FORCE_EXECUTION_ENABLED-based test ("THE CORE FIX"), which
+  // exercises executeCalendarProtectionProposal directly with execution
+  // force-enabled. This route-level test instead confirms the two
+  // independent safeguards compose correctly: superseding an approved
+  // proposal never weakens or bypasses the kill switch that is already
+  // there.
+  it('approving and then superseding a proposal does not weaken the kill switch - execute still honestly reports execution_disabled', async () => {
+    await connectCalendar();
+    const original = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const originalId = original.body.proposal.proposalId;
+    const fingerprint = original.body.proposal.approvalFingerprint;
+    await request(app).post(`/api/nova/calendar-protection/${originalId}/present`).set(auth('user_a'));
+    await request(app).post(`/api/nova/calendar-protection/${originalId}/approve`).set(auth('user_a')).send({ approved: true, approvalFingerprint: fingerprint });
+
+    // Modify: supersede the now-approved original with a replacement.
+    await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send({
+      idempotencyKey: 'route-test-core-fix-replacement', startIso: '2026-03-01T11:00:00.000Z', endIso: '2026-03-01T11:30:00.000Z', title: 'Protected block (moved)',
+      supersedesProposalId: originalId,
+    });
+
+    const executeRes = await request(app).post(`/api/nova/calendar-protection/${originalId}/execute`).set(auth('user_a'));
+    expect(executeRes.status).toBe(200);
+    expect(executeRes.body.status).toBe('execution_disabled');
+  });
+
+  it('approving an original that was superseded while awaiting approval reports superseded, not approved', async () => {
+    await connectCalendar();
+    const original = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const originalId = original.body.proposal.proposalId;
+    const fingerprint = original.body.proposal.approvalFingerprint;
+    await request(app).post(`/api/nova/calendar-protection/${originalId}/present`).set(auth('user_a'));
+
+    await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send({
+      idempotencyKey: 'route-test-approve-after-supersede-replacement', startIso: '2026-03-01T11:00:00.000Z', endIso: '2026-03-01T11:30:00.000Z', title: 'Protected block (moved)',
+      supersedesProposalId: originalId,
+    });
+
+    const approveRes = await request(app).post(`/api/nova/calendar-protection/${originalId}/approve`).set(auth('user_a')).send({ approved: true, approvalFingerprint: fingerprint });
+    expect(approveRes.body.status).toBe('superseded');
+  });
+
+  it('cannot supersede a proposal that does not exist under this account - refused with 409, not a crash', async () => {
+    await connectCalendar();
+    const res = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send({
+      idempotencyKey: 'route-test-missing-original', ...CHANGE, supersedesProposalId: 'cpp_does_not_exist',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/cannot_supersede/);
+  });
+
+  it("cannot supersede another user's proposal - account isolation is structural (the lookup is scoped to the caller's own uid path)", async () => {
+    await connectCalendar();
+    USERS.user_b = { email: 'b@test.dev' };
+    await (fakeDb as any).collection('users').doc('user_b').collection('nova_permissions').doc('current').set({ allowCalendarSignals: true, allowCalendarActions: true });
+    await (fakeDb as any).collection('users').doc('user_b').collection('live_signals').doc('calendar').set({
+      totalMeetingHours: 10, meetingCount: 8, backToBackCount: 1, eveningMeetingCount: 0, weekendMeetingCount: 0, windowDays: 7,
+      updatedAt: new Date().toISOString(),
+    });
+    const victimProposal = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_b')).send(CHANGE);
+    const victimProposalId = victimProposal.body.proposal.proposalId;
+
+    const res = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send({
+      idempotencyKey: 'route-test-cross-account-supersede', ...CHANGE, supersedesProposalId: victimProposalId,
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/cannot_supersede/);
+    const victimAfter = await request(app).get(`/api/nova/calendar-protection/${victimProposalId}`).set(auth('user_b'));
+    expect(victimAfter.body.proposal.supersededBy).toBeNull();
   });
 });
 
@@ -334,5 +448,89 @@ describe('read-only status and history routes', () => {
     const res = await request(app).get('/api/nova/calendar-protection/history').set(auth('user_a'));
     expect(res.status).toBe(200);
     expect(res.body.proposals.length).toBe(2);
+  });
+});
+
+// Phase 5J, directive §4 - the admin-only pilot-eligibility gate
+// (nova-calendar-pilot-eligibility.ts) is the fifth layer of the
+// execution-authorisation precedence contract and the ONLY writer of
+// users/{uid}/platform_pilot_access/calendar_protection. These tests
+// cover the route boundary that enforces that: a non-admin can never
+// reach it, an admin can grant/revoke it, a malformed body is refused,
+// and the grant/revoke is itself audited via logAdminAction - the same
+// way every other admin grant in this codebase is.
+describe('admin pilot-eligibility routes (Phase 5J, directive §4)', () => {
+  const ROUTE = (uid: string) => `/api/admin/users/${uid}/calendar-protection-pilot-eligibility`;
+
+  it('refuses a non-admin caller with 403 on both GET and POST, without touching stored eligibility', async () => {
+    const getRes = await request(app).get(ROUTE('user_a')).set(auth('user_a'));
+    expect(getRes.status).toBe(403);
+    const postRes = await request(app).post(ROUTE('user_a')).set(auth('user_a')).send({ eligible: true });
+    expect(postRes.status).toBe(403);
+    expect(getDocRaw('users/user_a/platform_pilot_access/calendar_protection')).toBeUndefined();
+  });
+
+  it('refuses an unauthenticated caller', async () => {
+    const res = await request(app).post(ROUTE('user_a')).send({ eligible: true });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it('GET defaults to not-eligible for a user with no document yet', async () => {
+    const res = await request(app).get(ROUTE('user_a')).set(auth(ADMIN));
+    expect(res.status).toBe(200);
+    expect(res.body.state).toEqual({ eligible: false, grantedAt: null, grantedBy: null, revokedAt: null });
+  });
+
+  it('rejects a non-boolean "eligible" with 400 and writes nothing', async () => {
+    const res = await request(app).post(ROUTE('user_a')).set(auth(ADMIN)).send({ eligible: 'yes' });
+    expect(res.status).toBe(400);
+    expect(getDocRaw('users/user_a/platform_pilot_access/calendar_protection')).toBeUndefined();
+  });
+
+  it('an admin can grant pilot eligibility, it is readable back, and it is audit-logged', async () => {
+    const grant = await request(app).post(ROUTE('user_a')).set(auth(ADMIN)).send({ eligible: true });
+    expect(grant.status).toBe(200);
+    expect(grant.body.state.eligible).toBe(true);
+    expect(grant.body.state.grantedBy).toBe(ADMIN);
+    expect(typeof grant.body.state.grantedAt).toBe('string');
+
+    const get = await request(app).get(ROUTE('user_a')).set(auth(ADMIN));
+    expect(get.body.state.eligible).toBe(true);
+
+    const logPaths = allPaths().filter((p) => p.startsWith('admin_audit_logs/'));
+    expect(logPaths.length).toBe(1);
+    const entry = getDocRaw(logPaths[0]) as any;
+    expect(entry.action).toBe('grant_calendar_protection_pilot_eligibility');
+    expect(entry.actorUid).toBe(ADMIN);
+    expect(entry.targetUid).toBe('user_a');
+  });
+
+  it('an admin can revoke previously granted eligibility, and it is audit-logged as a revoke', async () => {
+    await request(app).post(ROUTE('user_a')).set(auth(ADMIN)).send({ eligible: true });
+    const revoke = await request(app).post(ROUTE('user_a')).set(auth(ADMIN)).send({ eligible: false });
+    expect(revoke.status).toBe(200);
+    expect(revoke.body.state.eligible).toBe(false);
+    expect(typeof revoke.body.state.revokedAt).toBe('string');
+
+    const logPaths = allPaths().filter((p) => p.startsWith('admin_audit_logs/'));
+    expect(logPaths.length).toBe(2);
+    const revokeEntry = getDocRaw(logPaths[1]) as any;
+    expect(revokeEntry.action).toBe('revoke_calendar_protection_pilot_eligibility');
+    expect(revokeEntry.targetUid).toBe('user_a');
+  });
+
+  it('granting pilot eligibility to an account does not, by itself, authorise any real execution - the kill switch still wins', async () => {
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    const fingerprint = prepared.body.proposal.approvalFingerprint;
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/present`).set(auth('user_a'));
+    await request(app).post(`/api/nova/calendar-protection/${proposalId}/approve`).set(auth('user_a')).send({ approved: true, approvalFingerprint: fingerprint });
+
+    await request(app).post(ROUTE('user_a')).set(auth(ADMIN)).send({ eligible: true });
+
+    const executeRes = await request(app).post(`/api/nova/calendar-protection/${proposalId}/execute`).set(auth('user_a'));
+    expect(executeRes.status).toBe(200);
+    expect(executeRes.body.status).toBe('execution_disabled');
   });
 });

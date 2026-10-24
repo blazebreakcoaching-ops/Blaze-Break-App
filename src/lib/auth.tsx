@@ -110,7 +110,23 @@ export async function signInWithGoogle(authInstance: FirebaseAuth) {
 
 export async function signInWithGoogleCalendar(authInstance: FirebaseAuth) {
   const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+  // Phase 5J, directive §3 - audited every real consumer of this
+  // client-held token (calendar-signals.ts, gmail-signals.ts,
+  // boundary-autopilot.ts, and the inline calls in MicroRecovery.tsx/
+  // RecoveryFuelEngine.tsx): every one of them only ever calls
+  // calendars/primary/events (list or by id), never a calendar-list or
+  // calendar-settings endpoint. `calendar.events` already grants read
+  // access to events on its own (Google documents it as "View and edit
+  // events" - view is included), so the separate `calendar.readonly`
+  // scope this used to also request was genuine redundancy, not a
+  // distinct capability anything here relies on - removed.
+  // `calendar.events` itself CANNOT be narrowed away the way the
+  // directive's own phrasing anticipated: declineCalendarEvent
+  // (boundary-autopilot.ts) is a real, live, already-shipped write -
+  // Boundary Autopilot's "decline this meeting for real" action PATCHes
+  // the event's attendee response using exactly this scope. Removing it
+  // would break that existing feature, not just tighten a hypothetical
+  // one. See NOVA_PHASE5J_PILOT_SAFETY_REPORT.md for the full audit.
   provider.addScope('https://www.googleapis.com/auth/calendar.events');
   provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
   provider.setCustomParameters({ prompt: 'select_account' });

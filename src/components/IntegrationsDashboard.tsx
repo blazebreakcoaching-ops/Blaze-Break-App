@@ -20,19 +20,29 @@ interface Integration {
 // Services that go through the real backend OAuth flow (server.ts /api/integrations/*).
 // The "Google Workspace" card above is intentionally excluded — it's a
 // separate, client-side-only Firebase popup flow (signInWithCalendar,
-// src/lib/auth.tsx), used only for the read-only calendar/Gmail load
-// signals; its token never reaches this server.
+// src/lib/auth.tsx); its token never reaches this server.
 //
-// `google_calendar_actions` (Phase 5I, directive §6) is a DIFFERENT,
-// deliberately distinct connection: a real server-side OAuth grant whose
-// token is what Nova Take the Load's Calendar Protection feature would
-// use for an actual calendar write, once execution is ever enabled (it
-// is not today - see NovaTakeTheLoad.tsx). Routing it through this same
+// Phase 5J CORRECTION of this comment's own prior framing: an earlier
+// version described "Google Workspace" as read-only/view-only and drew
+// the Google Workspace vs google_calendar_actions distinction as "view
+// vs write." That was inaccurate - signInWithCalendar's own scope
+// (`calendar.events`) is write-capable, and Boundary Autopilot's real
+// "decline this meeting" action (src/lib/boundary-autopilot.ts)
+// genuinely exercises that write today, through this exact connection,
+// independently of anything Nova does. The real distinction between the
+// two cards is WHERE the token lives and WHAT uses it, not read-vs-write:
+// "Google Workspace" is a client-side-only token (never seen by this
+// server) that backs the real-signal tracking above AND Boundary
+// Autopilot's real calendar actions elsewhere in the app; `google_calendar_actions`
+// below is a real SERVER-SIDE OAuth grant, scoped the same way, that
+// Nova Take the Load's Calendar Protection feature would use for its own
+// actual calendar writes once execution is ever enabled (it is not
+// today - see NovaTakeTheLoad.tsx). Routing the latter through this same
 // generic connect/callback/status/disconnect mechanism (server.ts
 // already lists it in OAUTH_PROVIDERS) means this card needed no new
 // server route - just an honest, separately-labelled entry here so a
-// user can tell "Google can see my calendar" apart from "Google can
-// change my calendar," and revoke either one independently.
+// user can revoke either connection independently and understand which
+// features depend on which one.
 const OAUTH_SERVICE_IDS = ['slack', 'jira', 'asana', 'calendly', 'monday', 'google_calendar_actions'] as const;
 
 // Fallback icon shown in place of the hotlinked brand SVG if it ever fails
@@ -51,19 +61,29 @@ const FALLBACK_ICONS: Record<string, React.ElementType> = {
 };
 
 const BASE_INTEGRATIONS: Integration[] = [
-  { id: 'google', name: 'Google Workspace', description: 'Real calendar meeting-load and Gmail inbox-load tracking. View-only - Nova never changes anything in this connection.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
+  // Phase 5J, directive §3 correction - this connection is NOT view-only:
+  // it also backs Boundary Autopilot's real "decline this meeting"
+  // action elsewhere in the app, using the same granted calendar.events
+  // scope. The description now says so honestly rather than implying
+  // Nova (or anything else) can never change anything through it.
+  { id: 'google', name: 'Google Workspace', description: 'Real calendar meeting-load and Gmail inbox-load tracking, plus Boundary Autopilot\'s real "decline a meeting" action. Nova\'s own Calendar Protection feature never uses this connection.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg' },
   { id: 'slack', name: 'Slack', description: 'Real message-load tracking, Do-Not-Disturb scheduling, and auto-reply.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Slack_icon_2019.svg' },
   { id: 'jira', name: 'Jira', description: 'Real open issue count, overdue issues, and priority load.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/82/Jira_%28Software%29_logo.svg' },
   { id: 'asana', name: 'Asana', description: 'Real incomplete and overdue task counts.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Asana_logo.svg' },
   { id: 'calendly', name: 'Calendly', description: 'Real upcoming booking load and back-to-back tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Calendly_logo.svg' },
   { id: 'monday', name: 'Monday.com', description: 'Real active item and overdue-timeline tracking.', status: 'disconnected', iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Monday_logo.svg' },
   // Phase 5I, directive §6 — a separate connection from "Google Workspace"
-  // above: this one grants permission to create or delete calendar events,
-  // not just view them. Connecting it does not, by itself, let anything be
+  // above, kept on its own server-side OAuth grant specifically for Nova
+  // Take the Load's own use (Phase 5J, directive §3: NOT because it is
+  // the only one of the two with write capability - "Google Workspace"
+  // already has that too, via Boundary Autopilot - but because this one
+  // is the server-side token Calendar Protection's own execution path
+  // would use, kept independently revocable from Boundary Autopilot's
+  // client-side one). Connecting it does not, by itself, let anything be
   // changed - each individual change still needs your separate approval in
   // Take the Load - Calendar Protection, and real execution is off
   // platform-wide right now regardless of this connection's state.
-  { id: 'google_calendar_actions', name: 'Calendar Actions (Nova Take the Load)', description: 'Lets Nova prepare calendar changes for Take the Load - Calendar Protection. Granting this does not approve any change by itself; you still approve each one individually, and real execution is currently turned off platform-wide.', status: 'disconnected', iconUrl: '' },
+  { id: 'google_calendar_actions', name: 'Calendar Actions (Nova Take the Load)', description: 'Lets Nova prepare calendar changes for Take the Load - Calendar Protection, kept as its own separate connection from Google Workspace above. Granting this does not approve any change by itself; you still approve each one individually, and real execution is currently turned off platform-wide.', status: 'disconnected', iconUrl: '' },
 ];
 
 export const IntegrationsDashboard = () => {

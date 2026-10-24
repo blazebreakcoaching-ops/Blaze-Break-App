@@ -7,13 +7,27 @@ import {
   reconcileStuckExecutingCalendarProtectionProposal, CALENDAR_PROTECTION_STUCK_EXECUTION_THRESHOLD_MS,
 } from './nova-calendar-protection-service';
 import { createFakeConnectorForTesting } from './nova-take-the-load-connector-contract';
+import { setCalendarProtectionPilotEligibility } from './nova-calendar-pilot-eligibility';
 import { resetStore, fakeDb, seedDoc, getDocRaw } from './test/fake-firestore';
 import type { CalendarSignalState } from './calendar-workload-defence-engine';
 import crypto from 'node:crypto';
 
-beforeEach(() => resetStore());
-
 const UID = 'user_a';
+
+// Phase 5J, directive §4 - executeCalendarProtectionProposal now checks
+// pilot eligibility (layer 2, right after the kill switch) as well as
+// everything this file already tested. Every test in this file below is
+// about THOSE other checks, not about pilot eligibility itself - so the
+// shared test uid is seeded as pilot-eligible by default here, the same
+// way its calendar is implicitly "connected" by simply calling these
+// functions at all. The dedicated "pilot eligibility" describe block
+// further down uses its OWN, deliberately un-seeded uid to test the
+// actual gate.
+beforeEach(async () => {
+  resetStore();
+  await setCalendarProtectionPilotEligibility(fakeDb as any, UID, true, 'test-admin');
+});
+
 const CHANGE = { startIso: '2026-02-02T14:00:00.000Z', endIso: '2026-02-02T14:30:00.000Z', title: 'Protected recovery block' };
 
 async function approvedProposal(key = 'week7-protect') {
@@ -143,6 +157,67 @@ describe('executeCalendarProtectionProposal - the hardcoded kill-switch', () => 
     const prepared = await prepareCalendarProtectionProposal(fakeDb as any, UID, 'never-approved', CHANGE);
     const outcome = await executeCalendarProtectionProposal(fakeDb as any, UID, prepared.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
     expect(outcome.status).toBe('not_approved');
+  });
+});
+
+// Phase 5J, directive §4 - layer 2 of the restricted-pilot contract (see
+// nova-calendar-pilot-eligibility.ts's own header for the full five-layer
+// precedence). Uses its OWN uid, deliberately never seeded as eligible by
+// the top-of-file beforeEach, so these tests exercise the real fail-closed
+// default rather than the convenience seeding every other test in this
+// file relies on.
+describe('pilot eligibility (Phase 5J, directive §4)', () => {
+  const UNSEEDED_UID = 'user_never_made_pilot_eligible';
+
+  async function approvedProposalFor(uid: string, key: string) {
+    const prepared = await prepareCalendarProtectionProposal(fakeDb as any, uid, key, CHANGE);
+    await presentCalendarProtectionForApproval(fakeDb as any, uid, prepared.proposalId);
+    const outcome = await recordCalendarProtectionApproval(fakeDb as any, uid, prepared.proposalId, { approved: true, approvalFingerprint: prepared.approvalFingerprint });
+    if (outcome.status !== 'approved') throw new Error('setup failed');
+    return outcome.proposal;
+  }
+
+  it('an account with no pilot-eligibility document at all is refused with pilot_not_eligible - fails closed on a missing document', async () => {
+    const proposal = await approvedProposalFor(UNSEEDED_UID, 'pilot-missing-doc');
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UNSEEDED_UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('pilot_not_eligible');
+  });
+
+  it('an account explicitly marked NOT eligible is refused the same way as one with no document at all', async () => {
+    await setCalendarProtectionPilotEligibility(fakeDb as any, UNSEEDED_UID, false, 'test-admin');
+    const proposal = await approvedProposalFor(UNSEEDED_UID, 'pilot-explicitly-false');
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UNSEEDED_UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('pilot_not_eligible');
+  });
+
+  it('a document whose eligible field is not literally true (malformed/inconsistent configuration) is refused, never treated as eligible', async () => {
+    await seedDoc(`users/${UNSEEDED_UID}/platform_pilot_access/calendar_protection`, { eligible: 'yes' } as any);
+    const proposal = await approvedProposalFor(UNSEEDED_UID, 'pilot-malformed-value');
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UNSEEDED_UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('pilot_not_eligible');
+  });
+
+  it('an account explicitly granted pilot eligibility proceeds past this gate (and on to a real simulated execution)', async () => {
+    await setCalendarProtectionPilotEligibility(fakeDb as any, UNSEEDED_UID, true, 'test-admin');
+    const proposal = await approvedProposalFor(UNSEEDED_UID, 'pilot-granted');
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UNSEEDED_UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('confirmed');
+  });
+
+  it('revoking a previously-granted eligibility takes effect immediately - the next execute attempt is refused', async () => {
+    await setCalendarProtectionPilotEligibility(fakeDb as any, UNSEEDED_UID, true, 'test-admin');
+    const proposal = await approvedProposalFor(UNSEEDED_UID, 'pilot-revoked');
+    await setCalendarProtectionPilotEligibility(fakeDb as any, UNSEEDED_UID, false, 'test-admin');
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UNSEEDED_UID, proposal.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('pilot_not_eligible');
+  });
+
+  it('pilot ineligibility is checked even when the global kill switch is force-enabled - it is a genuinely independent layer, not a restatement of layer 1', async () => {
+    expect(CALENDAR_PROTECTION_EXECUTION_ENABLED).toBe(false);
+    const proposal = await approvedProposalFor(UNSEEDED_UID, 'pilot-independent-of-kill-switch');
+    const connector = createFakeConnectorForTesting();
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UNSEEDED_UID, proposal.proposalId, connector, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('pilot_not_eligible');
   });
 });
 
@@ -403,6 +478,163 @@ describe('reconcileStuckExecutingCalendarProtectionProposal (Phase 5E, directive
   it('throws for a proposal that does not exist at all', async () => {
     await expect(reconcileStuckExecutingCalendarProtectionProposal(fakeDb as any, UID, 'cpp_does_not_exist', async () => ({ status: 'not_found' })))
       .rejects.toThrow(/No such calendar protection proposal/);
+  });
+});
+
+// Phase 5J, directive §2 - the actual flaw the directive asked about:
+// Phase 5I's "Modify" button only ever called plain prepareCalendarProtectionProposal
+// with a fresh idempotencyKey, with no link back to the proposal it was
+// replacing. The ORIGINAL proposal's own state (and, if already approved,
+// its still-unexpired approval) was left completely untouched - nothing
+// server-side ever stopped it from later executing on its own, using its
+// OWN stale terms, independently of whatever the user actually modified
+// to. These tests prove that flaw is now closed: superseding a proposal
+// is the only thing that can set `supersededBy`, and once set, every
+// path that could otherwise authorise or act on the original's approval
+// (execute, approve, retry) refuses it instead.
+describe('Modify/supersession integrity (Phase 5J, directive §2)', () => {
+  it('superseding links both proposals: the new one records supersedes, the original records supersededBy', async () => {
+    const original = await approvedProposal('super-link-original');
+    const replacement = await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-link-replacement',
+      { ...CHANGE, title: 'Protected recovery block (moved)' },
+      { supersedesProposalId: original.proposalId },
+    );
+    expect(replacement.supersedes).toBe(original.proposalId);
+    const originalAfter = getDocRaw(`users/${UID}/calendar_protection_proposals/${original.proposalId}`);
+    expect(originalAfter?.supersededBy).toBe(replacement.proposalId);
+    // The original's own truthful history is untouched - it really was approved.
+    expect(originalAfter?.state).toBe('approved');
+  });
+
+  it('THE CORE FIX: a superseded, still-approved, still-unexpired original can no longer execute - it reports superseded, never a real/simulated success', async () => {
+    const original = await approvedProposal('super-cannot-execute-original');
+    await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-cannot-execute-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    );
+    const connector = createFakeConnectorForTesting();
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UID, original.proposalId, connector, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('superseded');
+    // And the connector was never actually invoked for the stale original.
+    expect(connector.connectorKind).toBe('fake_test_only'); // sanity: this is the real fake, not a spy substitute
+  });
+
+  it('approving an awaiting_approval proposal that was superseded in the meantime reports superseded, not approved', async () => {
+    const prepared = await prepareCalendarProtectionProposal(fakeDb as any, UID, 'super-approve-original', CHANGE);
+    await presentCalendarProtectionForApproval(fakeDb as any, UID, prepared.proposalId);
+    await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-approve-replacement', CHANGE,
+      { supersedesProposalId: prepared.proposalId },
+    );
+    const outcome = await recordCalendarProtectionApproval(fakeDb as any, UID, prepared.proposalId, { approved: true, approvalFingerprint: prepared.approvalFingerprint });
+    expect(outcome.status).toBe('superseded');
+  });
+
+  it('retrying a failed proposal that was superseded in the meantime throws rather than silently retrying stale terms', async () => {
+    const original = await approvedProposal('super-retry-original');
+    const failing = createFakeConnectorForTesting({ executeResult: { ok: false, detail: 'simulated failure' } });
+    await executeCalendarProtectionProposal(fakeDb as any, UID, original.proposalId, failing, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-retry-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    );
+    await expect(retryCalendarProtectionExecution(fakeDb as any, UID, original.proposalId)).rejects.toThrow(/superseded/);
+  });
+
+  it('cannot supersede a proposal that has already been confirmed (really executed)', async () => {
+    const original = await approvedProposal('super-confirmed-original');
+    await executeCalendarProtectionProposal(fakeDb as any, UID, original.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    await expect(prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-confirmed-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    )).rejects.toThrow(/cannot_supersede.*confirmed/);
+  });
+
+  it('cannot supersede a proposal whose outcome is still ambiguous - the real world may or may not have already been touched', async () => {
+    const original = await approvedProposal('super-ambiguous-original');
+    const throwingConnector = { ...createFakeConnectorForTesting(), execute: async () => { throw new Error('simulated timeout'); } };
+    await executeCalendarProtectionProposal(fakeDb as any, UID, original.proposalId, throwingConnector as any, TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    await expect(prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-ambiguous-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    )).rejects.toThrow(/cannot_supersede.*ambiguous/);
+  });
+
+  it('cannot supersede the same original twice - prevents a confusing branching chain', async () => {
+    const original = await approvedProposal('super-twice-original');
+    await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-twice-first-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    );
+    await expect(prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-twice-second-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    )).rejects.toThrow(/cannot_supersede: this proposal has already been superseded/);
+  });
+
+  it('cannot supersede a proposal that does not exist', async () => {
+    await expect(prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-missing-replacement', CHANGE,
+      { supersedesProposalId: 'cpp_does_not_exist' },
+    )).rejects.toThrow(/cannot_supersede: the original proposal does not exist/);
+  });
+
+  it('a proposal cannot supersede itself', async () => {
+    const idempotencyKey = 'super-self-key';
+    await expect(prepareCalendarProtectionProposal(
+      fakeDb as any, UID, idempotencyKey, CHANGE,
+      { supersedesProposalId: `cpp_${idempotencyKey}` },
+    )).rejects.toThrow(/cannot_supersede: a proposal cannot supersede itself/);
+  });
+
+  it('idempotent replay of the SAME supersede request (same idempotencyKey) does not attempt to supersede a second time', async () => {
+    const original = await approvedProposal('super-idempotent-original');
+    const first = await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-idempotent-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    );
+    const second = await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-idempotent-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    );
+    expect(second.proposalId).toBe(first.proposalId);
+    const originalAfter = getDocRaw(`users/${UID}/calendar_protection_proposals/${original.proposalId}`);
+    expect(originalAfter?.supersededBy).toBe(first.proposalId);
+  });
+
+  it('records the supersession relationship in the audit trail on both proposals', async () => {
+    const original = await approvedProposal('super-audit-original');
+    const replacement = await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-audit-replacement', CHANGE,
+      { supersedesProposalId: original.proposalId },
+    );
+    const snap = await (fakeDb as any).collection(`users/${UID}/calendar_protection_audit`).get();
+    const entries = snap.docs.map((d: any) => d.data());
+    const supersededEntry = entries.find((e: any) => e.proposalId === original.proposalId && e.event === 'superseded');
+    expect(supersededEntry?.detail?.supersededBy).toBe(replacement.proposalId);
+    const preparedEntry = entries.find((e: any) => e.proposalId === replacement.proposalId && e.event === 'prepared');
+    expect(preparedEntry?.detail?.supersedes).toBe(original.proposalId);
+  });
+
+  it('a prepared (never-approved) proposal can be superseded, just like an approved one', async () => {
+    const prepared = await prepareCalendarProtectionProposal(fakeDb as any, UID, 'super-prepared-original', CHANGE);
+    const replacement = await prepareCalendarProtectionProposal(
+      fakeDb as any, UID, 'super-prepared-replacement', CHANGE,
+      { supersedesProposalId: prepared.proposalId },
+    );
+    expect(replacement.supersedes).toBe(prepared.proposalId);
+  });
+
+  it('client-side navigation alone never supersedes anything - only this explicit server call does', async () => {
+    // No supersede call at all - just prepare, present, approve, and
+    // "walk away" (the equivalent of a client closing the tab/clicking
+    // Start Over instead of Modify). The proposal's own approval must
+    // remain fully live and executable, since nothing server-side was
+    // ever told it was replaced.
+    const original = await approvedProposal('no-supersede-just-navigate-away');
+    const outcome = await executeCalendarProtectionProposal(fakeDb as any, UID, original.proposalId, createFakeConnectorForTesting(), TEST_ONLY_FORCE_EXECUTION_ENABLED);
+    expect(outcome.status).toBe('confirmed');
   });
 });
 

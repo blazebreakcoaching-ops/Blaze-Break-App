@@ -51,6 +51,15 @@ interface Proposal {
   failureReason: string | null;
   retryCount: number;
   externalEventId: string | null;
+  // Phase 5J, directive §2 - supersedes/supersededBy. Only supersededBy
+  // is actually read by this component (to show an honest "replaced"
+  // state rather than re-offering a dead-end approve/execute action);
+  // supersedes is carried through purely because the server's proposal
+  // object includes it and TypeScript's structural typing does not
+  // require naming every field a response happens to have, but it is
+  // listed here for completeness/documentation.
+  supersedes: string | null;
+  supersededBy: string | null;
 }
 
 const STATE_LABEL: Record<ProposalState, string> = {
@@ -82,6 +91,11 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
   const [error, setError] = useState<string | null>(null);
   const [executeOutcome, setExecuteOutcome] = useState<string | null>(null);
   const [outcomeRecorded, setOutcomeRecorded] = useState<string | null>(null);
+  // Phase 5J, directive §2 - the id of the proposal Modify is replacing,
+  // if any. Set only by requestModify, cleared on prepare (success or
+  // failure) and on startOver - so a plain fresh "Prepare this proposal"
+  // (never having clicked Modify) never accidentally supersedes anything.
+  const [supersedingProposalId, setSupersedingProposalId] = useState<string | null>(null);
 
   // Phase 5H, directive §2 - fixed the two pre-existing
   // react-hooks/set-state-in-effect errors without changing behaviour.
@@ -161,13 +175,33 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
     setExecuteOutcome(null);
     try {
       const idempotencyKey = crypto.randomUUID();
+      // Phase 5J, directive §2 - when this prepare follows a Modify
+      // click, supersedesProposalId tells the server to atomically mark
+      // the ORIGINAL proposal as replaced, in the same transaction that
+      // creates this new one - the actual server-authoritative fix for
+      // the stale-approval flaw Phase 5I's client-only Modify left open
+      // (the original proposal's own approval could otherwise still
+      // authorise an execute, independently of this new one).
       const res = await secureApiFetch('/api/nova/calendar-protection/propose', {
-        method: 'POST', data: { idempotencyKey, startIso, endIso, title: title.trim() },
+        method: 'POST',
+        data: {
+          idempotencyKey, startIso, endIso, title: title.trim(),
+          ...(supersedingProposalId ? { supersedesProposalId: supersedingProposalId } : {}),
+        },
       });
       const body = await res.json();
       setProposal(body.proposal);
+      setSupersedingProposalId(null);
     } catch (err) {
-      setError(err instanceof SecureApiError ? err.message : 'Could not prepare this proposal.');
+      if (err instanceof SecureApiError && err.message.startsWith('cannot_supersede:')) {
+        // The original has moved on since this form was opened (executed,
+        // already superseded by another tab, etc.) - an honest, specific
+        // explanation rather than the raw server-internal error text.
+        setError("This proposal could no longer be modified - it may have already been applied, undone, or replaced. Please start a new proposal.");
+      } else {
+        setError(err instanceof SecureApiError ? err.message : 'Could not prepare this proposal.');
+      }
+      setSupersedingProposalId(null);
     } finally {
       setBusy(false);
     }
@@ -198,6 +232,15 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
       const outcome = await res.json();
       if (outcome.status === 'fingerprint_mismatch') {
         setError('This proposal changed since it was shown to you - please review it again.');
+        return;
+      }
+      // Phase 5J, directive §2 - a Modify click against this exact
+      // proposal landed in between it being shown and this decision
+      // being recorded. Neither approving nor declining it means
+      // anything any more - the replacement is the live one now.
+      if (outcome.status === 'superseded') {
+        setError('This proposal was replaced by a newer version before your decision was recorded - nothing was changed. Please review the newer version instead.');
+        if (outcome.proposal) setProposal(outcome.proposal);
         return;
       }
       if (outcome.proposal) setProposal(outcome.proposal);
@@ -303,17 +346,20 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
 
   // Phase 5I, directive §5 — "Modify" re-opens the editable form,
   // pre-filled with this proposal's own title/start/end. Submitting it
-  // calls `propose()` with a brand-new idempotencyKey, so it creates a
-  // genuinely new proposal with its own fresh fingerprint - the prior
-  // proposal's approval (if any) can never be replayed against changed
-  // terms, because a new proposal starts at `prepared` and has never
-  // been approved. The old proposal is left exactly as it was, still
-  // visible in history.
+  // calls `propose()` with a brand-new idempotencyKey AND (Phase 5J,
+  // directive §2) this original proposal's own id as
+  // `supersedesProposalId`, so the server atomically marks the original
+  // as replaced - its own approval, even if still valid, can never again
+  // authorise an execute/retry once that happens (see
+  // nova-calendar-protection-service.ts's `supersededBy` field). The old
+  // proposal's own `state` is left exactly as it truthfully was, still
+  // visible in history - only now honestly marked as superseded too.
   const requestModify = () => {
     if (!proposal) return;
     setTitle(proposal.title);
     setStartLocal(isoToLocalInputValue(proposal.startIso));
     setEndLocal(isoToLocalInputValue(proposal.endIso));
+    setSupersedingProposalId(proposal.proposalId);
     setProposal(null);
     setExecuteOutcome(null);
     setError(null);
@@ -326,6 +372,7 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
     setTitle('');
     setStartLocal('');
     setEndLocal('');
+    setSupersedingProposalId(null);
   };
 
   return (
@@ -391,13 +438,26 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
           </p>
           <p className="text-[10px] text-text-muted uppercase tracking-wide font-bold">{STATE_LABEL[proposal.state]}</p>
 
-          {proposal.state === 'prepared' && (
+          {/* Phase 5J, directive §2 - a proposal with supersededBy set has
+              been replaced by a newer version via Modify. Its own state
+              (e.g. "approved") stays truthful for history, but no action
+              button is offered for it any more - the server would refuse
+              every one of them anyway (see executeCalendarProtectionProposal/
+              recordCalendarProtectionApproval/retryCalendarProtectionExecution's
+              own supersededBy checks), so the UI does not pretend otherwise. */}
+          {proposal.supersededBy && (
+            <p className="text-xs text-text-muted flex items-start gap-1.5">
+              <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> This was replaced by a newer version - resume that one from your history instead.
+            </p>
+          )}
+
+          {!proposal.supersededBy && proposal.state === 'prepared' && (
             <button onClick={present} disabled={busy} className="btn-primary min-h-11 px-4 text-xs disabled:opacity-50">
               Show for approval
             </button>
           )}
 
-          {proposal.state === 'awaiting_approval' && (
+          {!proposal.supersededBy && proposal.state === 'awaiting_approval' && (
             <div className="flex flex-wrap gap-2">
               <button onClick={() => decide(true)} disabled={busy} className="btn-primary min-h-11 px-4 text-xs flex items-center gap-1.5 disabled:opacity-50">
                 <CheckCircle2 className="w-3.5 h-3.5" /> Approve exactly this
@@ -415,7 +475,7 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
             <p className="text-xs text-text-muted">You declined this - nothing was changed, and it is not re-offered automatically.</p>
           )}
 
-          {proposal.state === 'approved' && (
+          {!proposal.supersededBy && proposal.state === 'approved' && (
             <div className="flex flex-wrap gap-2">
               <button onClick={execute} disabled={busy} className="btn-primary min-h-11 px-4 text-xs disabled:opacity-50">
                 Try to apply this
@@ -435,13 +495,18 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
           {executeOutcome === 'calendar_action_permission_required' && (
             <p className="text-xs text-destructive">Calendar action permission is no longer granted, so this could not be applied.</p>
           )}
+          {executeOutcome === 'superseded' && (
+            <p className="text-xs text-text-muted flex items-start gap-1.5"><HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> This proposal was replaced by a newer version before it could be applied - nothing was sent to your calendar.</p>
+          )}
 
           {proposal.state === 'failed' && (
             <div className="space-y-2">
               <p className="text-xs text-destructive">{proposal.failureReason || 'This could not be applied.'}</p>
-              <button onClick={retry} disabled={busy} className="text-xs font-bold text-primary hover:underline flex items-center gap-1.5">
-                <RotateCcw className="w-3.5 h-3.5" /> Try again
-              </button>
+              {!proposal.supersededBy && (
+                <button onClick={retry} disabled={busy} className="text-xs font-bold text-primary hover:underline flex items-center gap-1.5">
+                  <RotateCcw className="w-3.5 h-3.5" /> Try again
+                </button>
+              )}
             </div>
           )}
 
