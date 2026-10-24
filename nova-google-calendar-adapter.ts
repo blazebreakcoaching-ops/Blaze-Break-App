@@ -1,19 +1,29 @@
 // Nova Take the Load - Google Calendar adapter (Phase 5D, directive §5).
 //
-// AUDIT FINDING THIS FILE IS BUILT AROUND: `server.ts`'s `OAUTH_PROVIDERS`
-// config (the real server-side OAuth token store used by Slack/Jira/
-// Asana/Calendly/Monday - each with a stored refresh token) has NO entry
-// for Google Calendar. The only Google Calendar connection anywhere in
-// this codebase is the client-side Firebase popup flow
-// (`signInWithCalendar`, src/lib/auth.tsx) that requests
-// `https://www.googleapis.com/auth/calendar.readonly` and
-// `https://www.googleapis.com/auth/calendar.events` - the resulting
-// access token is held only in transient React state
-// (`AuthContext.accessToken`), never persisted server-side, never
-// refreshed. There is therefore no secure server-side path through which
-// a real connector built from this file could ever actually be invoked
-// today - server.ts does not, and cannot, hold a Google access token to
-// pass to one.
+// Phase 5H, directive §6 CORRECTION of this file's own prior claim: an
+// earlier version of this header said `server.ts`'s `OAUTH_PROVIDERS`
+// had no entry for Google Calendar, and that there was therefore no
+// secure server-side path for a real connector's access token. That is
+// no longer true - `OAUTH_PROVIDERS.google_calendar_actions` (added in
+// the same Phase 5E commit as this file's own last edit) is a real,
+// tested connect/callback/disconnect flow: PKCE, a `calendar.events`
+// scope, `access_type=offline`+`prompt=consent` for a durable refresh
+// token, account-identity capture, and revoke-on-disconnect, all
+// covered by oauth-integrations.route.test.ts. A server-side Google
+// Calendar access token CAN exist today, under
+// `users/{uid}/integration_tokens/google_calendar_actions`.
+//
+// What is still genuinely missing, confirmed by grep across this
+// codebase (see NOVA_PHASE5H_EXPERIENCE_READINESS_REPORT.md's own
+// Google Calendar readiness checklist for the full breakdown): nothing
+// anywhere ever reads that stored token and passes it to a connector -
+// `executeCalendarProtectionProposal`'s own call site in server.ts
+// hardcodes `null` for the connector argument, unconditionally, and
+// neither this file's `createGoogleCalendarAdapterStub` nor the real,
+// tested `nova-google-calendar-connector.ts` is ever imported by
+// server.ts. The gap this file was built around is real - it is just a
+// missing WIRING step and an unmade activation decision, not a missing
+// credential store.
 //
 // This file does not try to paper over that gap. It provides:
 //   1. Pure, testable REQUEST-CONSTRUCTION functions for the two Google
@@ -36,16 +46,16 @@
 //      .tsx component - confirmed by grep before this phase's delivery
 //      report.
 //
-// Building the real, network-capable version of this adapter requires,
-// at minimum: a Google Calendar OAuth entry in server.ts's
-// OAUTH_PROVIDERS (so a refresh token can be stored and renewed
-// server-side the way Slack/Jira/Asana already are), a decision on how
-// `calendar.events` write-scope consent is surfaced to the user as
-// distinct from the existing read-only `calendar.readonly` flow, and
-// separate, explicit authorisation to turn on
-// CALENDAR_PROTECTION_EXECUTION_ENABLED in
-// nova-calendar-protection-service.ts. None of that is in scope for this
-// phase.
+// Making this adapter (or nova-google-calendar-connector.ts) real still
+// requires, at minimum: wiring a real connector built from a real,
+// per-user `google_calendar_actions` access token into
+// `executeCalendarProtectionProposal`'s call site in server.ts (today
+// hardcoded to `null`), a decision on how `calendar.events` write-scope
+// consent is surfaced to the user as distinct from any existing
+// read-only calendar consent flow, and separate, explicit authorisation
+// to turn on CALENDAR_PROTECTION_EXECUTION_ENABLED in
+// nova-calendar-protection-service.ts. None of that is in scope for
+// this phase.
 
 import type { NovaExternalConnector, NovaExternalConnectorRequest } from './nova-take-the-load-connector-contract';
 

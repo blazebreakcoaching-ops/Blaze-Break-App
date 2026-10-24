@@ -6163,6 +6163,24 @@ app.get("/api/nova/calendar-protection/:proposalId", verifyAppCheck, authenticat
 // action (unlike Task Deferral's, which only ever means a simulation
 // completed) - so this is reachable only once that already happened,
 // matching NovaTakeTheLoad.tsx's own gating on `proposal.state === 'confirmed'`.
+//
+// Phase 5H, directive §4 - that client-side gate alone was not enough:
+// this route itself now re-verifies, server-side, exactly what the
+// directive asked for -
+//  - ownership: the referenced proposal must be a REAL document under
+//    THIS uid's own `calendar_protection_proposals` (never trusted from
+//    the request body, and never just "some uid can write some
+//    feedback somewhere" - the specific proposalId must genuinely be
+//    this user's own).
+//  - valid state: feedback is refused (409) unless that same proposal's
+//    own state is `confirmed` - i.e. feedback can never be offered, or
+//    recorded, "as though a real action occurred when no action
+//    occurred" (the directive's own words), even if a client were
+//    modified to try.
+//  - duplicate submission: unchanged and already correct -
+//    recordTaskAssistanceOutcome's one-document-per-(workflow, itemId)
+//    `.set()` means a resubmission (e.g. the user changes their mind)
+//    simply replaces the prior answer, never errors or accumulates.
 app.post("/api/nova/calendar-protection/:proposalId/outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const uid = requireAuth(req).uid;
@@ -6170,7 +6188,15 @@ app.post("/api/nova/calendar-protection/:proposalId/outcome", verifyAppCheck, au
     if (!parsed.success) {
       return res.status(400).json({ error: "\"outcome\" must be one of 'helped', 'changed_plan', 'not_used', 'need_another_approach'." });
     }
-    const record = await recordTaskAssistanceOutcome(getDb(), uid, {
+    const db = getDb();
+    const proposalSnap = await db.collection(`users/${uid}/calendar_protection_proposals`).doc(req.params.proposalId).get();
+    if (!proposalSnap.exists) {
+      return res.status(404).json({ error: "No such calendar protection proposal." });
+    }
+    if (proposalSnap.data()?.state !== 'confirmed') {
+      return res.status(409).json({ error: "Outcome feedback can only be recorded once this was actually applied to your calendar." });
+    }
+    const record = await recordTaskAssistanceOutcome(db, uid, {
       workflow: 'calendar_protection',
       itemId: req.params.proposalId,
       outcome: parsed.data.outcome,

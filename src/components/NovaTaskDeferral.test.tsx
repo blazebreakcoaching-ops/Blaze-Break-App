@@ -208,9 +208,12 @@ describe('NovaTaskDeferral - expired approval', () => {
     await screen.findByText(/do you control when this is due/i);
     await answerControl('yes', 'yes');
 
-    // Jump straight to an approved proposal via "Show my history" is not
-    // modelled here - instead simulate reaching `approved` then executing
-    // into an expired-approval response, the real path a stale tab takes.
+    // This test simulates reaching `approved` by walking the normal
+    // sequence rather than resuming from history (both are real,
+    // supported paths as of Phase 5H - see "returning to saved
+    // proposals" below for dedicated Resume coverage) - walking the
+    // sequence here exercises the actual expired-approval transition
+    // that a stale tab left open through the whole flow would hit.
     vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: { ...BASE_PROPOSAL, state: 'prepared', approvalFingerprint: 'fp1', proposedChange: { proposedNewDueDescription: 'later', proposedNewPriority: null }, postponementConsideration: { reasonablyPostponable: true, reasoning: 'ok' }, consequences: { consequences: [], uncertainties: [] } } }));
     await screen.findByRole('button', { name: /prepare this proposal/i });
     await userEvent.type(screen.getByLabelText(/proposed new due date/i), 'later');
@@ -274,5 +277,26 @@ describe('NovaTaskDeferral - returning to saved proposals', () => {
     render(<NovaTaskDeferral />);
     await userEvent.click(screen.getByRole('button', { name: /show my history/i }));
     expect(await screen.findByText(/nothing yet/i)).toBeInTheDocument();
+  });
+
+  // Phase 5H, directive §3 - returning to saved progress: a history
+  // entry can be resumed back into the active screen, reusing the
+  // existing GET /:proposalId route rather than any new storage.
+  it('resuming a history entry fetches the real saved proposal by id and loads it into the active view', async () => {
+    const SAVED = {
+      ...BASE_PROPOSAL, proposalId: 'tdp_saved', state: 'awaiting_approval', approvalFingerprint: 'fp-saved',
+      identification: { taskDescription: 'Resume me', currentDueDescription: 'Friday' },
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposals: [SAVED] }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: SAVED }));
+
+    render(<NovaTaskDeferral />);
+    await userEvent.click(screen.getByRole('button', { name: /show my history/i }));
+    await screen.findByText(/resume me/i);
+
+    await userEvent.click(screen.getByRole('button', { name: /^resume$/i }));
+
+    await waitFor(() => expect(secureApiFetch).toHaveBeenCalledWith('/api/nova/task-deferral/tdp_saved'));
+    expect(await screen.findByRole('button', { name: /approve exactly this/i })).toBeInTheDocument();
   });
 });

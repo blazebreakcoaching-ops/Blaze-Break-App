@@ -139,16 +139,58 @@ describe('full prepare -> present -> approve -> execute flow', () => {
 // Phase 5G, directive §8 - the same simple, optional, user-confirmed
 // outcome feedback Task Deferral's own route test already covers (see
 // nova-task-deferral-route.test.ts), now also offered here.
+//
+// Phase 5H, directive §4 - hardened: ownership (the proposal must be a
+// real document under THIS uid), valid state (only once `confirmed` -
+// a REAL applied action, never offered/accepted "as though a real
+// action occurred when no action occurred"), and duplicate submission
+// (a resubmission replaces the prior answer, never errors).
 describe('POST /api/nova/calendar-protection/:proposalId/outcome', () => {
-  it('accepts user-confirmed outcome feedback, recorded under this workflow', async () => {
+  it('is refused (409) while the proposal is still only prepared - not yet a real applied action', async () => {
     await connectCalendar();
     const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
     const proposalId = prepared.body.proposal.proposalId;
+    const res = await request(app).post(`/api/nova/calendar-protection/${proposalId}/outcome`).set(auth('user_a')).send({ outcome: 'helped' });
+    expect(res.status).toBe(409);
+  });
+
+  it('accepts user-confirmed outcome feedback once the proposal is genuinely confirmed, recorded under this workflow', async () => {
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    // Real execution stays permanently disabled through this route (see
+    // "execution is STILL disabled end to end" above), so a proposal can
+    // never genuinely reach `confirmed` through the route itself today -
+    // this writes that state directly, the same way it would exist IF a
+    // real connector were ever enabled, to test the outcome route's own
+    // state gate in isolation from that separate, not-yet-made decision.
+    await (fakeDb as any).collection('users').doc('user_a').collection('calendar_protection_proposals').doc(proposalId).update({ state: 'confirmed' });
+
     const res = await request(app).post(`/api/nova/calendar-protection/${proposalId}/outcome`).set(auth('user_a')).send({ outcome: 'helped' });
     expect(res.status).toBe(200);
     expect(res.body.record.workflow).toBe('calendar_protection');
     expect(res.body.record.itemId).toBe(proposalId);
     expect(res.body.record.outcome).toBe('helped');
+
+    // Duplicate submission (e.g. the user changes their mind) replaces
+    // the prior answer rather than erroring or accumulating.
+    const second = await request(app).post(`/api/nova/calendar-protection/${proposalId}/outcome`).set(auth('user_a')).send({ outcome: 'changed_plan' });
+    expect(second.status).toBe(200);
+    expect(second.body.record.outcome).toBe('changed_plan');
+  });
+
+  it('is refused (404) for a proposal id that does not exist under this account', async () => {
+    const res = await request(app).post('/api/nova/calendar-protection/no_such_proposal/outcome').set(auth('user_a')).send({ outcome: 'helped' });
+    expect(res.status).toBe(404);
+  });
+
+  it("is refused (404) for another user's real proposal - ownership is enforced, not just account isolation of the write", async () => {
+    await connectCalendar();
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
+    const proposalId = prepared.body.proposal.proposalId;
+    USERS.user_b = { email: 'b@test.dev' };
+    const res = await request(app).post(`/api/nova/calendar-protection/${proposalId}/outcome`).set(auth('user_b')).send({ outcome: 'helped' });
+    expect(res.status).toBe(404);
   });
 
   it('rejects an invalid outcome value', async () => {

@@ -70,7 +70,13 @@ async function mockApis(page: Page, opts: { consent?: typeof CONSENT_DEFAULT; ca
   });
 
   await page.route('**/api/nova/calendar-protection/history', async (route) => {
-    await route.fulfill({ json: { proposals: [] } });
+    await route.fulfill({ json: { proposals: [proposal()] } });
+  });
+
+  // Phase 5H, directive §3 - returning to saved progress: a bare GET by
+  // the fixed mock id, exactly what "Resume" on a history entry calls.
+  await page.route('**/api/nova/calendar-protection/cpp_e2e_test_1', async (route) => {
+    await route.fulfill({ json: { proposal: proposal() } });
   });
 
   await page.route('**/api/nova/chat', async (route) => {
@@ -127,7 +133,13 @@ async function mockApis(page: Page, opts: { consent?: typeof CONSENT_DEFAULT; ca
     await route.fulfill({ json: { record: { workflow: 'task_deferral', itemId: 'tdp_e2e_test_1', outcome: body.outcome, recordedAt: new Date().toISOString() } } });
   });
   await page.route('**/api/nova/task-deferral/history', async (route) => {
-    await route.fulfill({ json: { proposals: [] } });
+    await route.fulfill({ json: { proposals: [tdProposal()] } });
+  });
+
+  // Phase 5H, directive §3 - returning to saved progress: a bare GET by
+  // the fixed mock id, exactly what "Resume" on a history entry calls.
+  await page.route('**/api/nova/task-deferral/tdp_e2e_test_1', async (route) => {
+    await route.fulfill({ json: { proposal: tdProposal() } });
   });
 
   // Phase 5G, directive §2 - the possible-suggestion route.
@@ -489,5 +501,141 @@ test.describe('NHEI Phase 5E integrated journey (directive §8)', () => {
     // Optional follow-up: returning to what's on your plate without losing the result above.
     await journey.getByRole('button', { name: /something else is on your plate too/i }).click();
     await expect(journey.getByText('Finish the quarterly board deck')).toBeVisible();
+  });
+
+  // Phase 5H, directive §3/§7 - progress preservation: a real,
+  // server-persisted proposal survives a real browser reload (every
+  // in-memory React state - the journey step, the on-screen proposal -
+  // is genuinely gone) and can be deliberately resumed afterwards via
+  // "Show my history" -> "Resume", never automatically/silently.
+  test('resume: a prepared Calendar Protection proposal survives a browser reload and is restored only on an explicit Resume', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    let journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await journey.getByRole('button', { name: /Continue to what's on your plate/i }).click();
+    await journey.getByLabel(/describe an obligation, commitment, or friction/i).fill('Protected recovery block');
+    await journey.getByRole('button', { name: /^add$/i }).click();
+    await journey.getByRole('button', { name: /get help with this/i }).click();
+    await journey.getByRole('button', { name: /protect time for it/i }).click();
+
+    await journey.getByLabel(/start time/i).fill('2026-03-02T14:00');
+    await journey.getByLabel(/end time/i).fill('2026-03-02T14:30');
+    await journey.getByRole('button', { name: /prepare this proposal/i }).click();
+    await journey.getByRole('button', { name: /show for approval/i }).click();
+    await expect(journey.getByText(/awaiting your approval/i)).toBeVisible();
+
+    // The real browser reload - the journey step and the on-screen
+    // proposal are both gone; this is NOT itself the resume mechanism.
+    await page.reload();
+    journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+    await expect(journey.getByRole('button', { name: /Just talk to Nova/i })).toBeVisible();
+    await expect(journey.getByText(/awaiting your approval/i)).toHaveCount(0);
+
+    // Navigate back to the Calendar Protection screen (a fresh, blank
+    // form - nothing about the prior proposal was silently restored),
+    // then explicitly resume the real, still-persisted proposal.
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await journey.getByRole('button', { name: /Continue to what's on your plate/i }).click();
+    await journey.getByLabel(/describe an obligation, commitment, or friction/i).fill('Something else entirely');
+    await journey.getByRole('button', { name: /^add$/i }).click();
+    await journey.getByRole('button', { name: /get help with this/i }).click();
+    await journey.getByRole('button', { name: /protect time for it/i }).click();
+    await expect(journey.getByLabel(/start time/i)).toHaveValue('');
+
+    await journey.getByRole('button', { name: /show my history/i }).click();
+    await expect(journey.getByText(/protected recovery block/i)).toBeVisible();
+    await journey.getByRole('button', { name: /^resume$/i }).click();
+    await expect(journey.getByText('Awaiting your approval - nothing has happened yet', { exact: true })).toBeVisible();
+    await expect(journey.getByRole('button', { name: /approve exactly this/i })).toBeVisible();
+  });
+
+  // Same resume guarantee for Task Deferral.
+  test('resume: an awaiting-approval Task Deferral proposal survives a browser reload and is restored only on an explicit Resume', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    let journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await journey.getByRole('button', { name: /Continue to what's on your plate/i }).click();
+    await journey.getByLabel(/describe an obligation, commitment, or friction/i).fill('Finish the quarterly board deck');
+    await journey.getByRole('button', { name: /^add$/i }).click();
+    await journey.getByRole('button', { name: /get help with this/i }).click();
+    await journey.getByRole('button', { name: /defer or reprioritise it/i }).click();
+
+    await journey.getByRole('button', { name: /tell nova about this task/i }).click();
+    const deadlineGroup = journey.getByText(/do you control when this is due/i).locator('xpath=following-sibling::div[1]');
+    await deadlineGroup.getByRole('button', { name: /^yes$/i }).click();
+    const ownershipGroup = journey.getByText(/is this task yours alone to move/i).locator('xpath=following-sibling::div[1]');
+    await ownershipGroup.getByRole('button', { name: /^yes$/i }).click();
+    await journey.getByRole('button', { name: /^continue$/i }).click();
+    await journey.getByLabel(/proposed new due date/i).fill('next Friday');
+    await journey.getByPlaceholder(/why \(or why not\)/i).fill('Nobody is blocked on this right now.');
+    await journey.getByRole('button', { name: /prepare this proposal/i }).click();
+    await journey.getByRole('button', { name: /show for approval/i }).click();
+    await expect(journey.getByText(/awaiting your approval/i)).toBeVisible();
+
+    await page.reload();
+    journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+    await expect(journey.getByRole('button', { name: /Just talk to Nova/i })).toBeVisible();
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await journey.getByRole('button', { name: /Continue to what's on your plate/i }).click();
+    await journey.getByLabel(/describe an obligation, commitment, or friction/i).fill('Something else entirely');
+    await journey.getByRole('button', { name: /^add$/i }).click();
+    await journey.getByRole('button', { name: /get help with this/i }).click();
+    await journey.getByRole('button', { name: /defer or reprioritise it/i }).click();
+    await expect(journey.getByLabel(/task description/i)).toHaveValue('Something else entirely');
+
+    await journey.getByRole('button', { name: /show my history/i }).click();
+    await expect(journey.getByText(/finish the quarterly board deck/i)).toBeVisible();
+    await journey.getByRole('button', { name: /^resume$/i }).click();
+    await expect(journey.getByText('Awaiting your approval - nothing has happened yet', { exact: true })).toBeVisible();
+    await expect(journey.getByRole('button', { name: /approve exactly this/i })).toBeVisible();
+  });
+
+  // Phase 5H, directive §7 - the full customer-experience demonstration,
+  // the DECLINED (failed) branch: describe an obligation -> Nova offers
+  // Task Deferral -> a proposal is prepared -> the user reviews and
+  // DECLINES it -> an accurate "nothing was changed" result is shown
+  // (never worded as if a real task was touched) -> the user can still
+  // resume that same declined proposal afterwards. The successful/
+  // approved branch is already demonstrated above; this closes the
+  // directive's explicit "test both successful and failed scenarios."
+  test('full journey: Task Deferral - user reviews and declines, sees an accurate result, and can still resume it afterwards', async ({ page }) => {
+    await mockApis(page);
+    await enterMockAuthAndGoto(page);
+    const journey = page.locator('text=6. Integrated Agentic Nova Journey').locator('xpath=ancestor::section[1]');
+
+    await journey.getByRole('button', { name: /Just talk to Nova/i }).click();
+    await journey.getByRole('button', { name: /Continue to what's on your plate/i }).click();
+    await journey.getByLabel(/describe an obligation, commitment, or friction/i).fill('Finish the quarterly board deck');
+    await journey.getByRole('button', { name: /^add$/i }).click();
+    await journey.getByRole('button', { name: /get help with this/i }).click();
+    await journey.getByRole('button', { name: /defer or reprioritise it/i }).click();
+
+    await journey.getByRole('button', { name: /tell nova about this task/i }).click();
+    const deadlineGroup = journey.getByText(/do you control when this is due/i).locator('xpath=following-sibling::div[1]');
+    await deadlineGroup.getByRole('button', { name: /^yes$/i }).click();
+    const ownershipGroup = journey.getByText(/is this task yours alone to move/i).locator('xpath=following-sibling::div[1]');
+    await ownershipGroup.getByRole('button', { name: /^yes$/i }).click();
+    await journey.getByRole('button', { name: /^continue$/i }).click();
+    await journey.getByLabel(/proposed new due date/i).fill('next Friday');
+    await journey.getByPlaceholder(/why \(or why not\)/i).fill('Nobody is blocked on this right now.');
+    await journey.getByRole('button', { name: /prepare this proposal/i }).click();
+    await journey.getByRole('button', { name: /show for approval/i }).click();
+    await expect(journey.getByText('Awaiting your approval - nothing has happened yet', { exact: true })).toBeVisible();
+
+    await journey.getByRole('button', { name: /^decline$/i }).click();
+    await expect(journey.getByText(/you declined this - nothing was changed/i)).toBeVisible();
+    // A decline has its own honest wording - it never borrows the
+    // simulation-completed copy, and there is nothing left to simulate.
+    await expect(journey.getByRole('button', { name: /run the simulation/i })).toHaveCount(0);
+
+    // Resuming still works for a declined (failed) outcome, not only an approved one.
+    await journey.getByRole('button', { name: /show my history/i }).click();
+    await journey.getByRole('button', { name: /^resume$/i }).click();
+    await expect(journey.getByText('Declined - nothing was changed', { exact: true })).toBeVisible();
   });
 });

@@ -386,6 +386,28 @@ export const NovaTaskDeferral = ({ initialTaskDescription = '' }: { initialTaskD
     }
   };
 
+  // Phase 5H, directive §3 — returning to saved progress. Reuses the
+  // existing GET /:proposalId route (already there for the "current
+  // proposal" screen itself) rather than inventing new storage: the
+  // proposal was already real and server-persisted the moment it was
+  // first identified, this just loads that same record back into view.
+  // Always an explicit click - never automatic/silent.
+  const resumeProposal = async (proposalId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await secureApiFetch(`/api/nova/task-deferral/${proposalId}`);
+      const body = await res.json();
+      setProposal(body.proposal);
+      setOutcomeRecorded(null);
+      setExecuteOutcome(null);
+    } catch (err) {
+      setError(err instanceof SecureApiError ? err.message : 'Could not resume this.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Directive §2 step 8 — return to the task later.
   const startOver = () => {
     setProposal(null);
@@ -615,8 +637,11 @@ export const NovaTaskDeferral = ({ initialTaskDescription = '' }: { initialTaskD
           ) : (
             <ul className="space-y-1.5">
               {history.map((p) => (
-                <li key={p.proposalId} className="text-xs text-text-muted p-2 bg-surface/40 rounded-lg">
-                  "{p.identification.taskDescription}" - {STATE_LABEL[p.state]}
+                <li key={p.proposalId} className="text-xs text-text-muted p-2 bg-surface/40 rounded-lg flex items-center justify-between gap-2">
+                  <span>"{p.identification.taskDescription}" - {STATE_LABEL[p.state]}</span>
+                  <button onClick={() => resumeProposal(p.proposalId)} disabled={busy} className="shrink-0 min-h-8 px-2.5 text-xs font-bold text-primary hover:underline disabled:opacity-50">
+                    Resume
+                  </button>
                 </li>
               ))}
             </ul>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { CalendarClock, ShieldCheck, ShieldOff, History, Undo2, RotateCcw, AlertTriangle, CheckCircle2, XCircle, HelpCircle, ThumbsUp } from 'lucide-react';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api.ts';
 
@@ -77,19 +77,38 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
   const [executeOutcome, setExecuteOutcome] = useState<string | null>(null);
   const [outcomeRecorded, setOutcomeRecorded] = useState<string | null>(null);
 
-  useEffect(() => { if (initialTitle) setTitle(initialTitle); }, [initialTitle]);
+  // Phase 5H, directive §2 - fixed the two pre-existing
+  // react-hooks/set-state-in-effect errors without changing behaviour.
+  // "Adjust state during render" (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  // replaces the old useEffect that mirrored `initialTitle` into `title`:
+  // same effect (title updates exactly once whenever a NEW, non-empty
+  // initialTitle arrives, e.g. from NovaProactiveSuggestions' handoff),
+  // but computed synchronously during render instead of in a later effect.
+  const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
+  if (initialTitle !== prevInitialTitle) {
+    setPrevInitialTitle(initialTitle);
+    if (initialTitle) setTitle(initialTitle);
+  }
 
-  const loadPermission = useCallback(async () => {
-    try {
-      const res = await secureApiFetch('/api/nova/calendar-protection/action-permission');
-      const body = await res.json();
-      setPermission(body.permission);
-    } catch {
-      setPermission({ granted: false, grantedAt: null, withdrawnAt: null });
-    }
+  // The permission fetch-on-mount moved from a useCallback + a second
+  // effect that merely called it (which is what the lint rule flagged)
+  // to a single effect with its own inline async IIFE and an `ignore`
+  // guard, so a response that resolves after this component has already
+  // unmounted is never applied - same real request, same fallback on
+  // failure, no behaviour change.
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      try {
+        const res = await secureApiFetch('/api/nova/calendar-protection/action-permission');
+        const body = await res.json();
+        if (!ignore) setPermission(body.permission);
+      } catch {
+        if (!ignore) setPermission({ granted: false, grantedAt: null, withdrawnAt: null });
+      }
+    })();
+    return () => { ignore = true; };
   }, []);
-
-  useEffect(() => { loadPermission(); }, [loadPermission]);
 
   const togglePermission = async () => {
     setPermissionBusy(true);
@@ -239,6 +258,28 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
       setHistory(body.proposals ?? []);
     } catch (err) {
       setError(err instanceof SecureApiError ? err.message : 'Could not load your history.');
+    }
+  };
+
+  // Phase 5H, directive §3 — returning to saved progress. Reuses the
+  // existing GET /:proposalId route (already there for the "current
+  // proposal" screen itself) rather than inventing new storage: the
+  // proposal was already real and server-persisted the moment it was
+  // first prepared, this just loads that same record back into view.
+  // Always an explicit click - never automatic/silent.
+  const resumeProposal = async (proposalId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await secureApiFetch(`/api/nova/calendar-protection/${proposalId}`);
+      const body = await res.json();
+      setProposal(body.proposal);
+      setOutcomeRecorded(null);
+      setExecuteOutcome(null);
+    } catch (err) {
+      setError(err instanceof SecureApiError ? err.message : 'Could not resume this.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -406,8 +447,11 @@ export const NovaTakeTheLoad = ({ initialTitle = '' }: { initialTitle?: string }
           ) : (
             <ul className="space-y-1.5">
               {history.map((p) => (
-                <li key={p.proposalId} className="text-xs text-text-muted p-2 bg-surface/40 rounded-lg">
-                  "{p.title}" - {STATE_LABEL[p.state]}
+                <li key={p.proposalId} className="text-xs text-text-muted p-2 bg-surface/40 rounded-lg flex items-center justify-between gap-2">
+                  <span>"{p.title}" - {STATE_LABEL[p.state]}</span>
+                  <button onClick={() => resumeProposal(p.proposalId)} disabled={busy} className="shrink-0 min-h-8 px-2.5 text-xs font-bold text-primary hover:underline disabled:opacity-50">
+                    Resume
+                  </button>
                 </li>
               ))}
             </ul>

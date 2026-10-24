@@ -159,4 +159,27 @@ describe('NovaTakeTheLoad', () => {
     await userEvent.click(screen.getByRole('button', { name: /show my history/i }));
     expect(await screen.findByText(/old one/i)).toBeInTheDocument();
   });
+
+  // Phase 5H, directive §3 - returning to saved progress: a history entry
+  // can be resumed back into the active screen, reusing the existing
+  // GET /:proposalId route rather than any new storage.
+  it('resuming a history entry fetches the real saved proposal by id and loads it into the active view', async () => {
+    const SAVED = {
+      proposalId: 'cpp_saved', state: 'awaiting_approval', startIso: '2026-03-01T10:00:00.000Z', endIso: '2026-03-01T10:30:00.000Z',
+      title: 'Protect focus block', approvalFingerprint: 'fp-saved', failureReason: null, retryCount: 0, externalEventId: null,
+    };
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse(NOT_GRANTED));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposals: [{ ...SAVED, title: 'Protect focus block' }] }));
+    vi.mocked(secureApiFetch).mockResolvedValueOnce(jsonResponse({ proposal: SAVED }));
+
+    render(<NovaTakeTheLoad />);
+    await screen.findByText('Not granted');
+    await userEvent.click(screen.getByRole('button', { name: /show my history/i }));
+    await screen.findByText(/protect focus block/i);
+
+    await userEvent.click(screen.getByRole('button', { name: /^resume$/i }));
+
+    await waitFor(() => expect(secureApiFetch).toHaveBeenCalledWith('/api/nova/calendar-protection/cpp_saved'));
+    expect(await screen.findByRole('button', { name: /approve exactly this/i })).toBeInTheDocument();
+  });
 });
