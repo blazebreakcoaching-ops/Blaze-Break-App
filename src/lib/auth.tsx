@@ -146,6 +146,41 @@ export async function signInWithGoogleCalendar(authInstance: FirebaseAuth) {
   }
 }
 
+// Phase 5J "Calendar Pilot: Final Readiness" audit, Task 1 - closes a
+// confirmed consent defect found in IntegrationsDashboard.tsx: its
+// "Disconnect Google Workspace" confirmation told the user "This also
+// revokes the cached access token," but nothing ever called Google to
+// revoke anything - the app only cleared its own in-memory copy of the
+// token and signed the user out. The real OAuth grant between the
+// user's Google account and this app (including the calendar.events
+// write scope Boundary Autopilot's declineCalendarEvent depends on)
+// stayed active at Google's side regardless, visible and still usable
+// until the user went to myaccount.google.com and removed it by hand -
+// the opposite of what the app's own copy promised.
+//
+// This performs the real revocation Google's OAuth2 spec defines for
+// exactly this purpose (https://oauth2.googleapis.com/revoke) - a
+// standard token-teardown call, not an authentication operation, so it
+// does not conflict with this phase's "no live OAuth authentication"
+// restriction. It is deliberately best-effort: a token that is already
+// expired or was never valid will make this call fail, and the caller
+// (IntegrationsDashboard's performGoogleDisconnect) must still proceed
+// with clearing local state and signing out either way, since the
+// user's own intent to disconnect must not be blocked by a revoke call
+// against a token Google no longer even recognises.
+export async function revokeGoogleCalendarAccess(accessToken: string): Promise<boolean> {
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `token=${encodeURIComponent(accessToken)}`,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Firebase has no dedicated MicrosoftAuthProvider class - the generic
 // OAuthProvider('microsoft.com') exposes the same static
 // credentialFromResult/credentialFromError methods GoogleAuthProvider

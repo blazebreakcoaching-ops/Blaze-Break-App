@@ -1144,6 +1144,26 @@ service cloud.firestore {
             && (!('allowCalendarActionsWithdrawnAt' in request.resource.data) || request.resource.data.allowCalendarActionsWithdrawnAt == null || request.resource.data.allowCalendarActionsWithdrawnAt is string);
       }
 
+      // J2. platform_pilot_access/calendar_protection (Phase 5J, directive
+      // §4; Calendar Pilot readiness audit, Task 2) - Calendar Protection's
+      // admin-only pilot-eligibility gate (nova-calendar-pilot-
+      // eligibility.ts). Deliberately NOT like nova_permissions/current
+      // above: that document is the user's OWN self-service consent,
+      // readable and writable by its owner; this one is the PLATFORM's
+      // decision about which accounts are in a controlled rollout, and
+      // isOwner(uid) must never apply to it - the whole point of this gate
+      // (see that file's own header) is that no account can grant this to
+      // itself. Only server.ts's requireAdmin-gated
+      // POST/GET /api/admin/users/:uid/calendar-protection-pilot-
+      // eligibility routes ever touch this path, via the Admin SDK, which
+      // bypasses these rules entirely - so this block is explicit, not
+      // implicit, defence: even if some future change adds a careless
+      // generic subcollection rule elsewhere under users/{uid}, this
+      // path-specific "if false" still wins for exactly this document.
+      match /platform_pilot_access/{gateId} {
+        allow read, write: if false;
+      }
+
       // K2. NHEI evidence and temporal-relation storage - server (Admin
       // SDK) only. The persistence/consent service
       // (nhei-persistence-service.ts) is the only code that ever reads or

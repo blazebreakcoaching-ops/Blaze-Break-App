@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Key, Info, RefreshCw, AlertTriangle, CheckCircle2, CalendarDays, CalendarClock, MessageSquare, ListChecks, CheckSquare, LayoutGrid, Clock3, Mail } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { NotificationSettingsView } from './NotificationSettingsView';
-import { useAuth } from '../lib/auth';
+import { useAuth, revokeGoogleCalendarAccess } from '../lib/auth';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { syncCalendarSignal } from '../lib/calendar-signals';
 import { syncGmailSignal } from '../lib/gmail-signals';
@@ -254,8 +254,18 @@ export const IntegrationsDashboard = () => {
 
   const [pendingDisconnect, setPendingDisconnect] = useState<{ id: string; name: string } | null>(null);
 
+  // Calendar Pilot readiness audit, Task 1 - this previously only cleared
+  // the app's own in-memory copy of the token and signed the user out;
+  // it never told Google to revoke anything, despite the confirmation
+  // dialog below claiming it did. Now it actually calls Google's real
+  // revoke endpoint first (best-effort - see revokeGoogleCalendarAccess's
+  // own header comment for why a failed revoke must not block the
+  // user's own sign-out), so the token Boundary Autopilot and the
+  // read-only signals relied on is genuinely torn down at Google's side,
+  // not just forgotten locally.
   const performGoogleDisconnect = async () => {
     setPendingDisconnect(null);
+    if (accessToken) await revokeGoogleCalendarAccess(accessToken);
     await logOut();
   };
 
@@ -686,7 +696,7 @@ export const IntegrationsDashboard = () => {
       <ConfirmDialog
         open={!!pendingDisconnect}
         title={`Disconnect ${pendingDisconnect?.name || ''}?`}
-        message={pendingDisconnect?.id === 'google' ? "This also revokes the cached access token." : "You can reconnect at any time."}
+        message={pendingDisconnect?.id === 'google' ? "This revokes Blaze Break's access to your Google account and signs you out of Blaze Break entirely - you'll need to sign back in." : "You can reconnect at any time."}
         confirmLabel="Disconnect"
         onConfirm={() => {
           if (!pendingDisconnect) return;

@@ -569,6 +569,20 @@ async function runTests() {
     { proposalId: 'cpp_test1', event: 'prepared', detail: {}, at: '2026-01-01T00:00:00.000Z' },
   );
 
+  // * platform_pilot_access/calendar_protection: Calendar Pilot readiness
+  //   audit (Task 2) - the admin-only pilot-eligibility gate. Unlike
+  //   nova_permissions/current below (the user's OWN consent, which the
+  //   owner can read/write), this is the PLATFORM's decision about which
+  //   accounts are in a controlled rollout - it must be denied even to
+  //   the account it names, not just to other users, since the entire
+  //   point of this gate is that no account can grant it to itself. The
+  //   shared assertDeniedToEveryoneButAdmin helper already proves the
+  //   owner case along with other-user and unauthenticated.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/platform_pilot_access/calendar_protection',
+    { eligible: true, grantedAt: '2026-01-01T00:00:00.000Z', grantedBy: 'admin_uid', revokedAt: null },
+  );
+
   // * Calendar action permission (allowCalendarActions, on the shared
   //   nova_permissions/current doc) - explicitly named separately from
   //   the NHEI consent fields above, even though it's the same doc/rule:

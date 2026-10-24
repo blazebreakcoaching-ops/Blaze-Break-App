@@ -33,7 +33,7 @@ vi.mock('firebase/auth', async () => {
 });
 
 import { signInWithPopup, linkWithPopup, signInWithCredential, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider } from 'firebase/auth';
-import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook } from './auth';
+import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook, revokeGoogleCalendarAccess } from './auth';
 
 const fakeAuth = (currentUser: { isAnonymous: boolean } | null): Auth => ({ currentUser } as unknown as Auth);
 const fakeResult = { user: { uid: 'real-uid' } } as any;
@@ -135,5 +135,44 @@ describe('signInWithGoogleCalendar', () => {
     const result = await signInWithGoogleCalendar(fakeAuth({ isAnonymous: true }));
     expect(signInWithCredential).toHaveBeenCalledWith(expect.anything(), extractedCredential);
     expect(result).toBe(fakeResult);
+  });
+});
+
+// Calendar Pilot readiness audit, Task 1 - closes the gap where
+// "Disconnect Google Workspace" claimed to revoke the cached access
+// token but never actually called Google. This is the real revoke call
+// that claim now relies on being true.
+describe('revokeGoogleCalendarAccess', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  it('calls Google\'s real revoke endpoint with the token, and reports success', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true });
+    const result = await revokeGoogleCalendarAccess('tok_abc');
+    expect(result).toBe(true);
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://oauth2.googleapis.com/revoke');
+    expect(opts.method).toBe('POST');
+    expect(opts.body).toBe('token=tok_abc');
+  });
+
+  it('reports failure (without throwing) when Google rejects the revoke - e.g. the token was already invalid', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false });
+    await expect(revokeGoogleCalendarAccess('stale_tok')).resolves.toBe(false);
+  });
+
+  it('reports failure (without throwing) on a network error - the caller must still be able to sign the user out regardless', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    await expect(revokeGoogleCalendarAccess('tok')).resolves.toBe(false);
+  });
+
+  it('URL-encodes a token containing special characters rather than sending it raw', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true });
+    await revokeGoogleCalendarAccess('tok/with+special=chars');
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(opts.body).toBe(`token=${encodeURIComponent('tok/with+special=chars')}`);
   });
 });
