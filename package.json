@@ -17,6 +17,7 @@
     "test:components": "vitest run --config vitest.components.config.ts",
     "test:coverage": "vitest run --coverage",
     "test:emulator": "vitest run --config vitest.emulator.config.ts",
+    "test:nova-live-eval": "vitest run --config vitest.live-eval.config.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

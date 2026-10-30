@@ -33,7 +33,12 @@ export default defineConfig({
     // `npm run test:emulator` / vitest.emulator.config.ts - never as part
     // of the default suite, which must stay runnable with no emulator and
     // no Java present at all.
-    exclude: ['node_modules/**', 'dist/**', 'functions/**', 'mobile/**', '**/*.emulator.test.ts'],
+    // Phase 6A, directive §4 - *.live-eval.test.ts (the controlled
+    // live-Gemini Nova chat evaluation) needs the same kind of exclusion
+    // *.emulator.test.ts already has: it must never run as part of the
+    // default suite, full stop, regardless of what env vars happen to be
+    // set when `npm test` runs. See vitest.live-eval.config.ts.
+    exclude: ['node_modules/**', 'dist/**', 'functions/**', 'mobile/**', '**/*.emulator.test.ts', '**/*.live-eval.test.ts'],
     // Opt-in only (`npm run test:coverage`) - not wired into `npm test`/CI.
     // Excludes src/** (frontend components) since this project has no DOM
     // rendering harness (no jsdom/@testing-library) to exercise them; the
