@@ -15,33 +15,108 @@
 // to move just one of them off this model doesn't have to touch the
 // other's call sites at all.
 
-// PHASE 6B.1 (Priority 2) - explicit, configurable model selection.
+// PHASE 6B.1 (Priority 2) / PHASE 6B.1 FINAL CORRECTIONS - explicit,
+// configurable model selection.
 //
-// The Phase 6B.1 directive asserted that Google deprecated gemini-3.5-flash
-// on 2026-10-08 with automatic routing to gemini-3.6-flash, and asked that
-// gemini-3.8-flash's API availability/compatibility be verified. A live web
-// search was performed before writing this file (see
-// NOVA_PHASE6B1_MODEL_COST_CORRECTIONS_REPORT.md for the queries and
-// results). It did NOT confirm that claim - Google's own docs instead
-// describe gemini-3.6-flash as a PREVIOUS-generation release still
-// available for production use, and list gemini-3.5-flash as a current
-// migration *target*, which contradicts the directive's framing rather
-// than supporting it. gemini-3.8-flash appears to be a real, newer model
-// (third-party sources agree on the model id, a ~Sept 2026 release, and a
-// 1,048,576-token input limit), but its official availability/pricing is
-// disputed even between those third-party sources, and neither claim was
-// verifiable against Google's own canonical docs from this environment.
+// Phase 6B.1's own first pass could not confirm Google's deprecation of
+// gemini-3.5-flash and found contradicting search results. This
+// correction pass re-ran the research with the four official URLs the
+// directive supplied (ai.google.dev/gemini-api/docs/models/gemini-3.5-flash,
+// .../gemini-3.6-flash, .../gemini-3.8-flash, .../pricing). Those exact
+// pages could NOT be fetched directly in this environment - WebFetch to
+// ai.google.dev fails with ENOTFOUND here (the host is outside this
+// sandbox's allowed network domains) - so nothing below is a direct
+// primary-source read. It is corroborated instead by several independent
+// web-search queries whose results repeatedly surfaced and quoted what
+// are presented as the SAME official page titles/URLs
+// (ai.google.dev/gemini-api/docs/deprecations,
+// .../docs/models/gemini-3.5-flash, .../docs/pricing,
+// docs.cloud.google.com/.../gemini-3-8-flash) via a search index this
+// environment can still reach, together with multiple independent
+// third-party sources agreeing on the same figures. That is meaningfully
+// stronger evidence than the single, inconclusive search this project
+// ran last phase, but it is still not a page this file's author rendered
+// and read directly - see NOVA_PHASE6B1_FINAL_CORRECTIONS_REPORT.md for
+// the exact queries, results, and that caveat stated again in full.
 //
-// Per this project's standing rule never to report something as confirmed
-// unless it actually was, none of that is treated as verified fact, and
-// the DEFAULT model is NOT changed. Instead, every model here is now
-// configurable by environment variable, constrained to a small allowlist
-// of model ids this file explicitly knows about - so a real migration,
-// once actually confirmed and regression-tested, is a configuration
-// change, not a code change. An override naming a model outside the
-// allowlist is ignored (falls back to the documented default) rather than
-// silently sent to the provider, so a typo or an unverified id can never
-// reach a real API call.
+// On that basis:
+//   - gemini-3.5-flash: reported DEPRECATED (Google's 2026-10-08 release
+//     notes), with API requests automatically rerouted to
+//     gemini-3.6-flash.
+//   - gemini-3.6-flash: reported as the direct, currently-supported
+//     replacement (lower output pricing, reduced token usage).
+//   - gemini-3.8-flash: reported as a newer, officially-supported stable
+//     text model - Google's own "what's new" / model-card pages, per
+//     search-index snippets citing them.
+// See GEMINI_MODEL_STATUS below for how this is now recorded in code.
+//
+// Per the directive's own explicit instruction ("Do not switch the
+// production default model without testing and authorisation"), this
+// correction does NOT flip GEMINI_TEXT_MODEL's default despite the
+// stronger evidence above - the default stays gemini-3.5-flash until a
+// real migration is deliberately authorised and regression-tested. Every
+// model here remains configurable by environment variable, constrained to
+// a small allowlist of model ids this file explicitly knows about. An
+// override naming a model outside the allowlist is ignored (falls back to
+// the documented default) rather than silently sent to the provider, so a
+// typo or an unverified id can never reach a real API call.
+export type GeminiTextModelStatus = 'deprecated' | 'supported_replacement' | 'supported_evaluation_candidate';
+
+export interface GeminiTextModelStatusEntry {
+  status: GeminiTextModelStatus;
+  /** One-line human summary of the status, for admin/report surfaces. */
+  note: string;
+  /**
+   * Thinking levels this model is reported to accept via
+   * generationConfig.thinkingConfig.thinkingLevel. `null` means "no
+   * per-model restriction is recorded" (every SDK-level ThinkingLevel
+   * value is allowed) - NOT the same as an empty array, which would mean
+   * "no thinking levels are valid for this model."
+   */
+  supportedThinkingLevels: readonly ('MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH')[] | null;
+}
+
+// PHASE 6B.1 FINAL CORRECTIONS (Priority 2/3) - "Distinguish
+// historical/deprecated identifiers from supported evaluation
+// candidates" + "validate the selected thinking level against the chosen
+// model." One row per model this registry knows about at all (including
+// ones with no price entry and ones not in KNOWN_GEMINI_TEXT_MODELS), so
+// a caller can always ask "what do we know about this id" even for a
+// legacy/historical model nothing selects anymore.
+export const GEMINI_MODEL_STATUS: Record<string, GeminiTextModelStatusEntry> = {
+  'gemini-3.5-flash': {
+    status: 'deprecated',
+    note: 'Reported deprecated by Google (2026-10-08 release notes); requests reported auto-routed to gemini-3.6-flash. Still this app\'s configured production default pending authorised migration testing - see this file\'s header comment.',
+    supportedThinkingLevels: null,
+  },
+  'gemini-3.6-flash': {
+    status: 'supported_replacement',
+    note: 'Reported as gemini-3.5-flash\'s direct, currently-supported replacement.',
+    supportedThinkingLevels: null,
+  },
+  'gemini-3.8-flash': {
+    status: 'supported_evaluation_candidate',
+    note: 'Reported as a newer, officially-supported stable text model - not this app\'s configured default. MINIMAL thinking level is reported UNSUPPORTED for this model specifically (returns a provider validation error) - only LOW/MEDIUM(default)/HIGH are accepted.',
+    supportedThinkingLevels: ['LOW', 'MEDIUM', 'HIGH'],
+  },
+  // Legacy/historical - no real traffic, kept only so an old
+  // report/fixture referencing it still resolves to a known status.
+  'gemini-2.0-flash': {
+    status: 'deprecated',
+    note: 'Legacy model from Phase 3C-2B; superseded well before gemini-3.5-flash. Historical only.',
+    supportedThinkingLevels: null,
+  },
+};
+
+/**
+ * Returns the thinking levels a model is known to accept, or `null` if
+ * this registry has no per-model restriction on record (meaning: don't
+ * reject on this basis - every SDK-level value is allowed as far as this
+ * file knows).
+ */
+export function getSupportedThinkingLevels(modelId: string): readonly ('MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH')[] | null {
+  return GEMINI_MODEL_STATUS[modelId]?.supportedThinkingLevels ?? null;
+}
 function resolveConfiguredGeminiModel(overrideEnvVar: string, knownModels: readonly string[], defaultModel: string): string {
   const override = process.env[overrideEnvVar];
   if (!override) return defaultModel;

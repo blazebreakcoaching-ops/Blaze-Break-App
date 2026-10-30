@@ -9,7 +9,7 @@
 // estimate - see section 40 of the hardening brief ("make clear where
 // figures are estimates").
 
-import { estimateModelCostUsd } from './ai-model-price-registry';
+import { estimateModelCostUsd, estimatePotentialCacheDiscountUsd } from './ai-model-price-registry';
 
 export interface CostRates {
   novaTextPerMessage: number; // USD, rough average input+output tokens for a typical Nova chat turn
@@ -71,10 +71,19 @@ export interface MeasuredNovaTokenUsage {
 export interface MeasuredCostField {
   /** The real, measured quantity this field is built from (a token count, a minute count, a call count) - never invented. */
   measuredQuantity: number;
-  /** USD estimate from the configurable model-price registry, or null if the model/rate is unknown - see ai-model-price-registry.ts. Never fabricated when unavailable. */
+  /** USD estimate from the configurable model-price registry, or null if the model/rate is unknown - see ai-model-price-registry.ts. Never fabricated when unavailable. Always the CONSERVATIVE (undiscounted) figure - see potentialCacheDiscountUsd. */
   estimatedCostUsd: number | null;
   /** Always true for every field this function returns - there is no live provider billing API integrated anywhere in this codebase. */
   isEstimate: true;
+  /**
+   * PHASE 6B.1 FINAL CORRECTIONS (Priority 4) - how much LOWER
+   * estimatedCostUsd COULD be if the provider's documented cached-input
+   * discount applies, or `null` when no cached rate is on record for this
+   * model (unknown, not zero). NEVER already subtracted from
+   * estimatedCostUsd above - see estimatePotentialCacheDiscountUsd's own
+   * comment for why that stays the conservative figure.
+   */
+  potentialCacheDiscountUsd: number | null;
 }
 
 // A token-grounded cost estimate for the one pathway this phase actually
@@ -100,12 +109,14 @@ export function estimateNovaTextCostFromMeasuredTokens(
   promptTokens: number,
   outputTokens: number,
   thinkingTokens: number = 0,
+  cachedTokens: number = 0,
 ): MeasuredCostField {
   const billableOutputTokens = outputTokens + thinkingTokens;
   return {
     measuredQuantity: promptTokens + billableOutputTokens,
     estimatedCostUsd: estimateModelCostUsd(modelId, promptTokens, billableOutputTokens),
     isEstimate: true,
+    potentialCacheDiscountUsd: estimatePotentialCacheDiscountUsd(modelId, cachedTokens),
   };
 }
 

@@ -69,7 +69,8 @@ import { handleNheiKnowledgeReviewRequest } from './nhei-knowledge-review-servic
 import { listAllKnowledgeEntriesForReview } from './nhei-knowledge-service';
 import { importKnowledgeContentLibrary } from './nhei-knowledge-import-service';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
-import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
+import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL, getSupportedThinkingLevels } from './ai-model-registry';
+import { estimateModelCostUsd, estimatePotentialCacheDiscountUsd } from './ai-model-price-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
 import {
   buildPriceIdMap, resolveStripeSubscriptionPatch, buildPastDuePatch, extractPriceIdFromSubscriptionItems,
@@ -3164,6 +3165,28 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     }
     const { message, history, systemInstruction, beforeWordsContext, maxOutputTokens, thinkingLevel } = parsedParams.data;
 
+    // PHASE 6B.1 FINAL CORRECTIONS (Priority 3) - "Validate the selected
+    // thinking level against the chosen model... rejected or explicitly
+    // normalised without silently changing the intended configuration."
+    // gemini-3.8-flash is reported to reject MINIMAL with a provider-side
+    // validation error (GEMINI_MODEL_STATUS's own sourcing) - rejecting it
+    // HERE, before any model call, gives the caller the same clear,
+    // explicit failure the provider would eventually give, without
+    // spending a call to find out, and without ever silently substituting
+    // a different level than the one actually requested. Checked against
+    // GEMINI_TEXT_MODEL (the real, currently-configured model - itself
+    // never flipped by this phase) rather than any Claude/Vertex branch
+    // logic below, since thinkingLevel only ever reaches the Gemini
+    // Developer/Vertex client's generationConfig.
+    if (thinkingLevel) {
+      const supportedLevels = getSupportedThinkingLevels(GEMINI_TEXT_MODEL);
+      if (supportedLevels && !supportedLevels.includes(thinkingLevel)) {
+        return res.status(400).json({
+          error: `thinkingLevel "${thinkingLevel}" is not supported by the configured model "${GEMINI_TEXT_MODEL}". Supported levels for this model: ${supportedLevels.join(', ')}.`,
+        });
+      }
+    }
+
     // Phase 5F (directive §4): this is the actual trust-boundary fix.
     // `beforeWordsContext`, if present, is quarantined (nonce delimiter +
     // explicit "this is not an instruction" framing, from
@@ -3475,6 +3498,23 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
           increments.novaTextThinkingTokens = FieldValue.increment(turnThinkingTokens);
           increments.novaTextCachedTokens = FieldValue.increment(turnCachedTokens);
           increments.novaTextToolUsePromptTokens = FieldValue.increment(turnToolUsePromptTokens);
+          // PHASE 6B.1 FINAL CORRECTIONS (Priority 2 - "ensure cost
+          // calculations use the actual serving model where available").
+          // Priced per-turn, right now, using servingModelId (the real
+          // model the provider actually reported serving this turn) when
+          // the provider exposed one, falling back to the configured
+          // GEMINI_TEXT_MODEL otherwise - NOT re-derived later from a
+          // period-wide token total against whichever model happens to be
+          // configured at REPORT time, which could silently mis-price a
+          // period that spanned a model change. Accumulated into its own
+          // field precisely so the admin view can prefer this real,
+          // serving-model-aware total over the configured-model-only
+          // estimate it already computes from the raw token counts above.
+          const turnServingModel = servingModelId ?? GEMINI_TEXT_MODEL;
+          const turnCostUsd = estimateModelCostUsd(turnServingModel, turnPromptTokens, turnOutputTokens + turnThinkingTokens);
+          if (turnCostUsd !== null) {
+            increments.novaTextTokenCostUsdAccumulated = FieldValue.increment(turnCostUsd);
+          }
           shouldWriteUsage = true;
         }
         // PHASE 6B.1 (Priority 3) - counted separately from the token
@@ -7553,6 +7593,13 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       novaTextCachedTokens: 0,
       novaTextToolUsePromptTokens: 0,
       novaTextUsageUnavailableCount: 0,
+      // PHASE 6B.1 FINAL CORRECTIONS (Priority 2) - real per-turn cost,
+      // priced at write-time using whichever model actually served that
+      // turn (see server.ts's /api/nova/chat route). Preferred over
+      // novaTextTokenCostUsd below (which re-derives a cost from the raw
+      // token totals using only the CURRENTLY configured model) whenever
+      // it is available.
+      novaTextTokenCostUsdAccumulated: 0,
       novaMemorySearchCount: 0,
       novaMemoryWriteCount: 0,
       agenticProposalCount: 0,
@@ -7604,6 +7651,7 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
         measured.novaTextCachedTokens += Number(data.novaTextCachedTokens) || 0;
         measured.novaTextToolUsePromptTokens += Number(data.novaTextToolUsePromptTokens) || 0;
         measured.novaTextUsageUnavailableCount += Number(data.novaTextUsageUnavailableCount) || 0;
+        measured.novaTextTokenCostUsdAccumulated += Number(data.novaTextTokenCostUsdAccumulated) || 0;
         measured.novaMemorySearchCount += Number(data.novaMemorySearchCount) || 0;
         measured.novaMemoryWriteCount += Number(data.novaMemoryWriteCount) || 0;
         measured.agenticProposalCount += Number(data.agenticProposalCount) || 0;
@@ -7694,7 +7742,15 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     // with real Gemini usageMetadata (Nova text chat). estimatedCostUsd
     // is null, not a guess, whenever GEMINI_TEXT_MODEL isn't in the
     // price registry - see ai-model-price-registry.ts.
-    const novaTextTokenCost = estimateNovaTextCostFromMeasuredTokens(GEMINI_TEXT_MODEL, measured.novaTextPromptTokens, measured.novaTextOutputTokens, measured.novaTextThinkingTokens);
+    const novaTextTokenCost = estimateNovaTextCostFromMeasuredTokens(GEMINI_TEXT_MODEL, measured.novaTextPromptTokens, measured.novaTextOutputTokens, measured.novaTextThinkingTokens, measured.novaTextCachedTokens);
+    // PHASE 6B.1 FINAL CORRECTIONS (Priority 2) - the real, serving-model-
+    // aware accumulated cost (see server.ts's own comment at the
+    // increment site). Only meaningfully populated for turns recorded
+    // since this correction shipped; older data simply has 0 here, which
+    // is why this is reported ALONGSIDE, not instead of,
+    // novaTextTokenCost's configured-model estimate below - never
+    // silently swapped in as if it covered the whole period.
+    const novaTextTokenCostUsdAccumulated = Math.round(measured.novaTextTokenCostUsdAccumulated * 1e6) / 1e6;
 
     res.json({
       periodDays,
@@ -7725,6 +7781,14 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
         // thinking tokens as billable output tokens too (see
         // estimateNovaTextCostFromMeasuredTokens's own comment).
         novaTextTokenCostUsd: novaTextTokenCost,
+        // PHASE 6B.1 FINAL CORRECTIONS (Priority 2) - the real,
+        // serving-model-aware total (see this route's own comment above
+        // where it's computed) - prefer this over novaTextTokenCostUsd
+        // above when it is non-zero, since that figure re-derives a cost
+        // from raw token totals using only whichever model happens to be
+        // CONFIGURED right now, which can mis-price a period that spanned
+        // a real model change.
+        novaTextTokenCostUsdAccumulated,
         // PHASE 6B.1 (Priority 3) - "unavailable, not zero cost": a count
         // of real Nova chat turns in this period where no usageMetadata
         // was returned at all. These turns contribute $0 to
@@ -7738,8 +7802,17 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
           emailSendCount: "Brevo email sends have no usage counter yet (SMS does, via categoryCounts) - not yet instrumented.",
           voiceTokenUsage: "Gemini Live's message shape in this SDK does not expose per-message usageMetadata - voice cost is tracked by real elapsed minutes (nova_voice_minutes) instead, not tokens.",
           rawCloudSpend: "No Firestore/Cloud Function billing-export integration exists - per-customer Firebase/cloud operation cost is not measured.",
-          novaTextCachedTokens: "Captured and summed (see novaTextCachedTokens above) but NOT priced separately - cachedContentTokenCount is a subset of promptTokenCount typically billed at a discount, and no verified cache-discount rate exists in ai-model-price-registry.ts yet, so it is surfaced as a raw count only, never folded into novaTextTokenCostUsd at either the full or a guessed discounted rate.",
         },
+        // PHASE 6B.1 FINAL CORRECTIONS (Priority 4 - "cached input tokens
+        // are accounted for conservatively and clearly"). novaTextTokenCostUsd
+        // above is CONSERVATIVE: it prices novaTextCachedTokens's full
+        // promptTokens total (cached tokens included) at the standard,
+        // undiscounted input rate - never a guessed discount. This field
+        // states explicitly how much LOWER the real bill could be if the
+        // documented cached-input rate applies, or null when no cached
+        // rate is on record for the configured model - never silently
+        // folded into the headline cost above.
+        potentialCacheDiscountUsd: novaTextTokenCost.potentialCacheDiscountUsd,
       },
       budget: {
         monthlyBudgetUsd,

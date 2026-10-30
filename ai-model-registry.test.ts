@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
+import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL, GEMINI_MODEL_STATUS, getSupportedThinkingLevels } from './ai-model-registry';
 
 describe('ai-model-registry', () => {
   it('exports one named constant per logical capability, all distinct strings', () => {
@@ -11,6 +11,40 @@ describe('ai-model-registry', () => {
 
   it('GEMINI_TEXT_MODEL defaults to gemini-3.5-flash when no override env var is set (Phase 6B.1 - behaviour preserved pending real verification)', () => {
     expect(GEMINI_TEXT_MODEL).toBe('gemini-3.5-flash');
+  });
+});
+
+// PHASE 6B.1 FINAL CORRECTIONS (Priority 2/3) - "Distinguish
+// historical/deprecated identifiers from supported evaluation
+// candidates" + per-model thinking-level validation data.
+describe('GEMINI_MODEL_STATUS / getSupportedThinkingLevels (final corrections)', () => {
+  it('gemini-3.5-flash is recorded deprecated, but remains the configured default (no default flip without authorised testing)', () => {
+    expect(GEMINI_MODEL_STATUS['gemini-3.5-flash'].status).toBe('deprecated');
+    expect(GEMINI_TEXT_MODEL).toBe('gemini-3.5-flash');
+  });
+
+  it('gemini-3.6-flash is recorded as the supported replacement', () => {
+    expect(GEMINI_MODEL_STATUS['gemini-3.6-flash'].status).toBe('supported_replacement');
+  });
+
+  it('gemini-3.8-flash is recorded as a supported evaluation candidate, not the configured default', () => {
+    expect(GEMINI_MODEL_STATUS['gemini-3.8-flash'].status).toBe('supported_evaluation_candidate');
+    expect(GEMINI_TEXT_MODEL).not.toBe('gemini-3.8-flash');
+  });
+
+  it('getSupportedThinkingLevels restricts gemini-3.8-flash to LOW/MEDIUM/HIGH, excluding MINIMAL', () => {
+    const levels = getSupportedThinkingLevels('gemini-3.8-flash');
+    expect(levels).toEqual(['LOW', 'MEDIUM', 'HIGH']);
+    expect(levels).not.toContain('MINIMAL');
+  });
+
+  it('getSupportedThinkingLevels returns null (no restriction on record) for a model with no documented restriction', () => {
+    expect(getSupportedThinkingLevels('gemini-3.5-flash')).toBeNull();
+    expect(getSupportedThinkingLevels('gemini-3.6-flash')).toBeNull();
+  });
+
+  it('getSupportedThinkingLevels returns null for a model this registry knows nothing about at all', () => {
+    expect(getSupportedThinkingLevels('not-a-real-model')).toBeNull();
   });
 });
 

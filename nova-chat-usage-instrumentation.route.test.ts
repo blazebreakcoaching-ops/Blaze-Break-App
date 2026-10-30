@@ -141,6 +141,37 @@ describe('POST /api/nova/chat - real Gemini token usage capture', () => {
     expect(doc?.novaTextToolUsePromptTokens).toBe(5);
   });
 
+  // PHASE 6B.1 FINAL CORRECTIONS (Priority 2) - "ensure cost calculations
+  // use the actual serving model where available."
+  it('captures modelVersion as servingModelId when the mocked client returns one, and prices the turn\'s real accumulated cost using it rather than the configured model', async () => {
+    h.sendMessage.mockImplementationOnce(async () => ({
+      text: 'ok',
+      functionCalls: [],
+      usageMetadata: { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
+      modelVersion: 'gemini-3.6-flash',
+    }));
+    const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'hello' });
+    expect(res.status).toBe(200);
+    expect(res.body.usage.servingModelId).toBe('gemini-3.6-flash');
+    const doc = await getDocRaw(`users/${USER}/usage_counters/${todayKey()}`);
+    // gemini-3.6-flash's standard rate is $0.75/$3.75 per million tokens -
+    // 1M prompt + 1M output = $0.75 + $3.75 = $4.50. If this were instead
+    // (incorrectly) priced at the configured gemini-3.5-flash rate
+    // ($0.10/$0.40 per million), it would be $0.50, not $4.50 - this
+    // assertion fails if the serving-model-aware pricing regresses back
+    // to always using the configured model.
+    expect(doc?.novaTextTokenCostUsdAccumulated).toBeCloseTo(4.5, 5);
+  });
+
+  it('falls back to the configured model for accumulated cost when the mocked client returns no modelVersion', async () => {
+    const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'hello' });
+    expect(res.status).toBe(200);
+    expect(res.body.usage.servingModelId).toBeNull();
+    const doc = await getDocRaw(`users/${USER}/usage_counters/${todayKey()}`);
+    // gemini-3.5-flash (configured default): $0.0001/$0.0004 per 1k tokens -> 50 prompt + 20 output.
+    expect(doc?.novaTextTokenCostUsdAccumulated).toBeCloseTo((50 / 1000) * 0.0001 + (20 / 1000) * 0.0004, 10);
+  });
+
   it('marks usageMetadataAvailable:false (never silently 0-cost) when the mocked client returns no usageMetadata at all, and records it as an unavailable turn rather than a zero-token one', async () => {
     h.sendMessage.mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
     const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'hello' });
