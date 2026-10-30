@@ -126,7 +126,7 @@ import {
   smsGloballyEnabled, smsCategoryEnabled,
 } from './sms-guardrails';
 import { getEffectiveNotificationPreferences, routeNotification } from './notification-router';
-import { UsageTotals, estimateCost, evaluateBudgetAlert } from './cost-estimates';
+import { UsageTotals, estimateCost, evaluateBudgetAlert, estimateNovaTextCostFromMeasuredTokens } from './cost-estimates';
 import { managedTeamsFor, isTeamManager, isHrViewer, validateTeamAssignment, validateHrViewerList, computeQualifyingTeamGroups } from './org-team-management';
 import { validateAckInput, describeFollowUp } from './team-escalation';
 import {
@@ -2668,7 +2668,18 @@ const ChatRequestSchema = z.object({
   message: z.string().min(1).max(2000),
   history: z.array(z.any()).max(50).optional().default([]), // loose type for history, but limited size
   systemInstruction: z.string().max(3000).optional(),
-  beforeWordsContext: BeforeWordsContextSchema.optional()
+  beforeWordsContext: BeforeWordsContextSchema.optional(),
+  // PHASE 6B (directive §3) - optional, and only ever able to LOWER the
+  // real Gemini generationConfig.maxOutputTokens ceiling for this one
+  // call below whatever the model's own default is; it can never raise
+  // cost or let a caller request more than the clamp below allows. Added
+  // specifically so the controlled live-model chat evaluation harness
+  // (nova-chat-live-model-evaluation-runner.ts) has a genuine,
+  // provider-enforced "maximum model response length" control to set,
+  // rather than only being able to observe length after the fact. No
+  // existing caller sends this field, so omitting it leaves today's
+  // behaviour completely unchanged.
+  maxOutputTokens: z.number().int().min(16).max(1024).optional(),
 }).strict();
 
 // Nova tool use, phase 1: read-only tools only. Nothing here writes,
@@ -2905,25 +2916,85 @@ function executeOfferPracticalAssistance(args: Record<string, unknown>): { offer
   return { offered: true, reason: args.reason as string };
 }
 
+// PHASE 6B (directive §2) - "Model API calls per account" and raw token
+// counts are already covered by checkAndReserveCapability/
+// recordCapabilityUsage's nova_text counter; memory searches/writes and
+// agentic-action proposals had NO equivalent counter anywhere before
+// this phase, despite being named explicitly in the directive's
+// required-measurement list. Firing exactly once per real tool call,
+// from the single shared executeNovaTool dispatcher both text chat AND
+// Nova Live voice call into (see the file-level comment above this
+// function), so both surfaces are covered by one instrumentation point
+// rather than two independently-maintained copies. Fire-and-forget
+// (never awaited), same pattern as recordCapabilityUsage's own callers -
+// an observability write must never add latency to, or be able to fail,
+// the user-facing tool call it's counting. Only counts a tool call that
+// actually did what it claims (output.saved/offered/suggested/proposed
+// === true) - a call the tool itself refused (missing consent, flag
+// off, invalid args) is not a real operation to bill or report against.
+function recordNovaToolUsageMetric(uid: string | undefined, name: string, output: Record<string, unknown>): void {
+  if (!uid) return;
+  const db = getDb();
+  const fields: Record<string, number> = {};
+  switch (name) {
+    case "search_nova_memories":
+      fields.novaMemorySearchCount = 1;
+      break;
+    case "remember_about_user":
+      if (output.saved === true) fields.novaMemoryWriteCount = 1;
+      break;
+    case "offer_guardian_support":
+      if (output.offered === true) { fields.agenticProposalCount = 1; fields["agenticProposalsByTool.offer_guardian_support"] = 1; }
+      break;
+    case "offer_practical_assistance":
+      if (output.offered === true) { fields.agenticProposalCount = 1; fields["agenticProposalsByTool.offer_practical_assistance"] = 1; }
+      break;
+    case "propose_recovery_action":
+      if (output.proposed === true) { fields.agenticProposalCount = 1; fields["agenticProposalsByTool.propose_recovery_action"] = 1; }
+      break;
+    case "suggest_feature":
+      if (output.suggested === true) { fields.agenticProposalCount = 1; fields["agenticProposalsByTool.suggest_feature"] = 1; }
+      break;
+    default:
+      return;
+  }
+  if (Object.keys(fields).length === 0) return;
+  const increments: Record<string, FirebaseFirestore.FieldValue> = {};
+  for (const [key, amount] of Object.entries(fields)) increments[key] = FieldValue.increment(amount);
+  const writeOne = (resetPeriod: 'daily' | 'monthly') =>
+    usageCounterRef(db, uid, resetPeriod).set({ ...increments, updatedAt: new Date().toISOString() }, { merge: true });
+  Promise.all([writeOne('daily'), writeOne('monthly')])
+    .catch((e) => logger.error(`[Nova usage instrumentation] failed to record "${name}" for uid ${uid}:`, errorFields(e)));
+}
+
 async function executeNovaTool(name: string, args: Record<string, unknown>, uid: string | undefined, firestoreDb: any): Promise<Record<string, unknown>> {
   if (!uid) return { error: "No authenticated user for this tool call." };
   try {
+    let output: Record<string, unknown>;
     switch (name) {
       case "search_nova_memories":
-        return await executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
+        output = await executeSearchNovaMemories(uid, firestoreDb, String(args.query || ""));
+        break;
       case "propose_recovery_action":
-        return executeProposeRecoveryAction(args);
+        output = executeProposeRecoveryAction(args);
+        break;
       case "suggest_feature":
-        return executeSuggestFeature(args);
+        output = executeSuggestFeature(args);
+        break;
       case "remember_about_user":
-        return await executeRememberAboutUser(uid, firestoreDb, args);
+        output = await executeRememberAboutUser(uid, firestoreDb, args);
+        break;
       case "offer_guardian_support":
-        return executeOfferGuardianSupport(args);
+        output = executeOfferGuardianSupport(args);
+        break;
       case "offer_practical_assistance":
-        return executeOfferPracticalAssistance(args);
+        output = executeOfferPracticalAssistance(args);
+        break;
       default:
         return { error: `Unknown tool: ${name}` };
     }
+    recordNovaToolUsageMetric(uid, name, output);
+    return output;
   } catch (err) {
     // An unexpected failure inside a tool handler (a Firestore hiccup,
     // a network blip - anything the handler's own validation didn't
@@ -3075,7 +3146,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     if (!parsedParams.success) {
       return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
-    const { message, history, systemInstruction, beforeWordsContext } = parsedParams.data;
+    const { message, history, systemInstruction, beforeWordsContext, maxOutputTokens } = parsedParams.data;
 
     // Phase 5F (directive §4): this is the actual trust-boundary fix.
     // `beforeWordsContext`, if present, is quarantined (nonce delimiter +
@@ -3240,11 +3311,31 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
         config: {
           systemInstruction: mergedSystemPrompt,
           tools: NOVA_TOOLS_ENABLED ? [{ functionDeclarations: NOVA_TOOLS }] : undefined,
+          // PHASE 6B (directive §3) - only ever present, and only ever
+          // able to LOWER the response-length ceiling, when a caller
+          // (today, only the controlled live-model chat evaluation
+          // harness) explicitly asks for one - see ChatRequestSchema's
+          // own comment. Every existing real client omits this field, so
+          // this changes nothing about today's production behaviour.
+          ...(maxOutputTokens ? { maxOutputTokens } : {}),
         },
         history: history || [],
       });
 
       let result = await chat.sendMessage({ message: effectiveMessage });
+
+      // PHASE 6B (directive §2) - real Gemini usageMetadata, captured
+      // from every sendMessage() call this turn makes (the initial one
+      // plus any tool-call round-trips below), not invented or
+      // estimated. `usageMetadata` is the same SDK field
+      // nhei-extraction-service.ts's createGeminiExtractionCallerWithUsage
+      // already reads for the NHEI evaluation runner - reusing the exact
+      // field names here rather than guessing at a different shape.
+      // Missing/malformed fields degrade to 0, never thrown: a model
+      // response with no usage metadata should degrade the cost signal,
+      // not break the chat turn itself.
+      let turnPromptTokens = typeof result.usageMetadata?.promptTokenCount === 'number' ? result.usageMetadata.promptTokenCount : 0;
+      let turnOutputTokens = typeof result.usageMetadata?.candidatesTokenCount === 'number' ? result.usageMetadata.candidatesTokenCount : 0;
 
       // Bounded loop: execute any requested tool calls, send results back,
       // and let the model continue - capped so a misbehaving model can't
@@ -3283,10 +3374,49 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
           })
         );
         result = await chat.sendMessage({ message: responseParts });
+        turnPromptTokens += typeof result.usageMetadata?.promptTokenCount === 'number' ? result.usageMetadata.promptTokenCount : 0;
+        turnOutputTokens += typeof result.usageMetadata?.candidatesTokenCount === 'number' ? result.usageMetadata.candidatesTokenCount : 0;
       }
 
       clearTimeout(timeoutId);
-      res.json({ text: result.text, privacyMetadata: contextMetadata, planTrace });
+
+      // Fire-and-forget, same as every other usage-counter write in this
+      // file (recordCapabilityUsage's own callers) - an observability
+      // write must never add latency to, or be able to fail, the user's
+      // actual chat response. Written to the same usage_counters doc the
+      // nova_text capability count already lives in, as new, additional
+      // fields - not a second, parallel storage location.
+      if (uid && (turnPromptTokens > 0 || turnOutputTokens > 0)) {
+        const usageDb = getDb();
+        const nowIso = new Date().toISOString();
+        const increments = {
+          novaTextPromptTokens: FieldValue.increment(turnPromptTokens),
+          novaTextOutputTokens: FieldValue.increment(turnOutputTokens),
+          updatedAt: nowIso,
+        };
+        Promise.all([
+          usageCounterRef(usageDb, uid, 'daily').set(increments, { merge: true }),
+          usageCounterRef(usageDb, uid, 'monthly').set(increments, { merge: true }),
+        ]).catch((e) => logger.error(`[Nova usage instrumentation] failed to record chat token usage for uid ${uid}:`, errorFields(e)));
+      }
+
+      res.json({
+        text: result.text,
+        privacyMetadata: contextMetadata,
+        planTrace,
+        // PHASE 6B (directive §2/§3) - token counts only, never the
+        // conversation text itself. Additive field: no existing client
+        // reads this, so nothing changes for them; the controlled
+        // live-model chat evaluation harness is the first real consumer,
+        // using it for genuine post-call budget true-up (see
+        // nova-chat-live-model-evaluation-runner.ts).
+        usage: {
+          modelId: GEMINI_TEXT_MODEL,
+          promptTokens: turnPromptTokens,
+          outputTokens: turnOutputTokens,
+          totalTokens: turnPromptTokens + turnOutputTokens,
+        },
+      });
     } catch (modelError: any) {
       clearTimeout(timeoutId);
       if (modelError.name === 'AbortError') {
@@ -7299,6 +7429,21 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     const sinceIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
 
     const totals: UsageTotals = { novaTextCount: 0, novaVoiceCount: 0, diagnoseCount: 0, smsSegmentCount: 0 };
+    // PHASE 6B (directive §2) - real counters this phase's own
+    // instrumentation (the chat route's usageMetadata capture and
+    // recordNovaToolUsageMetric) now writes into the SAME usage_counters
+    // docs this endpoint already reads below - no second collection, no
+    // second query. Every one of these is a genuinely measured count,
+    // not an estimate; only the derived USD figure further down is an
+    // estimate, and it is labelled as such.
+    const measured = {
+      novaTextPromptTokens: 0,
+      novaTextOutputTokens: 0,
+      novaMemorySearchCount: 0,
+      novaMemoryWriteCount: 0,
+      agenticProposalCount: 0,
+      agenticProposalsByTool: {} as Record<string, number>,
+    };
     // Support Circle visibility (Master Support Circle spec): guardian_alert
     // is deliberately exempt from the per-user SMS aggregate cap
     // (sms-guardrails.ts), which previously also made it invisible here -
@@ -7338,6 +7483,15 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
         const categoryCounts = data.categoryCounts || {};
         for (const cat of Object.keys(smsByCategory)) {
           smsByCategory[cat] += Number(categoryCounts[cat]) || 0;
+        }
+        measured.novaTextPromptTokens += Number(data.novaTextPromptTokens) || 0;
+        measured.novaTextOutputTokens += Number(data.novaTextOutputTokens) || 0;
+        measured.novaMemorySearchCount += Number(data.novaMemorySearchCount) || 0;
+        measured.novaMemoryWriteCount += Number(data.novaMemoryWriteCount) || 0;
+        measured.agenticProposalCount += Number(data.agenticProposalCount) || 0;
+        const proposalsByTool = data.agenticProposalsByTool || {};
+        for (const tool of Object.keys(proposalsByTool)) {
+          measured.agenticProposalsByTool[tool] = (measured.agenticProposalsByTool[tool] || 0) + (Number(proposalsByTool[tool]) || 0);
         }
 
         // usage_counters docs always live at users/{uid}/usage_counters/{key}
@@ -7418,6 +7572,12 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     }
     const monthlyEstimateUsd = Math.round(costUsd.totalUsd * (30 / periodDays) * 100) / 100;
 
+    // PHASE 6B (directive §2) - the one pathway this phase instruments
+    // with real Gemini usageMetadata (Nova text chat). estimatedCostUsd
+    // is null, not a guess, whenever GEMINI_TEXT_MODEL isn't in the
+    // price registry - see ai-model-price-registry.ts.
+    const novaTextTokenCost = estimateNovaTextCostFromMeasuredTokens(GEMINI_TEXT_MODEL, measured.novaTextPromptTokens, measured.novaTextOutputTokens);
+
     res.json({
       periodDays,
       isEstimate: true,
@@ -7425,6 +7585,29 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       usage: totals,
       smsByCategory,
       estimatedCostUsd: costUsd,
+      // PHASE 6B (directive §2/§8) - genuinely measured counters this
+      // phase added instrumentation for, kept clearly separate from the
+      // flat per-event ESTIMATE above. `measured` fields are real counts
+      // read straight from usage_counters; `novaTextTokenCostUsd` is the
+      // one cost figure in this response derived from real tokens rather
+      // than a flat per-message assumption, and is still only ever an
+      // ESTIMATE of dollars (no live provider billing API exists) - see
+      // its own `isEstimate`/`estimatedCostUsd` fields.
+      measured: {
+        novaTextPromptTokens: measured.novaTextPromptTokens,
+        novaTextOutputTokens: measured.novaTextOutputTokens,
+        novaMemorySearchCount: measured.novaMemorySearchCount,
+        novaMemoryWriteCount: measured.novaMemoryWriteCount,
+        agenticProposalCount: measured.agenticProposalCount,
+        agenticProposalsByTool: measured.agenticProposalsByTool,
+        novaTextTokenCostUsd: novaTextTokenCost,
+        unavailable: {
+          backgroundReasoningCalls: "No background job in this codebase currently calls a paid Gemini model - see the Phase 6B acceptance report.",
+          emailSendCount: "Brevo email sends have no usage counter yet (SMS does, via categoryCounts) - not yet instrumented.",
+          voiceTokenUsage: "Gemini Live's message shape in this SDK does not expose per-message usageMetadata - voice cost is tracked by real elapsed minutes (nova_voice_minutes) instead, not tokens.",
+          rawCloudSpend: "No Firestore/Cloud Function billing-export integration exists - per-customer Firebase/cloud operation cost is not measured.",
+        },
+      },
       budget: {
         monthlyBudgetUsd,
         monthlyEstimateUsd,

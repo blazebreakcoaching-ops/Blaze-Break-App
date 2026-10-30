@@ -49,8 +49,17 @@ import type { NovaChatInvoker } from './nova-chat-scenario-runner';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
-const invoker: NovaChatInvoker = async ({ uid, message, history }) => {
-  const res = await request(app).post('/api/nova/chat').set(auth(uid)).send({ message, history });
+const invoker: NovaChatInvoker = async ({ uid, message, history, maxOutputTokens }) => {
+  const res = await request(app).post('/api/nova/chat').set(auth(uid)).send({
+    message,
+    history,
+    // PHASE 6B (directive §3) - threads the live-model runner's
+    // maxOutputTokensPerCall budget control through to the real request
+    // field server.ts applies directly to the real Gemini
+    // generationConfig. Omitted entirely when the runner doesn't ask for
+    // one, matching ChatRequestSchema's optional field.
+    ...(maxOutputTokens ? { maxOutputTokens } : {}),
+  });
   return { status: res.status, body: res.body }; // no systemInstructionSentToModel capture possible here - see runner header comment
 };
 

@@ -70,6 +70,7 @@ import {
   type NheiGeminiCallTokenUsage,
 } from './nhei-extraction-service';
 import { type NheiExtractionCandidate } from './nhei-extraction-types';
+import { estimateModelCostUsd } from './ai-model-price-registry';
 
 export function hasGeminiCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
   const key = env.GEMINI_API_KEY;
@@ -98,19 +99,15 @@ export interface NheiRealModelTokenUsage {
   outputTokens: number;
 }
 
-// Rough, clearly-labelled ESTIMATE only - not an authoritative billing
-// figure. Real pricing should be checked against Google's current
-// published rates at run time, not trusted to a hardcoded table that can
-// go stale. This exists only so a run report has SOME cost signal
-// immediately, not as a source of truth.
-const APPROXIMATE_USD_PER_1K_TOKENS: Record<string, { prompt: number; output: number }> = {
-  'gemini-2.0-flash': { prompt: 0.0001, output: 0.0004 },
-};
-
+// PHASE 6B (directive §2): this used to be a local, one-model hardcoded
+// table ('gemini-2.0-flash' only) that silently returned null for every
+// real run against this app's ACTUAL model (GEMINI_TEXT_MODEL =
+// "gemini-3.5-flash", per ai-model-registry.ts) - a staleness bug this
+// consolidation fixes. See ai-model-price-registry.ts's own header
+// comment for why every price here is a clearly-labelled estimate, not
+// an authoritative billing figure.
 function estimateCostUsd(modelId: string, usage: NheiRealModelTokenUsage): number | null {
-  const rate = APPROXIMATE_USD_PER_1K_TOKENS[modelId];
-  if (!rate) return null; // unknown model - report no estimate rather than a wrong one
-  return (usage.promptTokens / 1000) * rate.prompt + (usage.outputTokens / 1000) * rate.output;
+  return estimateModelCostUsd(modelId, usage.promptTokens, usage.outputTokens);
 }
 
 export interface NheiRealModelRunReport {

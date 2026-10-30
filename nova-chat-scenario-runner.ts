@@ -16,9 +16,11 @@
 // has no model-calling or routing logic of its own at all.
 
 import { evaluateHardInvariants } from './nova-chat-evaluation-criteria';
+import { evaluateHeuristicSignals } from './nova-chat-heuristic-signals';
 import type {
   NovaScenarioDefinition,
   NovaScenarioEvaluationResult,
+  NovaScenarioTurn,
   NovaScenarioTurnResult,
 } from './nova-chat-scenario-types';
 
@@ -37,21 +39,40 @@ export interface NovaChatInvokerResult {
   systemInstructionSentToModel?: string | null;
 }
 
-export type NovaChatInvoker = (args: { uid: string; message: string; history: unknown[] }) => Promise<NovaChatInvokerResult>;
+export type NovaChatInvoker = (args: {
+  uid: string;
+  message: string;
+  history: unknown[];
+  /** PHASE 6B (directive §3) - optional, passed through to the real ChatRequestSchema.maxOutputTokens field by invokers that support it (the controlled live-model evaluation runner). Offline invokers may ignore this. */
+  maxOutputTokens?: number;
+}) => Promise<NovaChatInvokerResult>;
 
-function memoryConsentFromScenario(scenario: NovaScenarioDefinition): boolean {
-  const perms = scenario.permissionsDoc as { allowNovaMemory?: boolean; allowNovaUseSavedMemories?: boolean } | undefined;
+function memoryConsentFromPermissionsDoc(permissionsDoc: Record<string, unknown> | undefined): boolean {
+  const perms = permissionsDoc as { allowNovaMemory?: boolean; allowNovaUseSavedMemories?: boolean } | undefined;
   return Boolean(perms?.allowNovaMemory && perms?.allowNovaUseSavedMemories);
 }
+
+export type NovaScenarioOnAfterTurn = (turnIndex: number, turn: NovaScenarioTurn) => Promise<void>;
 
 export async function runScenario(
   scenario: NovaScenarioDefinition,
   invoker: NovaChatInvoker,
   uid: string,
+  // PHASE 6B (directive §4) - optional hook, called once per turn after
+  // that turn's invoker call completes and before the next turn starts.
+  // The runner itself still knows nothing about Firestore/mocking (see
+  // this file's own header comment) - it only invokes whatever the
+  // caller supplies. Used today by the offline/live test harnesses to
+  // reseed nova_permissions/current when a turn declares
+  // `permissionsDocAfterThisTurn`, simulating a REAL mid-conversation
+  // consent withdrawal (S30) rather than a static, scenario-wide setting.
+  onAfterTurn?: NovaScenarioOnAfterTurn,
 ): Promise<NovaScenarioEvaluationResult> {
   const history: unknown[] = [];
   const turnResults: NovaScenarioTurnResult[] = [];
-  const memoryConsentGranted = memoryConsentFromScenario(scenario);
+  const seededMemoryContents = (scenario.seededMemories ?? []).map((m) => m.content);
+  let currentMemoryConsentGranted = memoryConsentFromPermissionsDoc(scenario.permissionsDoc);
+  const priorTurnsPlanTrace: NovaScenarioTurnResult['planTrace'][] = [];
 
   for (let i = 0; i < scenario.turns.length; i++) {
     const turn = scenario.turns[i];
@@ -70,7 +91,7 @@ export async function runScenario(
       error = typeof result.body?.error === 'string' ? result.body.error : `Non-200 status: ${result.status}`;
     }
 
-    const turnResultBase: Omit<NovaScenarioTurnResult, 'hardInvariants'> = {
+    const turnResultBase: Omit<NovaScenarioTurnResult, 'hardInvariants' | 'heuristicSignals'> = {
       turnIndex: i,
       userMessage: turn.userMessage,
       httpStatus: result.status,
@@ -81,14 +102,27 @@ export async function runScenario(
 
     const hardInvariants = evaluateHardInvariants(turnResultBase, {
       systemInstructionSentToModel: result.systemInstructionSentToModel ?? null,
-      memoryConsentGranted,
+      memoryConsentGranted: currentMemoryConsentGranted,
       additionalInvariants: turn.additionalHardInvariants ?? [],
+      seededMemoryContents,
     });
 
-    turnResults.push({ ...turnResultBase, hardInvariants });
+    const heuristicSignals = evaluateHeuristicSignals(
+      turn.heuristicSignalChecks,
+      { responseText, planTrace },
+      priorTurnsPlanTrace,
+    );
+
+    turnResults.push({ ...turnResultBase, hardInvariants, heuristicSignals });
+    priorTurnsPlanTrace.push(planTrace);
 
     history.push({ role: 'user', parts: [{ text: turn.userMessage }] });
     history.push({ role: 'model', parts: [{ text: responseText ?? '' }] });
+
+    if (turn.permissionsDocAfterThisTurn) {
+      currentMemoryConsentGranted = memoryConsentFromPermissionsDoc(turn.permissionsDocAfterThisTurn);
+    }
+    if (onAfterTurn) await onAfterTurn(i, turn);
   }
 
   const allHardInvariantsPassed = turnResults.every((t) => t.hardInvariants.every((h) => h.passed));

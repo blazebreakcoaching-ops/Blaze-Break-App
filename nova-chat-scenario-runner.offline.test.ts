@@ -104,7 +104,15 @@ describe('Nova chat intelligence evaluation - OFFLINE mode (mocked model, real r
         queueTurnResponses(turn.offlineModelResponse, turn.offlineModelFollowUp);
       }
 
-      const result = await runScenario(scenario, makeInvoker(), uid);
+      // PHASE 6B (directive §4) - reseeds nova_permissions/current when a
+      // turn declares permissionsDocAfterThisTurn, simulating a REAL
+      // mid-conversation consent change (S30) rather than a static,
+      // scenario-wide setting applied only once up front.
+      const result = await runScenario(scenario, makeInvoker(), uid, async (_turnIndex, turn) => {
+        if (turn.permissionsDocAfterThisTurn) {
+          await seedDoc(`users/${uid}/nova_permissions/current`, turn.permissionsDocAfterThisTurn);
+        }
+      });
       results.push(result);
 
       for (const turnResult of result.turnResults) {
