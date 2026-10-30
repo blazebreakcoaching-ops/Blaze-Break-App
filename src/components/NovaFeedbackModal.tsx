@@ -4,6 +4,8 @@ import { X, Star, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { auth } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { novaStorageKey } from '../lib/nova-chat-storage';
 import { db } from '../lib/firestore';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -22,34 +24,56 @@ export const NovaFeedbackModal = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen]);
 
+  // Phase 5N (directive §6) - this component is mounted by App.tsx only
+  // while `!user` holds (see App.tsx's own comment on that mount point),
+  // the brief, normally sub-second window before Firebase Auth's
+  // automatic anonymous sign-in resolves for a brand-new visitor. Against
+  // a real local Auth emulator (slower than production, per Phase 5M's
+  // real-app Playwright findings) that window can last long enough for
+  // this effect's old mount-once timer to fire and open the modal WHILE
+  // the surrounding app was still mid-auth - a real "pops up and
+  // interrupts" risk, not merely a flicker, even though the component
+  // unmounts moments later once `user` resolves (its own cleanup clears
+  // the timer by then, but only if the 3s hadn't already elapsed).
+  // Arming the timer only once onAuthStateChanged reports a REAL,
+  // resolved identity (anonymous or not) - never during the transient
+  // pre-auth gap - means the countdown can never complete before the
+  // user has a stable identity to show feedback UI against at all.
   useEffect(() => {
-    // Check if the modal should be shown
-    const lastShownStr = localStorage.getItem('nova_feedback_last_shown');
-    const now = Date.now();
-    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser || timer) return;
+      // Check if the modal should be shown
+      const lastShownStr = localStorage.getItem(novaStorageKey('nova_feedback_last_shown'));
+      const now = Date.now();
+      const oneWeek = 7 * 24 * 60 * 60 * 1000;
 
-    let shouldShow = false;
-    if (!lastShownStr) {
-      shouldShow = true;
-    } else {
-      const lastShown = parseInt(lastShownStr, 10);
-      if (!isNaN(lastShown) && now - lastShown > oneWeek) {
+      let shouldShow = false;
+      if (!lastShownStr) {
         shouldShow = true;
+      } else {
+        const lastShown = parseInt(lastShownStr, 10);
+        if (!isNaN(lastShown) && now - lastShown > oneWeek) {
+          shouldShow = true;
+        }
       }
-    }
 
-    if (shouldShow) {
-      // Small delay to not interrupt the user immediately
-      const timer = setTimeout(() => {
-        setIsOpen(true);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
+      if (shouldShow) {
+        // Small delay to not interrupt the user immediately
+        timer = setTimeout(() => {
+          setIsOpen(true);
+        }, 3000);
+      }
+    });
+    return () => {
+      unsubscribe();
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   const handleClose = () => {
     setIsOpen(false);
-    localStorage.setItem('nova_feedback_last_shown', Date.now().toString());
+    localStorage.setItem(novaStorageKey('nova_feedback_last_shown'), Date.now().toString());
   };
 
   const handleSubmit = async () => {

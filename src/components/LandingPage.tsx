@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
@@ -118,8 +118,24 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
   // the modal opens - it never carries over between visits.
   const [legalAgreed, setLegalAgreed] = useState(false);
 
+  // Phase 5N (directive §3) - a real-app Playwright test clicking the real
+  // "Sign up free" banner caught this: on the component's very first
+  // render, showAuthModal is false (its default) - true regardless of
+  // whether this mount is also about to open straight into signup mode via
+  // the initialAuthModalOpen effect above. Both effects fire in the SAME
+  // commit, each closed over that same initial, stale `showAuthModal ===
+  // false`, so this one unconditionally ran its "reset to signin" on every
+  // single mount, including immediately after the other effect had just
+  // set authMode to 'signup' - silently downgrading a real user's signup
+  // intent to a sign-in form with no visible error. prevShowAuthModalRef
+  // makes this fire only on an ACTUAL open-to-closed transition (the real
+  // "they just closed the modal" moment this reset exists for), never on
+  // mount, where there is nothing to reset yet.
+  const prevShowAuthModalRef = useRef(showAuthModal);
   useEffect(() => {
-    if (showAuthModal) return;
+    const wasOpen = prevShowAuthModalRef.current;
+    prevShowAuthModalRef.current = showAuthModal;
+    if (showAuthModal || !wasOpen) return;
     setAuthMode('signin');
     setEmail('');
     setPassword('');

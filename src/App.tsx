@@ -1752,7 +1752,23 @@ export default function App() {
       fingerprintLoadedRef.current = true;
 
       if (user) {
-        if (flowRef.current === "landing") {
+        // Phase 5N (directive §3) - a real-app sign-in test caught this:
+        // LandingPage's sign-in success handler (handleEmailAuthSubmit's
+        // `else` branch, and the equivalent social-sign-in branches) calls
+        // the shared finishOnboarding()/onStart(), which synchronously
+        // sets flow to "onboarding" for EVERY sign-in, not just a genuine
+        // new signup - it has no way to know yet whether this account
+        // already has a saved profile, since that only loads here,
+        // asynchronously, after Firestore responds. Before this fix, a
+        // returning real account with a complete profile was sent through
+        // onboarding again on every single sign-in, with no way back to
+        // its own dashboard short of a page reload. Checking "onboarding"
+        // here too - not just "landing" - lets this already-correct,
+        // data-driven decision also override that premature navigation
+        // once the real answer is known, while an account that genuinely
+        // has no saved profile yet (new signup, or resuming an
+        // interrupted one) simply stays on "onboarding" as before.
+        if (flowRef.current === "landing" || flowRef.current === "onboarding") {
           if (loadedStats?.profile?.fullName) {
             // A returning, already-onboarded account (real or an
             // anonymous session that's already been through onboarding
@@ -1761,15 +1777,16 @@ export default function App() {
           }
           // Otherwise (no saved profile - a fresh anonymous visitor, or a
           // real account that started but never finished onboarding):
-          // deliberately stay on "landing". The invisible anonymous
-          // sign-in that just completed in the background is a technical
-          // bootstrap, not something that should ever navigate someone
-          // away from the marketing page on its own - a visitor reading
-          // the Terms/Privacy links in the footer, or just looking
-          // around, must never be swept into onboarding (or the sample
-          // dashboard) without clicking something. "Get Started" and
-          // "See a live demo" on LandingPage are the only two paths out
-          // of "landing" from here - see onStart/onViewDemo below.
+          // deliberately stay on "landing"/"onboarding" as it already is.
+          // The invisible anonymous sign-in that just completed in the
+          // background is a technical bootstrap, not something that
+          // should ever navigate someone away from the marketing page on
+          // its own - a visitor reading the Terms/Privacy links in the
+          // footer, or just looking around, must never be swept into
+          // onboarding (or the sample dashboard) without clicking
+          // something. "Get Started" and "See a live demo" on LandingPage
+          // are the only two paths out of "landing" from here - see
+          // onStart/onViewDemo below.
         }
       } else {
         // Return back to landing only if they signed out intentionally

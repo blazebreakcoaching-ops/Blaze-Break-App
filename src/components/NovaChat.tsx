@@ -20,6 +20,8 @@ import type { UserProfileData } from "../types";
 import { addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
 import { auth } from '../lib/firebase';
+import { onAuthStateChanged } from "firebase/auth";
+import { novaStorageKey } from "../lib/nova-chat-storage";
 import { db } from '../lib/firestore';
 import { doc, getDoc } from "firebase/firestore";
 import { NovaVoiceCall } from "./NovaVoiceCall";
@@ -227,8 +229,8 @@ export const NovaChat = ({
       }
     }
   }, [profile?.questioningStyle]);
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem("nova_chat_history");
+  const loadMessages = (): Message[] => {
+    const saved = localStorage.getItem(novaStorageKey("nova_chat_history"));
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -237,7 +239,8 @@ export const NovaChat = ({
       }
     }
     return [];
-  });
+  };
+  const [messages, setMessages] = useState<Message[]>(loadMessages);
   // Reads from the single shared source of truth (feature-flags.ts)
   // rather than a hand-duplicated default that had drifted out of sync
   // with it - this local default said enable_nova_voice: false, and
@@ -259,49 +262,53 @@ export const NovaChat = ({
 
   const voiceFeatureEnabled = flags.enable_nova_voice;
 
-  const [ratings, setRatings] = useState<{
-    [key: number]: "up" | "down" | null;
-  }>(() => {
+  const loadRatings = (): { [key: number]: "up" | "down" | null } => {
     try {
-      const saved = localStorage.getItem("nova_chat_ratings");
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_ratings"));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
-  });
+  };
+  const [ratings, setRatings] = useState<{
+    [key: number]: "up" | "down" | null;
+  }>(loadRatings);
   const [activeFeedbackForm, setActiveFeedbackForm] = useState<number | null>(
     null,
   );
-  const [feedbackNotes, setFeedbackNotes] = useState<{ [key: number]: string }>(
-    () => {
-      try {
-        const saved = localStorage.getItem("nova_chat_feedback_notes");
-        return saved ? JSON.parse(saved) : {};
-      } catch {
-        return {};
-      }
-    },
-  );
-  const [feedbackTag, setFeedbackTag] = useState<{ [key: number]: string }>(
-    () => {
-      try {
-        const saved = localStorage.getItem("nova_chat_feedback_tags");
-        return saved ? JSON.parse(saved) : {};
-      } catch {
-        return {};
-      }
-    },
-  );
-  const [isFeedbackSubmitted, setIsFeedbackSubmitted] = useState<{
-    [key: number]: boolean;
-  }>(() => {
+  const loadFeedbackNotes = (): { [key: number]: string } => {
     try {
-      const saved = localStorage.getItem("nova_chat_feedback_submitted");
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_notes"));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
-  });
+  };
+  const [feedbackNotes, setFeedbackNotes] = useState<{ [key: number]: string }>(
+    loadFeedbackNotes,
+  );
+  const loadFeedbackTag = (): { [key: number]: string } => {
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_tags"));
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  };
+  const [feedbackTag, setFeedbackTag] = useState<{ [key: number]: string }>(
+    loadFeedbackTag,
+  );
+  const loadIsFeedbackSubmitted = (): { [key: number]: boolean } => {
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_submitted"));
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  };
+  const [isFeedbackSubmitted, setIsFeedbackSubmitted] = useState<{
+    [key: number]: boolean;
+  }>(loadIsFeedbackSubmitted);
 
   const submitFeedbackMemory = (index: number) => {
     const rating = ratings[index];
@@ -324,18 +331,18 @@ export const NovaChat = ({
     const newSubmitted = { ...isFeedbackSubmitted, [index]: true };
     setIsFeedbackSubmitted(newSubmitted);
     localStorage.setItem(
-      "nova_chat_feedback_submitted",
+      novaStorageKey("nova_chat_feedback_submitted"),
       JSON.stringify(newSubmitted),
     );
 
     // Persist all other states
-    localStorage.setItem("nova_chat_ratings", JSON.stringify(ratings));
+    localStorage.setItem(novaStorageKey("nova_chat_ratings"), JSON.stringify(ratings));
     localStorage.setItem(
-      "nova_chat_feedback_notes",
+      novaStorageKey("nova_chat_feedback_notes"),
       JSON.stringify({ ...feedbackNotes, [index]: notes }),
     );
     localStorage.setItem(
-      "nova_chat_feedback_tags",
+      novaStorageKey("nova_chat_feedback_tags"),
       JSON.stringify({ ...feedbackTag, [index]: selectedTag }),
     );
 
@@ -348,10 +355,49 @@ export const NovaChat = ({
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => {
-    const saved = localStorage.getItem("nova_voice_enabled");
+  const loadIsVoiceEnabled = (): boolean => {
+    const saved = localStorage.getItem(novaStorageKey("nova_voice_enabled"));
     return saved !== null ? saved === "true" : true;
-  });
+  };
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(loadIsVoiceEnabled);
+
+  // Phase 5N (directive §1/§2) - App.tsx never remounts NovaChat across a
+  // sign-out/sign-in transition (only AuthProvider's context value
+  // changes, which re-renders the SAME component instance), so even
+  // though every key above is now scoped by novaStorageKey() to the
+  // identity that was active when this component first mounted, the
+  // in-memory state above would otherwise keep showing that FIRST
+  // identity's messages/ratings/feedback/voice-preference after a real
+  // sign-out and a different sign-in on the same tab - the exact
+  // cross-account leak this phase's audit set out to close, just moved
+  // from storage into memory. This effect re-reads every one of those
+  // pieces of state the moment the signed-in Firebase uid actually
+  // changes, so a new identity always sees its OWN data (or a correct
+  // empty state, if it has none yet) and never a stale previous one.
+  // didMountRef skips the very first run: the lazy useState initializers
+  // above already loaded the correct data for whichever identity was
+  // active at first paint, and re-running immediately would be redundant
+  // (not wrong, just wasted work) and race with their own render.
+  const [currentUid, setCurrentUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUid(user?.uid ?? '__pending__');
+    });
+    return () => unsubscribe();
+  }, []);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    setMessages(loadMessages());
+    setRatings(loadRatings());
+    setFeedbackNotes(loadFeedbackNotes());
+    setFeedbackTag(loadFeedbackTag());
+    setIsFeedbackSubmitted(loadIsFeedbackSubmitted());
+    setIsVoiceEnabled(loadIsVoiceEnabled());
+  }, [currentUid]);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
@@ -512,11 +558,11 @@ export const NovaChat = ({
   };
 
   useEffect(() => {
-    localStorage.setItem("nova_chat_history", JSON.stringify(messages));
+    localStorage.setItem(novaStorageKey("nova_chat_history"), JSON.stringify(messages));
   }, [messages]);
 
   useEffect(() => {
-    localStorage.setItem("nova_voice_enabled", String(isVoiceEnabled));
+    localStorage.setItem(novaStorageKey("nova_voice_enabled"), String(isVoiceEnabled));
   }, [isVoiceEnabled]);
 
   useEffect(() => {
@@ -1094,7 +1140,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                 const newR = { ...ratings, [i]: "up" as const };
                                 setRatings(newR);
                                 localStorage.setItem(
-                                  "nova_chat_ratings",
+                                  novaStorageKey("nova_chat_ratings"),
                                   JSON.stringify(newR),
                                 );
                                 setActiveFeedbackForm(
@@ -1121,7 +1167,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                 };
                                 setRatings(newR);
                                 localStorage.setItem(
-                                  "nova_chat_ratings",
+                                  novaStorageKey("nova_chat_ratings"),
                                   JSON.stringify(newR),
                                 );
                                 setActiveFeedbackForm(
@@ -1500,7 +1546,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         confirmLabel="Clear"
         onConfirm={() => {
           setMessages([]);
-          localStorage.removeItem("nova_chat_history");
+          localStorage.removeItem(novaStorageKey("nova_chat_history"));
           setConfirmingClear(false);
         }}
         onCancel={() => setConfirmingClear(false)}

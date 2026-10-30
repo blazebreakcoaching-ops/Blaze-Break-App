@@ -91,7 +91,11 @@ export default defineConfig({
         baseURL: `http://127.0.0.1:${FLAG_OFF_PORT}`,
         launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
       },
-      testMatch: /real-app-nova-journey\.spec\.ts/,
+      // Phase 5N (directive §3/§4) - real-app-account-continuity.spec.ts
+      // added alongside real-app-nova-journey.spec.ts: both need the
+      // flag-off webServer and a real signed-in identity, so both run
+      // under this same project.
+      testMatch: [/real-app-nova-journey\.spec\.ts/, /real-app-account-continuity\.spec\.ts/],
     },
     {
       name: 'realapp-mobile',
