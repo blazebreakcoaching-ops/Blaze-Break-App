@@ -84,6 +84,25 @@ describe('ai-model-registry - PHASE 6B.1 configurable model override (Priority 2
     expect(fresh.GEMINI_LIVE_MODEL).toBe('gemini-3.1-flash-live-preview');
     warnSpy.mockRestore();
   });
+
+  // PHASE 6C (Priority 3) - gemini-3.8-live is now a selectable evaluation
+  // candidate for the Live/voice path, same allowlist-override mechanism as
+  // every other model here. Selectable does NOT mean active: the default
+  // stays gemini-3.1-flash-live-preview until a real compatibility test is
+  // authorised (see ai-model-registry.ts's own comment for exactly what is
+  // and isn't confirmed about this specific migration).
+  it('GEMINI_LIVE_MODEL_OVERRIDE selects gemini-3.8-live as an allowlisted evaluation candidate', async () => {
+    vi.resetModules();
+    process.env.GEMINI_LIVE_MODEL_OVERRIDE = 'gemini-3.8-live';
+    const fresh = await import('./ai-model-registry');
+    expect(fresh.GEMINI_LIVE_MODEL).toBe('gemini-3.8-live');
+  });
+
+  it('GEMINI_LIVE_MODEL defaults to gemini-3.1-flash-live-preview with no override set - gemini-3.8-live is not yet active', async () => {
+    vi.resetModules();
+    const fresh = await import('./ai-model-registry');
+    expect(fresh.GEMINI_LIVE_MODEL).toBe('gemini-3.1-flash-live-preview');
+  });
 });
 
 // GUARDRAIL: a raw Gemini/Claude model-version string literal anywhere in

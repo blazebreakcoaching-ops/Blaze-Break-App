@@ -14,6 +14,19 @@ describe('ai-model-price-registry - dated rate windows (Priority 4)', () => {
     expect(estimateModelCostUsd('not-a-real-model', 1000, 1000)).toBeNull();
   });
 
+  // PHASE 6C (Priority 3/4) - gemini-3.8-live (the evaluation-candidate
+  // Live/voice model) now resolves to a priced entry, so a future
+  // GEMINI_LIVE_MODEL_OVERRIDE=gemini-3.8-live run does not silently cost-
+  // estimate to null the way an unknown model id would.
+  it('gemini-3.8-live resolves to a priced entry, not null, matching gemini-3.1-flash-live-preview\'s own rough placeholder figure', () => {
+    const live38 = getModelPriceEntry('gemini-3.8-live', '2026-11-15');
+    const live31 = getModelPriceEntry('gemini-3.1-flash-live-preview', '2026-11-15');
+    expect(live38).not.toBeNull();
+    expect(live38?.inputUsdPer1kTokens).toBe(live31?.inputUsdPer1kTokens);
+    expect(live38?.outputUsdPer1kTokens).toBe(live31?.outputUsdPer1kTokens);
+    expect(estimateModelCostUsd('gemini-3.8-live', 1000, 1000, '2026-11-15')).not.toBeNull();
+  });
+
   // PHASE 6B.1 FINAL CORRECTIONS (Priority 2/4) - "Add the verified Gemini
   // 3.6 Flash standard prices... Include the published January 2027 price
   // changes." A fresh search this pass found concrete, multiply-

@@ -114,7 +114,7 @@ export const MODEL_PRICE_REGISTRY: Record<string, ModelPriceEntry[]> = {
       isEstimate: true,
       effectiveFrom: '2026-07-01',
       effectiveUntil: '2027-01-01',
-      sourceNote: 'Introductory/standard rate reported through 2026-12-31: $0.75/$3.75 per million input/output tokens, $0.075 per million cached-input tokens. Multiple independent third-party sources agree; not independently confirmed against ai.google.dev/gemini-api/docs/pricing directly (WebFetch to that host fails in this sandbox).',
+      sourceNote: 'Introductory/standard rate reported through 2026-12-31: $0.75/$3.75 per million input/output tokens, $0.075 per million cached-input tokens. Multiple independent third-party sources agree; not independently confirmed against ai.google.dev/gemini-api/docs/pricing directly (WebFetch to that host fails in this sandbox). PHASE 6C (Priority 4) re-check (2026-10-30, same day, fresh search pass): a separate round of third-party pricing aggregators (morphllm.com, puter.com, mem0.ai, among others) independently converged on the identical $0.75/$3.75/million figure and the same Jan-2027 doubling for the 3.6/3.7/3.8 Flash group - this re-confirms rather than changes the figure already on record here. ai.google.dev/gemini-api/docs/pricing itself still could not be fetched directly in this sandbox.',
     },
     {
       inputUsdPer1kTokens: 0.0015,
@@ -143,6 +143,31 @@ export const MODEL_PRICE_REGISTRY: Record<string, ModelPriceEntry[]> = {
       isEstimate: true,
       effectiveFrom: '2026-10-01',
       sourceNote: 'Rough placeholder only - real Gemini Live pricing is per-second-of-audio plus tokens, not reducible to a clean per-1k-token figure. Prefer the real nova_voice_minutes duration counter over this rate for voice cost. Never verified against a live bill. No Jan-2027 rate change documented either way - this single open-ended window is carried forward unverified, same caveat as gemini-3.5-flash\'s second window above.',
+    },
+  ],
+  // PHASE 6C (Priority 3/4) - gemini-3.8-live is NOT this app's
+  // configured Live default (see ai-model-registry.ts - GEMINI_LIVE_MODEL
+  // still defaults to gemini-3.1-flash-live-preview, pending real
+  // compatibility testing and approval). Priced here only so that IF an
+  // operator ever sets GEMINI_LIVE_MODEL_OVERRIDE=gemini-3.8-live after
+  // real verification, cost estimation does not silently return null. No
+  // documented standard per-token rate specific to the Live/voice variant
+  // was found distinct from the text Flash rate (live search, 2026-10-30)
+  // - carried forward at the SAME rough placeholder figure as
+  // gemini-3.1-flash-live-preview's own entry below, with the same
+  // caveat: real Gemini Live pricing is per-second-of-audio plus tokens,
+  // not a clean per-1k-token figure, and this app's real voice cost
+  // signal is the measured nova_voice_minutes duration counter, not this
+  // rate. Never verified against a live bill or ai.google.dev/gemini-api/
+  // docs/pricing directly (WebFetch to that host fails in this sandbox).
+  'gemini-3.8-live': [
+    {
+      inputUsdPer1kTokens: 0.0005,
+      outputUsdPer1kTokens: 0.002,
+      sourceDate: '2026-10-30',
+      isEstimate: true,
+      effectiveFrom: '2026-09-24', // Google Cloud's reported release date for this model
+      sourceNote: 'Rough placeholder, carried forward unchanged from gemini-3.1-flash-live-preview\'s own entry - no distinct documented per-token rate was found for this model specifically. Prefer the real nova_voice_minutes duration counter over this rate for voice cost. Never verified against a live bill.',
     },
   ],
   // Retained for the NHEI real-model evaluation runner's existing test
@@ -187,7 +212,7 @@ export const MODEL_PRICE_REGISTRY: Record<string, ModelPriceEntry[]> = {
       isEstimate: true,
       effectiveFrom: '2026-09-01',
       effectiveUntil: '2027-01-01',
-      sourceNote: 'Standard rate reported through 2026-12-31: $0.75/$3.75 per million input/output tokens, $0.075 per million cached-input tokens - the same figure and window multiple independent sources report for gemini-3.6-flash/gemini-3.7-flash/gemini-3.8-flash collectively. Not independently confirmed against ai.google.dev/gemini-api/docs/pricing directly in this environment.',
+      sourceNote: 'Standard rate reported through 2026-12-31: $0.75/$3.75 per million input/output tokens, $0.075 per million cached-input tokens - the same figure and window multiple independent sources report for gemini-3.6-flash/gemini-3.7-flash/gemini-3.8-flash collectively. Not independently confirmed against ai.google.dev/gemini-api/docs/pricing directly in this environment. PHASE 6C (Priority 4) re-check (2026-10-30, same day, fresh search pass): independently re-confirmed, same figure and doubling schedule, same sandbox fetch limitation - see gemini-3.6-flash\'s equivalent note above.',
     },
     {
       inputUsdPer1kTokens: 0.0015,

@@ -161,11 +161,62 @@ export const GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview";
 // Known live/voice models this file is willing to select - see
 // GEMINI_TEXT_MODEL's comment above for the same allowlist-override
 // pattern and the same "not itself a claim of verification" caveat.
-const KNOWN_GEMINI_LIVE_MODELS = ["gemini-3.1-flash-live-preview"] as const;
+//
+// PHASE 6C (Priority 3) - added "gemini-3.8-live" as a selectable
+// evaluation candidate ahead of Google's reported eventual retirement of
+// gemini-3.1-flash-live-preview. As with gemini-3.8-flash above,
+// ai.google.dev could not be fetched directly from this sandbox
+// (WebFetch -> ENOTFOUND, same restriction documented throughout this
+// file and ai-model-price-registry.ts) - this is corroborated via a
+// search index reaching cached snapshots of what are presented as the
+// same official page titles/URLs, not a page this file's author
+// rendered and read directly. On that basis:
+//   - This phase's OWN directive asserted gemini-3.1-flash-live-preview
+//     is scheduled for shutdown on 2026-11-17 with gemini-3.8-live as its
+//     replacement. That specific claim could NOT be corroborated: the
+//     cached deprecations-page snapshot found for
+//     gemini-3.1-flash-live-preview shows "No shutdown date announced"
+//     (Google's own stated policy is that a shutdown-eligible date is
+//     the EARLIEST possible retirement, with real notice given
+//     separately), and the only source naming gemini-3.8-live as its
+//     specific replacement was one uncorroborated third-party tracker.
+//     Do not treat 2026-11-17 as a confirmed date anywhere in this
+//     codebase or its reports.
+//   - gemini-3.8-live itself DOES appear to be a real, documented,
+//     GA model (ai.google.dev/gemini-api/docs/models/gemini-3.8-live;
+//     Google Cloud's Gemini Enterprise Agent Platform docs list it with
+//     a 2026-09-24 release date) - this part is corroborated across
+//     multiple independent-looking official page titles, unlike the
+//     deprecation-date claim above.
+//   - Reported compatibility notes for a gemini-3.1-flash-live-preview
+//     -> gemini-3.8-live migration: "mostly means changing the model
+//     string" per the model page's own migration note; thinking_level is
+//     reported NOT supported for gemini-3.8-live at all (irrelevant to
+//     this app's current Live config either way - server.ts's
+//     ai.live.connect call never sets thinkingConfig for the voice path,
+//     only the text-chat path does); affective-dialogue is reported
+//     REMOVED from the API on one official-looking page while a
+//     different official-looking page still lists it as a feature - an
+//     unresolved discrepancy, noted rather than silently picking one
+//     side; audio I/O is reported as 16-bit PCM in at 16kHz / out at
+//     24kHz, matching this app's existing CAPTURE_SAMPLE_RATE/
+//     PLAYBACK_SAMPLE_RATE constants (useNovaLiveVoice.ts) exactly, so no
+//     client-side audio pipeline change is implied; a
+//     BidiGenerateContentContextUpdate message (mid-session system-
+//     instruction/tool replacement) is reported as a new 3.8-live-
+//     specific capability this app does not use and does not need to.
+// None of this has been exercised against a real Gemini Live connection
+// in this environment (no live-credential mode exists for voice at all -
+// see nova-voice-evaluation-runner.test.ts's header comment). Selectable
+// via GEMINI_LIVE_MODEL_OVERRIDE for a future authorised real
+// compatibility test; NOT the default.
+const KNOWN_GEMINI_LIVE_MODELS = ["gemini-3.1-flash-live-preview", "gemini-3.8-live"] as const;
 
 // Nova Live real-time voice (the WebSocket relay under /api/nova/live).
-// Default UNCHANGED from Phase 6B. Override with GEMINI_LIVE_MODEL_OVERRIDE
-// (must be one of KNOWN_GEMINI_LIVE_MODELS).
+// Default UNCHANGED from Phase 6B pending real compatibility testing and
+// explicit approval (Phase 6C directive §3) - see the allowlist comment
+// above for what is and isn't confirmed about gemini-3.8-live. Override
+// with GEMINI_LIVE_MODEL_OVERRIDE (must be one of KNOWN_GEMINI_LIVE_MODELS).
 export const GEMINI_LIVE_MODEL = resolveConfiguredGeminiModel("GEMINI_LIVE_MODEL_OVERRIDE", KNOWN_GEMINI_LIVE_MODELS, "gemini-3.1-flash-live-preview");
 
 // Nova chat's Claude provider alternate (NOVA_CHAT_PROVIDER=claude).
