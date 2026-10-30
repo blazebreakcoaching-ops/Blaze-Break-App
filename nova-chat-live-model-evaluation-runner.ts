@@ -92,11 +92,53 @@ export interface NovaChatLiveEvalConfig {
   requestTimeoutMs?: number;
   /** PHASE 6B (directive §3) - "No unbounded retries." Default 0 (no retries at all) - raise only deliberately. */
   maxRetriesPerCall?: number;
+  /**
+   * PHASE 6B.1 (Priority 5) - "an appropriately bounded, documented
+   * thinking-level configuration." Passed through to the real request's
+   * `thinkingLevel` field (ChatRequestSchema), which server.ts forwards
+   * to the real Gemini `generationConfig.thinkingConfig.thinkingLevel` -
+   * one of the @google/genai SDK's own four documented values
+   * (MINIMAL/LOW/MEDIUM/HIGH; see ai-model-registry.ts's sibling comment
+   * for how this was grounded in the SDK's installed type definitions).
+   * Omitted by default (the model's own default thinking behaviour
+   * applies) - this harness never silently requests a higher reasoning
+   * depth than the caller asked for.
+   *
+   * Why this matters for a BOUNDED evaluation run specifically: this
+   * phase's audit found that `maxOutputTokens` caps a thinking-capable
+   * Gemini model's thinking tokens AND visible output tokens TOGETHER,
+   * not separately (confirmed by the installed SDK's
+   * GenerateContentResponseUsageMetadata.totalTokenCount doc comment,
+   * which defines totalTokenCount as prompt + candidates + tool-use +
+   * THOUGHTS tokens all sharing one budget). A high thinking level
+   * combined with this harness's deliberately small default
+   * maxOutputTokensPerCall (512) can therefore make the model spend its
+   * entire token budget "thinking" and return an empty or truncated
+   * visible response - see truncatedByTokenCapCount on the outcome type
+   * below, which exists specifically to catch and correctly label that
+   * case as a TEST-HARNESS configuration limitation, never as evidence
+   * the model gave a bad or unintelligent answer.
+   */
+  thinkingLevel?: 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 export type NovaChatLiveEvalOutcome =
   | { status: 'blocked'; reason: 'not_explicitly_enabled' | 'no_credentials'; note: string }
-  | { status: 'completed'; report: NovaEvaluationRunReport; stoppedEarly: boolean };
+  | {
+      status: 'completed';
+      report: NovaEvaluationRunReport;
+      stoppedEarly: boolean;
+      /**
+       * PHASE 6B.1 (Priority 5) - count of real calls this run detected as
+       * truncated/empty because the model hit the configured token cap
+       * (finishReason MAX_TOKENS) rather than finishing naturally. ALWAYS
+       * a test-harness configuration signal, never evidence of a
+       * conversational-quality failure - see this file's own note string
+       * below and NovaChatLiveEvalConfig.thinkingLevel's comment for why
+       * this can happen even on a perfectly good model.
+       */
+      truncatedByTokenCapCount: number;
+    };
 
 // A deliberately pessimistic, documented ESTIMATE of the system-
 // prompt/context overhead every real /api/nova/chat call carries
@@ -159,6 +201,7 @@ export async function runNovaChatLiveModelEvaluation(
   const maxOutputTokensPerCall = config.maxOutputTokensPerCall ?? 512;
   const requestTimeoutMs = config.requestTimeoutMs ?? 20000;
   const maxRetriesPerCall = Math.max(0, config.maxRetriesPerCall ?? 0);
+  const thinkingLevel = config.thinkingLevel;
 
   const results: NovaEvaluationRunReport['scenarioResults'] = [];
   let stoppedEarly = false;
@@ -167,6 +210,8 @@ export async function runNovaChatLiveModelEvaluation(
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
   let callCount = 0;
+  // PHASE 6B.1 (Priority 5) - see NovaChatLiveEvalOutcome's own comment.
+  let truncatedByTokenCapCount = 0;
 
   // PHASE 6B (directive §3) - wraps the caller-supplied invoker with:
   // (1) a hard per-call request timeout, (2) a bounded retry count (0 by
@@ -196,16 +241,33 @@ export async function runNovaChatLiveModelEvaluation(
       try {
         callCount++;
         const result = await withTimeout(
-          invoker({ ...args, maxOutputTokens: maxOutputTokensPerCall }),
+          invoker({ ...args, maxOutputTokens: maxOutputTokensPerCall, ...(thinkingLevel ? { thinkingLevel } : {}) }),
           requestTimeoutMs,
           `Live-model evaluation call (scenario attempt ${attempt + 1}/${maxRetriesPerCall + 1})`,
         );
-        const usage = (result as NovaChatInvokerResult).body?.usage as { promptTokens?: number; outputTokens?: number } | undefined;
+        const usage = (result as NovaChatInvokerResult).body?.usage as
+          | { promptTokens?: number; outputTokens?: number; thinkingTokens?: number; finishReason?: string | null }
+          | undefined;
         if (usage) {
           totalPromptTokens += usage.promptTokens ?? 0;
-          totalOutputTokens += usage.outputTokens ?? 0;
-          const realCostUsd = estimateModelCostUsd(config.modelId, usage.promptTokens ?? 0, usage.outputTokens ?? 0);
+          // PHASE 6B.1 (Priority 3) - billable output includes thinking
+          // tokens, same as estimateNovaTextCostFromMeasuredTokens.
+          const billableOutputTokens = (usage.outputTokens ?? 0) + (usage.thinkingTokens ?? 0);
+          totalOutputTokens += billableOutputTokens;
+          const realCostUsd = estimateModelCostUsd(config.modelId, usage.promptTokens ?? 0, billableOutputTokens);
           if (realCostUsd !== null) spentUsd += realCostUsd;
+        }
+        // PHASE 6B.1 (Priority 5) - "detect truncated or empty responses
+        // caused by token limits... report as a test-configuration
+        // limitation, not a normal intelligence failure." A response cut
+        // off by the token cap (finishReason MAX_TOKENS) with little or
+        // no visible text is exactly that case - counted here so the
+        // final report can state it explicitly rather than letting a
+        // scenario's hard-invariant/qualitative review silently treat an
+        // empty reply as a conversational failure.
+        const responseText = (result as NovaChatInvokerResult).body?.text;
+        if (usage?.finishReason === 'MAX_TOKENS' && (!responseText || responseText.trim().length === 0)) {
+          truncatedByTokenCapCount++;
         }
         if (spentUsd > maxTotalUsd) {
           throw new Error(`Live-model evaluation budget EXCEEDED after a real call: spent $${spentUsd.toFixed(5)} against a $${maxTotalUsd} ceiling. Stopping.`);
@@ -260,12 +322,15 @@ export async function runNovaChatLiveModelEvaluation(
       `model "${config.modelId}", via the real, unmodified /api/nova/chat route with a genuinely unmocked Gemini client. ` +
       `${callCount} real API call(s) made. Real token usage this run: ${totalPromptTokens} prompt / ${totalOutputTokens} output ` +
       `(from server.ts's own usageMetadata capture - see that route's own comment). Budget ceiling: $${maxTotalUsd}, spent (estimate from real tokens): $${spentUsd.toFixed(5)}. ` +
-      `Per-call controls: maxOutputTokens=${maxOutputTokensPerCall} (real, provider-enforced), requestTimeoutMs=${requestTimeoutMs}, maxRetriesPerCall=${maxRetriesPerCall} (no unbounded retries). ` +
+      `Per-call controls: maxOutputTokens=${maxOutputTokensPerCall} (real, provider-enforced), thinkingLevel=${thinkingLevel ?? '(model default)'}, requestTimeoutMs=${requestTimeoutMs}, maxRetriesPerCall=${maxRetriesPerCall} (no unbounded retries). ` +
       `No real external action, email, SMS, calendar write, or Guardian outreach is reachable from this path regardless of ` +
       `model output - every agentic tool in this app's NOVA_TOOLS is propose/offer/search-only at the server-tool-execution ` +
       `layer (see executeOfferGuardianSupport/executeOfferPracticalAssistance/executeProposeRecoveryAction in server.ts), ` +
-      `independent of this evaluation. ${stoppedEarly ? `STOPPED EARLY: ${stopReason}` : 'Completed without early stop.'}`,
+      `independent of this evaluation. ${truncatedByTokenCapCount > 0
+        ? `TEST-HARNESS LIMITATION (not a quality finding): ${truncatedByTokenCapCount} call(s) were truncated/empty because the model hit the configured token cap (finishReason=MAX_TOKENS) - raise maxOutputTokensPerCall and/or lower thinkingLevel before drawing any conversational-quality conclusion from the affected scenario(s). `
+        : ''
+      }${stoppedEarly ? `STOPPED EARLY: ${stopReason}` : 'Completed without early stop.'}`,
   });
 
-  return { status: 'completed', report, stoppedEarly };
+  return { status: 'completed', report, stoppedEarly, truncatedByTokenCapCount };
 }

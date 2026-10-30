@@ -72,6 +72,53 @@ describe('runNovaChatLiveModelEvaluation - budget reservation (directive §3)', 
   });
 });
 
+// PHASE 6B.1 (Priority 5) - thinking-level pass-through and truncation
+// detection, using the same fake-invoker pattern as the suite above (no
+// real Gemini call).
+describe('runNovaChatLiveModelEvaluation - thinking level and truncation detection (Phase 6B.1 Priority 5)', () => {
+  it('passes the configured thinkingLevel through to every invoker call when set, and omits it when not', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => okResult(10, 10));
+    await runNovaChatLiveModelEvaluation(
+      { ...BASE_CONFIG, thinkingLevel: 'LOW' },
+      invoker,
+      (id) => `budget_${id}`,
+      ENV_ENABLED,
+    );
+    expect((invoker as any).mock.calls[0][0].thinkingLevel).toBe('LOW');
+
+    (invoker as any).mockClear();
+    await runNovaChatLiveModelEvaluation(BASE_CONFIG, invoker, (id) => `budget_${id}`, ENV_ENABLED);
+    expect((invoker as any).mock.calls[0][0].thinkingLevel).toBeUndefined();
+  });
+
+  it('counts a call truncated by the token cap (finishReason=MAX_TOKENS, empty text) as a test-harness limitation, and reports it on the outcome and in the note - never as a stopped-early failure', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => ({
+      status: 200,
+      body: { text: '', planTrace: [], usage: { promptTokens: 10, outputTokens: 0, thinkingTokens: 512, finishReason: 'MAX_TOKENS', totalTokens: 522 } },
+    }));
+    const outcome = await runNovaChatLiveModelEvaluation(BASE_CONFIG, invoker, (id) => `budget_${id}`, ENV_ENABLED);
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.truncatedByTokenCapCount).toBeGreaterThanOrEqual(1);
+      expect(outcome.report.note).toContain('TEST-HARNESS LIMITATION');
+      expect(outcome.report.note).toContain('MAX_TOKENS');
+    }
+  });
+
+  it('does NOT count a normal, naturally-finished call (finishReason=STOP) as truncated', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => ({
+      status: 200,
+      body: { text: 'a real answer', planTrace: [], usage: { promptTokens: 10, outputTokens: 20, thinkingTokens: 0, finishReason: 'STOP', totalTokens: 30 } },
+    }));
+    const outcome = await runNovaChatLiveModelEvaluation(BASE_CONFIG, invoker, (id) => `budget_${id}`, ENV_ENABLED);
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.truncatedByTokenCapCount).toBe(0);
+      expect(outcome.report.note).not.toContain('TEST-HARNESS LIMITATION');
+    }
+  });
+});
+
 describe('runNovaChatLiveModelEvaluation - timeout and retry limits (directive §3: "no unbounded retries")', () => {
   it('treats a call that exceeds requestTimeoutMs as a failure and stops (default maxRetriesPerCall=0 means no retry)', async () => {
     const invoker: NovaChatInvoker = vi.fn(() => new Promise<any>((resolve) => setTimeout(() => resolve(okResult(1, 1)), 5000)));

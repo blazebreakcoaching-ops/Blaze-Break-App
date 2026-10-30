@@ -45,6 +45,8 @@ export type NovaChatInvoker = (args: {
   history: unknown[];
   /** PHASE 6B (directive §3) - optional, passed through to the real ChatRequestSchema.maxOutputTokens field by invokers that support it (the controlled live-model evaluation runner). Offline invokers may ignore this. */
   maxOutputTokens?: number;
+  /** PHASE 6B.1 (Priority 5) - optional, passed through to the real ChatRequestSchema.thinkingLevel field by invokers that support it (the controlled live-model evaluation runner). Offline invokers may ignore this. */
+  thinkingLevel?: 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
 }) => Promise<NovaChatInvokerResult>;
 
 function memoryConsentFromPermissionsDoc(permissionsDoc: Record<string, unknown> | undefined): boolean {

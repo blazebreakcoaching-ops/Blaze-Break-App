@@ -2680,6 +2680,22 @@ const ChatRequestSchema = z.object({
   // existing caller sends this field, so omitting it leaves today's
   // behaviour completely unchanged.
   maxOutputTokens: z.number().int().min(16).max(1024).optional(),
+  // PHASE 6B.1 (Priority 5) - optional, passed through to the real Gemini
+  // generationConfig.thinkingConfig.thinkingLevel field (the
+  // @google/genai SDK's own ThinkingConfig.thinkingLevel, one of
+  // MINIMAL/LOW/MEDIUM/HIGH - see ai-model-registry.ts's sibling comments
+  // for how this was grounded in the SDK's actual installed type
+  // definitions rather than guessed). Exists so the controlled live-model
+  // chat evaluation harness has a genuine, bounded, documented way to ask
+  // for a specific reasoning depth instead of only ever getting whatever
+  // the model's own default thinking behaviour happens to be - relevant
+  // because Priority 5's audit (see this phase's report) found that
+  // maxOutputTokens bounds thinking tokens AND visible output tokens
+  // together for thinking-capable models, so an unbounded/high thinking
+  // level combined with a low maxOutputTokens can starve the visible
+  // response entirely. No existing caller sends this field, so omitting
+  // it leaves today's production behaviour completely unchanged.
+  thinkingLevel: z.enum(['MINIMAL', 'LOW', 'MEDIUM', 'HIGH']).optional(),
 }).strict();
 
 // Nova tool use, phase 1: read-only tools only. Nothing here writes,
@@ -3146,7 +3162,7 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
     if (!parsedParams.success) {
       return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
-    const { message, history, systemInstruction, beforeWordsContext, maxOutputTokens } = parsedParams.data;
+    const { message, history, systemInstruction, beforeWordsContext, maxOutputTokens, thinkingLevel } = parsedParams.data;
 
     // Phase 5F (directive §4): this is the actual trust-boundary fix.
     // `beforeWordsContext`, if present, is quarantined (nonce delimiter +
@@ -3318,24 +3334,67 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
           // own comment. Every existing real client omits this field, so
           // this changes nothing about today's production behaviour.
           ...(maxOutputTokens ? { maxOutputTokens } : {}),
+          // PHASE 6B.1 (Priority 5) - only ever present when a caller
+          // (today, only the controlled live-model chat evaluation
+          // harness) explicitly asks for a thinking level. No existing
+          // real client sends thinkingLevel, so this changes nothing
+          // about today's production behaviour.
+          // Cast: ChatRequestSchema's thinkingLevel is a plain string
+          // union matching the SDK's own ThinkingLevel enum values
+          // exactly (MINIMAL/LOW/MEDIUM/HIGH) - not re-importing the enum
+          // just to satisfy its nominal type here.
+          ...(thinkingLevel ? { thinkingConfig: { thinkingLevel: thinkingLevel as any } } : {}),
         },
         history: history || [],
       });
 
       let result = await chat.sendMessage({ message: effectiveMessage });
 
-      // PHASE 6B (directive §2) - real Gemini usageMetadata, captured
-      // from every sendMessage() call this turn makes (the initial one
-      // plus any tool-call round-trips below), not invented or
-      // estimated. `usageMetadata` is the same SDK field
+      // PHASE 6B (directive §2) / PHASE 6B.1 (Priority 3) - real Gemini
+      // usageMetadata, captured from every sendMessage() call this turn
+      // makes (the initial one plus any tool-call round-trips below), not
+      // invented or estimated. `usageMetadata` is the same SDK field
       // nhei-extraction-service.ts's createGeminiExtractionCallerWithUsage
       // already reads for the NHEI evaluation runner - reusing the exact
-      // field names here rather than guessing at a different shape.
+      // field names here rather than guessing at a different shape; field
+      // names (promptTokenCount/candidatesTokenCount/thoughtsTokenCount/
+      // cachedContentTokenCount/toolUsePromptTokenCount) are confirmed
+      // against the installed @google/genai SDK's own
+      // GenerateContentResponseUsageMetadata type, not guessed.
+      //
+      // Summing each call's usageMetadata across the loop (rather than
+      // taking only the LAST call's figures) is a deliberate accounting
+      // decision, not an oversight: each sendMessage() call is a separate
+      // real request to the provider, and Gemini's chat-session
+      // usageMetadata reports that one call's own usage, not a running
+      // session-wide cumulative total - so summing is the correct way to
+      // capture the full, real cost of a turn that took more than one
+      // provider round-trip, and NOT double-counting. See
+      // nova-chat-usage-instrumentation.route.test.ts's multi-round test
+      // for a regression guard on this exact behaviour.
+      //
       // Missing/malformed fields degrade to 0, never thrown: a model
       // response with no usage metadata should degrade the cost signal,
-      // not break the chat turn itself.
+      // not break the chat turn itself. `turnUsageMetadataAvailable`
+      // tracks whether ANY call this turn actually returned a
+      // usageMetadata object at all, so a turn with genuinely zero
+      // real usage data can be told apart downstream from a turn that
+      // simply had 0 tokens - see this phase's report (Priority 3:
+      // "treat missing usage fields as unavailable, not as evidence of
+      // zero cost").
       let turnPromptTokens = typeof result.usageMetadata?.promptTokenCount === 'number' ? result.usageMetadata.promptTokenCount : 0;
       let turnOutputTokens = typeof result.usageMetadata?.candidatesTokenCount === 'number' ? result.usageMetadata.candidatesTokenCount : 0;
+      let turnThinkingTokens = typeof result.usageMetadata?.thoughtsTokenCount === 'number' ? result.usageMetadata.thoughtsTokenCount : 0;
+      let turnCachedTokens = typeof result.usageMetadata?.cachedContentTokenCount === 'number' ? result.usageMetadata.cachedContentTokenCount : 0;
+      let turnToolUsePromptTokens = typeof result.usageMetadata?.toolUsePromptTokenCount === 'number' ? result.usageMetadata.toolUsePromptTokenCount : 0;
+      let turnUsageMetadataAvailable = Boolean(result.usageMetadata);
+      // PHASE 6B.1 (Priority 2) - the actual serving model, when the
+      // provider/SDK response exposes one (GenerateContentResponse.modelVersion
+      // in the installed @google/genai SDK), kept separate from the
+      // CONFIGURED GEMINI_TEXT_MODEL constant below so a cost report can
+      // tell the two apart if a provider ever silently serves a different
+      // model version than the one requested.
+      let servingModelId: string | null = typeof (result as any).modelVersion === 'string' ? (result as any).modelVersion : null;
 
       // Bounded loop: execute any requested tool calls, send results back,
       // and let the model continue - capped so a misbehaving model can't
@@ -3376,9 +3435,28 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
         result = await chat.sendMessage({ message: responseParts });
         turnPromptTokens += typeof result.usageMetadata?.promptTokenCount === 'number' ? result.usageMetadata.promptTokenCount : 0;
         turnOutputTokens += typeof result.usageMetadata?.candidatesTokenCount === 'number' ? result.usageMetadata.candidatesTokenCount : 0;
+        turnThinkingTokens += typeof result.usageMetadata?.thoughtsTokenCount === 'number' ? result.usageMetadata.thoughtsTokenCount : 0;
+        turnCachedTokens += typeof result.usageMetadata?.cachedContentTokenCount === 'number' ? result.usageMetadata.cachedContentTokenCount : 0;
+        turnToolUsePromptTokens += typeof result.usageMetadata?.toolUsePromptTokenCount === 'number' ? result.usageMetadata.toolUsePromptTokenCount : 0;
+        turnUsageMetadataAvailable = turnUsageMetadataAvailable || Boolean(result.usageMetadata);
+        if (typeof (result as any).modelVersion === 'string') servingModelId = (result as any).modelVersion;
       }
 
       clearTimeout(timeoutId);
+
+      // PHASE 6B.1 (Priority 5) - "detect truncated or empty responses
+      // caused by token limits." The real @google/genai SDK's
+      // Candidate.finishReason (FinishReason.MAX_TOKENS specifically)
+      // indicates the model stopped because it ran out of its output
+      // token budget, not because it finished naturally (STOP) - a
+      // live-eval caller uses this to tell "the model hit a harness
+      // configuration limit" apart from "the model gave a bad answer",
+      // per this phase's audit (see ai-model-registry.ts/this phase's
+      // report for why maxOutputTokens can starve BOTH thinking and
+      // visible output for a thinking-capable model). Never surfaced to
+      // real production clients beyond this diagnostic field - no
+      // existing client reads it, so nothing changes for them.
+      const finishReason: string | null = (result as any).candidates?.[0]?.finishReason ?? null;
 
       // Fire-and-forget, same as every other usage-counter write in this
       // file (recordCapabilityUsage's own callers) - an observability
@@ -3386,35 +3464,62 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
       // actual chat response. Written to the same usage_counters doc the
       // nova_text capability count already lives in, as new, additional
       // fields - not a second, parallel storage location.
-      if (uid && (turnPromptTokens > 0 || turnOutputTokens > 0)) {
+      if (uid) {
         const usageDb = getDb();
         const nowIso = new Date().toISOString();
-        const increments = {
-          novaTextPromptTokens: FieldValue.increment(turnPromptTokens),
-          novaTextOutputTokens: FieldValue.increment(turnOutputTokens),
-          updatedAt: nowIso,
-        };
-        Promise.all([
-          usageCounterRef(usageDb, uid, 'daily').set(increments, { merge: true }),
-          usageCounterRef(usageDb, uid, 'monthly').set(increments, { merge: true }),
-        ]).catch((e) => logger.error(`[Nova usage instrumentation] failed to record chat token usage for uid ${uid}:`, errorFields(e)));
+        const increments: Record<string, unknown> = { updatedAt: nowIso };
+        let shouldWriteUsage = false;
+        if (turnPromptTokens > 0 || turnOutputTokens > 0 || turnThinkingTokens > 0 || turnCachedTokens > 0 || turnToolUsePromptTokens > 0) {
+          increments.novaTextPromptTokens = FieldValue.increment(turnPromptTokens);
+          increments.novaTextOutputTokens = FieldValue.increment(turnOutputTokens);
+          increments.novaTextThinkingTokens = FieldValue.increment(turnThinkingTokens);
+          increments.novaTextCachedTokens = FieldValue.increment(turnCachedTokens);
+          increments.novaTextToolUsePromptTokens = FieldValue.increment(turnToolUsePromptTokens);
+          shouldWriteUsage = true;
+        }
+        // PHASE 6B.1 (Priority 3) - counted separately from the token
+        // fields above, and NEVER folded into them as a 0: a turn where
+        // the model/mock returned no usageMetadata at all is "unknown
+        // cost", not "zero cost" - see this file's own comment above
+        // turnUsageMetadataAvailable's declaration.
+        if (!turnUsageMetadataAvailable) {
+          increments.novaTextUsageUnavailableCount = FieldValue.increment(1);
+          shouldWriteUsage = true;
+        }
+        if (shouldWriteUsage) {
+          Promise.all([
+            usageCounterRef(usageDb, uid, 'daily').set(increments, { merge: true }),
+            usageCounterRef(usageDb, uid, 'monthly').set(increments, { merge: true }),
+          ]).catch((e) => logger.error(`[Nova usage instrumentation] failed to record chat token usage for uid ${uid}:`, errorFields(e)));
+        }
       }
 
       res.json({
         text: result.text,
         privacyMetadata: contextMetadata,
         planTrace,
-        // PHASE 6B (directive §2/§3) - token counts only, never the
-        // conversation text itself. Additive field: no existing client
-        // reads this, so nothing changes for them; the controlled
-        // live-model chat evaluation harness is the first real consumer,
-        // using it for genuine post-call budget true-up (see
+        // PHASE 6B (directive §2/§3) / PHASE 6B.1 (Priority 2/3/5) - token
+        // counts only, never the conversation text itself. Additive
+        // fields beyond Phase 6B's promptTokens/outputTokens/totalTokens
+        // (every existing numeric value these already had is unchanged
+        // when thinking/cached/tool-use tokens are all 0, which is every
+        // real call this app has made so far - no live GEMINI_API_KEY has
+        // ever been used): no existing client reads the new fields, so
+        // nothing changes for them; the controlled live-model chat
+        // evaluation harness is the first real consumer, using this for
+        // genuine post-call budget true-up and truncation detection (see
         // nova-chat-live-model-evaluation-runner.ts).
         usage: {
           modelId: GEMINI_TEXT_MODEL,
           promptTokens: turnPromptTokens,
           outputTokens: turnOutputTokens,
-          totalTokens: turnPromptTokens + turnOutputTokens,
+          thinkingTokens: turnThinkingTokens,
+          cachedTokens: turnCachedTokens,
+          toolUsePromptTokens: turnToolUsePromptTokens,
+          totalTokens: turnPromptTokens + turnOutputTokens + turnThinkingTokens + turnToolUsePromptTokens,
+          usageMetadataAvailable: turnUsageMetadataAvailable,
+          servingModelId,
+          finishReason,
         },
       });
     } catch (modelError: any) {
@@ -7439,6 +7544,15 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     const measured = {
       novaTextPromptTokens: 0,
       novaTextOutputTokens: 0,
+      // PHASE 6B.1 (Priority 3) - see server.ts's /api/nova/chat route
+      // comment on turnThinkingTokens/turnCachedTokens/turnToolUsePromptTokens
+      // and novaTextUsageUnavailableCount for what each of these means and
+      // why novaTextUsageUnavailableCount is tracked separately rather
+      // than folded into the token counts as a 0.
+      novaTextThinkingTokens: 0,
+      novaTextCachedTokens: 0,
+      novaTextToolUsePromptTokens: 0,
+      novaTextUsageUnavailableCount: 0,
       novaMemorySearchCount: 0,
       novaMemoryWriteCount: 0,
       agenticProposalCount: 0,
@@ -7486,6 +7600,10 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
         }
         measured.novaTextPromptTokens += Number(data.novaTextPromptTokens) || 0;
         measured.novaTextOutputTokens += Number(data.novaTextOutputTokens) || 0;
+        measured.novaTextThinkingTokens += Number(data.novaTextThinkingTokens) || 0;
+        measured.novaTextCachedTokens += Number(data.novaTextCachedTokens) || 0;
+        measured.novaTextToolUsePromptTokens += Number(data.novaTextToolUsePromptTokens) || 0;
+        measured.novaTextUsageUnavailableCount += Number(data.novaTextUsageUnavailableCount) || 0;
         measured.novaMemorySearchCount += Number(data.novaMemorySearchCount) || 0;
         measured.novaMemoryWriteCount += Number(data.novaMemoryWriteCount) || 0;
         measured.agenticProposalCount += Number(data.agenticProposalCount) || 0;
@@ -7576,7 +7694,7 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
     // with real Gemini usageMetadata (Nova text chat). estimatedCostUsd
     // is null, not a guess, whenever GEMINI_TEXT_MODEL isn't in the
     // price registry - see ai-model-price-registry.ts.
-    const novaTextTokenCost = estimateNovaTextCostFromMeasuredTokens(GEMINI_TEXT_MODEL, measured.novaTextPromptTokens, measured.novaTextOutputTokens);
+    const novaTextTokenCost = estimateNovaTextCostFromMeasuredTokens(GEMINI_TEXT_MODEL, measured.novaTextPromptTokens, measured.novaTextOutputTokens, measured.novaTextThinkingTokens);
 
     res.json({
       periodDays,
@@ -7596,16 +7714,31 @@ app.get("/api/admin/cost-usage", verifyAppCheck, authenticateFirebaseUser, async
       measured: {
         novaTextPromptTokens: measured.novaTextPromptTokens,
         novaTextOutputTokens: measured.novaTextOutputTokens,
+        novaTextThinkingTokens: measured.novaTextThinkingTokens,
+        novaTextCachedTokens: measured.novaTextCachedTokens,
+        novaTextToolUsePromptTokens: measured.novaTextToolUsePromptTokens,
         novaMemorySearchCount: measured.novaMemorySearchCount,
         novaMemoryWriteCount: measured.novaMemoryWriteCount,
         agenticProposalCount: measured.agenticProposalCount,
         agenticProposalsByTool: measured.agenticProposalsByTool,
+        // PHASE 6B.1 (Priority 3) - novaTextTokenCostUsd now prices
+        // thinking tokens as billable output tokens too (see
+        // estimateNovaTextCostFromMeasuredTokens's own comment).
         novaTextTokenCostUsd: novaTextTokenCost,
+        // PHASE 6B.1 (Priority 3) - "unavailable, not zero cost": a count
+        // of real Nova chat turns in this period where no usageMetadata
+        // was returned at all. These turns contribute $0 to
+        // novaTextTokenCostUsd above NOT because they are known to have
+        // cost $0, but because their real cost is unknown - this count
+        // exists specifically so a reader never mistakes the first for
+        // the second.
+        novaTextUsageUnavailableCount: measured.novaTextUsageUnavailableCount,
         unavailable: {
           backgroundReasoningCalls: "No background job in this codebase currently calls a paid Gemini model - see the Phase 6B acceptance report.",
           emailSendCount: "Brevo email sends have no usage counter yet (SMS does, via categoryCounts) - not yet instrumented.",
           voiceTokenUsage: "Gemini Live's message shape in this SDK does not expose per-message usageMetadata - voice cost is tracked by real elapsed minutes (nova_voice_minutes) instead, not tokens.",
           rawCloudSpend: "No Firestore/Cloud Function billing-export integration exists - per-customer Firebase/cloud operation cost is not measured.",
+          novaTextCachedTokens: "Captured and summed (see novaTextCachedTokens above) but NOT priced separately - cachedContentTokenCount is a subset of promptTokenCount typically billed at a discount, and no verified cache-discount rate exists in ai-model-price-registry.ts yet, so it is surfaced as a raw count only, never folded into novaTextTokenCostUsd at either the full or a guessed discounted rate.",
         },
       },
       budget: {

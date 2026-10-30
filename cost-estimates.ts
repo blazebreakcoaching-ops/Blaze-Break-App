@@ -48,6 +48,14 @@ export interface MeasuredNovaTokenUsage {
   novaTextPromptTokens: number;
   /** Real cumulative Gemini usageMetadata.candidatesTokenCount, summed across the period. */
   novaTextOutputTokens: number;
+  /** PHASE 6B.1 (Priority 3) - real cumulative Gemini usageMetadata.thoughtsTokenCount (thinking/reasoning tokens), summed across the period. Billed as output tokens - see estimateNovaTextCostFromMeasuredTokens. */
+  novaTextThinkingTokens: number;
+  /** PHASE 6B.1 (Priority 3) - real cumulative Gemini usageMetadata.cachedContentTokenCount, summed across the period. Informational only (a subset of promptTokenCount, typically discounted) - not currently added into any cost total, since no verified cache discount rate exists in the price registry. */
+  novaTextCachedTokens: number;
+  /** PHASE 6B.1 (Priority 3) - real cumulative Gemini usageMetadata.toolUsePromptTokenCount, summed across the period. Expected to be 0 in this codebase's manual tool-call loop (see server.ts), captured defensively in case that ever changes. */
+  novaTextToolUsePromptTokens: number;
+  /** PHASE 6B.1 (Priority 3) - count of Nova chat turns where the model/mock returned NO usageMetadata at all. These turns' token counts are NOT included in novaTextPromptTokens/novaTextOutputTokens above - this counter exists so "0 extra cost" can be told apart from "cost unknown for N turns" in a report, instead of the two being silently indistinguishable. */
+  novaTextUsageUnavailableCount: number;
   /** Real elapsed Nova Live voice minutes (already tracked by nova_voice_minutes). */
   novaVoiceMinutes: number;
   /** Real count of search_nova_memories tool calls. */
@@ -77,14 +85,26 @@ export interface MeasuredCostField {
 // replacement. Reads from ai-model-price-registry.ts, the same
 // dependency-free, Firestore-free module nhei-real-model-evaluation-runner.ts
 // also consolidated onto this phase - one price table, not a second one.
+//
+// PHASE 6B.1 (Priority 3) - `thinkingTokens` (Gemini's
+// usageMetadata.thoughtsTokenCount, summed across the period) is folded
+// into the BILLABLE output-token count before pricing, since Gemini bills
+// thinking tokens as output tokens (confirmed by the installed
+// @google/genai SDK's own GenerateContentResponseUsageMetadata type:
+// totalTokenCount is documented there as the sum of prompt, candidates,
+// tool-use, AND thoughts token counts). Omitting this parameter defaults
+// it to 0, so every call site from before this phase prices exactly as it
+// did previously.
 export function estimateNovaTextCostFromMeasuredTokens(
   modelId: string,
   promptTokens: number,
   outputTokens: number,
+  thinkingTokens: number = 0,
 ): MeasuredCostField {
+  const billableOutputTokens = outputTokens + thinkingTokens;
   return {
-    measuredQuantity: promptTokens + outputTokens,
-    estimatedCostUsd: estimateModelCostUsd(modelId, promptTokens, outputTokens),
+    measuredQuantity: promptTokens + billableOutputTokens,
+    estimatedCostUsd: estimateModelCostUsd(modelId, promptTokens, billableOutputTokens),
     isEstimate: true,
   };
 }

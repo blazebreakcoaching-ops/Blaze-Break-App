@@ -62,7 +62,18 @@ describe('POST /api/nova/chat - real Gemini token usage capture', () => {
   it('returns a usage field built from the mocked client\'s real usageMetadata, and writes it to usage_counters', async () => {
     const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'hello' });
     expect(res.status).toBe(200);
-    expect(res.body.usage).toEqual({ modelId: expect.any(String), promptTokens: 50, outputTokens: 20, totalTokens: 70 });
+    expect(res.body.usage).toEqual({
+      modelId: expect.any(String),
+      promptTokens: 50,
+      outputTokens: 20,
+      thinkingTokens: 0,
+      cachedTokens: 0,
+      toolUsePromptTokens: 0,
+      totalTokens: 70,
+      usageMetadataAvailable: true,
+      servingModelId: null,
+      finishReason: null,
+    });
     const doc = await getDocRaw(`users/${USER}/usage_counters/${todayKey()}`);
     expect(doc?.novaTextPromptTokens).toBe(50);
     expect(doc?.novaTextOutputTokens).toBe(20);
@@ -78,14 +89,81 @@ describe('POST /api/nova/chat - real Gemini token usage capture', () => {
       .mockImplementationOnce(async () => ({ text: 'done', functionCalls: [], usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 15 } }));
     const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'what do you know about me?' });
     expect(res.status).toBe(200);
-    expect(res.body.usage).toEqual({ modelId: expect.any(String), promptTokens: 70, outputTokens: 20, totalTokens: 90 });
+    expect(res.body.usage).toEqual({
+      modelId: expect.any(String),
+      promptTokens: 70,
+      outputTokens: 20,
+      thinkingTokens: 0,
+      cachedTokens: 0,
+      toolUsePromptTokens: 0,
+      totalTokens: 90,
+      usageMetadataAvailable: true,
+      servingModelId: null,
+      finishReason: null,
+    });
   });
 
-  it('degrades to 0, never throwing, when the mocked client returns no usageMetadata at all', async () => {
+  // PHASE 6B.1 (Priority 3) - "Add regression tests using synthetic usage
+  // metadata with substantial thinking-token consumption" AND a guard
+  // against double-counting across a multi-round tool-call turn: two
+  // calls, each with their OWN distinct thinking/cached/tool-use token
+  // values, must sum exactly once each - not duplicated, not dropped.
+  it('sums thoughtsTokenCount/cachedContentTokenCount/toolUsePromptTokenCount across every round of a multi-round turn, not just the first or last', async () => {
+    h.sendMessage
+      .mockImplementationOnce(async () => ({
+        text: '',
+        functionCalls: [{ name: 'search_nova_memories', args: { query: 'x' } }],
+        usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 5, thoughtsTokenCount: 400, cachedContentTokenCount: 10, toolUsePromptTokenCount: 2 },
+      }))
+      .mockImplementationOnce(async () => ({
+        text: 'done',
+        functionCalls: [],
+        usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 15, thoughtsTokenCount: 600, cachedContentTokenCount: 5, toolUsePromptTokenCount: 3 },
+      }));
+    const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'what do you know about me?' });
+    expect(res.status).toBe(200);
+    expect(res.body.usage).toEqual({
+      modelId: expect.any(String),
+      promptTokens: 70,
+      outputTokens: 20,
+      thinkingTokens: 1000, // 400 + 600 - not 600 alone (last call only) and not 2000 (double-counted)
+      cachedTokens: 15, // 10 + 5
+      toolUsePromptTokens: 5, // 2 + 3
+      // totalTokens is promptTokens + outputTokens + thinkingTokens + toolUsePromptTokens = 70 + 20 + 1000 + 5.
+      totalTokens: 1095,
+      usageMetadataAvailable: true,
+      servingModelId: null,
+      finishReason: null,
+    });
+    const doc = await getDocRaw(`users/${USER}/usage_counters/${todayKey()}`);
+    expect(doc?.novaTextThinkingTokens).toBe(1000);
+    expect(doc?.novaTextCachedTokens).toBe(15);
+    expect(doc?.novaTextToolUsePromptTokens).toBe(5);
+  });
+
+  it('marks usageMetadataAvailable:false (never silently 0-cost) when the mocked client returns no usageMetadata at all, and records it as an unavailable turn rather than a zero-token one', async () => {
     h.sendMessage.mockImplementationOnce(async () => ({ text: 'ok', functionCalls: [] }));
     const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'hello' });
     expect(res.status).toBe(200);
-    expect(res.body.usage).toEqual({ modelId: expect.any(String), promptTokens: 0, outputTokens: 0, totalTokens: 0 });
+    expect(res.body.usage).toEqual({
+      modelId: expect.any(String),
+      promptTokens: 0,
+      outputTokens: 0,
+      thinkingTokens: 0,
+      cachedTokens: 0,
+      toolUsePromptTokens: 0,
+      totalTokens: 0,
+      usageMetadataAvailable: false,
+      servingModelId: null,
+      finishReason: null,
+    });
+    const doc = await getDocRaw(`users/${USER}/usage_counters/${todayKey()}`);
+    // The unavailable counter increments, but no token field is ever
+    // written as a fabricated 0 - see server.ts's own comment on why
+    // these two are kept separate.
+    expect(doc?.novaTextUsageUnavailableCount).toBe(1);
+    expect(doc?.novaTextPromptTokens).toBeUndefined();
+    expect(doc?.novaTextOutputTokens).toBeUndefined();
   });
 
   it('passes a client-supplied maxOutputTokens through to the real generationConfig, clamped by the schema to <= 1024', async () => {
