@@ -17872,8 +17872,26 @@ async function setupVite() {
     // server before it ever got here. This import only actually executes
     // when this branch runs, i.e. never in production.
     const { createServer: createViteServer } = await import("vite");
+    // PHASE 6D (Priority 1) - in middlewareMode, Vite can't share the
+    // parent HTTP server's upgrade handling automatically, so it opens
+    // its OWN HMR WebSocket server bound to its default port (24678)
+    // regardless of what PORT this process itself listens on. Two
+    // `tsx server.ts` processes running concurrently (exactly what
+    // playwright.realapp.config.ts's two webServers do, to test
+    // NOVA_AGENTIC_JOURNEY_ENABLED=true/false against two real servers
+    // at once) therefore raced for that same single port, logging
+    // "WebSocket server error: Port 24678 is already in use" and
+    // producing intermittent, unrelated-looking browser-test failures
+    // under concurrent load - a known false-failure class this project
+    // has repeatedly re-diagnosed rather than fixed at the source.
+    // VITE_HMR_PORT lets a caller give each concurrent instance its own
+    // port; omitted (ordinary `npm run dev`, production, every existing
+    // single-instance use) it is undefined and Vite's own default
+    // applies exactly as before - zero behaviour change for genuine
+    // development or production use.
+    const hmrPort = process.env.VITE_HMR_PORT ? Number(process.env.VITE_HMR_PORT) : undefined;
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: hmrPort ? { port: hmrPort } : undefined },
       appType: "spa",
     });
     app.use(vite.middlewares);

@@ -53,6 +53,18 @@ import { defineConfig, devices } from '@playwright/test';
 const FLAG_OFF_PORT = 3000;
 const FLAG_ON_PORT = 8081;
 
+// PHASE 6D (Priority 1) - each webServer below is its own `tsx server.ts`
+// process, and each one's Vite middleware opens its own HMR WebSocket
+// server (see server.ts's setupVite() comment). Both ran on the same
+// default port (24678) before this, racing for it and logging
+// "WebSocket server error: Port 24678 is already in use" - a known
+// cause of intermittent, unrelated-looking failures under this specific
+// two-webServer concurrent setup. Distinct ports per instance via
+// VITE_HMR_PORT (server.ts's own new opt-in) removes the collision
+// without changing genuine single-instance dev/production behaviour.
+const FLAG_OFF_HMR_PORT = 24678;
+const FLAG_ON_HMR_PORT = 24679;
+
 const emulatorEnv = {
   FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080',
   FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
@@ -70,14 +82,14 @@ export default defineConfig({
     {
       command: 'npx tsx server.ts',
       port: FLAG_OFF_PORT,
-      env: { ...emulatorEnv, PORT: String(FLAG_OFF_PORT), NOVA_AGENTIC_JOURNEY_ENABLED: 'false' },
+      env: { ...emulatorEnv, PORT: String(FLAG_OFF_PORT), NOVA_AGENTIC_JOURNEY_ENABLED: 'false', VITE_HMR_PORT: String(FLAG_OFF_HMR_PORT) },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
     {
       command: 'npx tsx server.ts',
       port: FLAG_ON_PORT,
-      env: { ...emulatorEnv, PORT: String(FLAG_ON_PORT), NOVA_AGENTIC_JOURNEY_ENABLED: 'true' },
+      env: { ...emulatorEnv, PORT: String(FLAG_ON_PORT), NOVA_AGENTIC_JOURNEY_ENABLED: 'true', VITE_HMR_PORT: String(FLAG_ON_HMR_PORT) },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

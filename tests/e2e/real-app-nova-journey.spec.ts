@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { mockAvatarRequests } from './test-helpers';
 
 // Phase 5M (directive §2/§4/§8) - browser-level tests against the REAL,
 // signed-in Blaze Break application (src/main.tsx -> App.tsx), run via
@@ -26,6 +27,7 @@ async function gotoAppAsAnonymousUser(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('nova_feedback_last_shown', Date.now().toString());
   });
+  await mockAvatarRequests(page);
   await page.goto('/');
   // auth.tsx's AuthProvider signs this brand-new visitor in anonymously
   // the moment the page loads (against the local Auth emulator, never a

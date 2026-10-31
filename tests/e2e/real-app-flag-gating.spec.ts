@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { mockAvatarRequests } from './test-helpers';
 
 // Phase 5M (directive §3) - Flag ON half of the gating verification, run
 // via playwright.realapp.config.ts's "realapp-flag-on" project against a
@@ -14,6 +15,7 @@ import { test, expect, type Page } from '@playwright/test';
 // fetch-to-mount wiring end to end.
 
 async function gotoAppAsAnonymousUser(page: Page) {
+  await mockAvatarRequests(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'See a live demo' }).click();
   await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });

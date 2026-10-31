@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { mockAvatarRequests } from './test-helpers';
 
 // Phase 5N (directive §3/§4) - the real, registered-account experience and
 // the account-isolation guarantees this phase exists to verify, driven
@@ -82,6 +83,7 @@ async function clickRobustly(page: Page, locator: Locator, attempts = 5) {
 }
 
 async function startAnonymousDemo(page: Page) {
+  await mockAvatarRequests(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'See a live demo' }).click();
   await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 25_000 });
