@@ -190,25 +190,55 @@ export const GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview";
 //     deprecation-date claim above.
 //   - Reported compatibility notes for a gemini-3.1-flash-live-preview
 //     -> gemini-3.8-live migration: "mostly means changing the model
-//     string" per the model page's own migration note; thinking_level is
-//     reported NOT supported for gemini-3.8-live at all (irrelevant to
-//     this app's current Live config either way - server.ts's
-//     ai.live.connect call never sets thinkingConfig for the voice path,
-//     only the text-chat path does); affective-dialogue is reported
-//     REMOVED from the API on one official-looking page while a
-//     different official-looking page still lists it as a feature - an
-//     unresolved discrepancy, noted rather than silently picking one
-//     side; audio I/O is reported as 16-bit PCM in at 16kHz / out at
-//     24kHz, matching this app's existing CAPTURE_SAMPLE_RATE/
-//     PLAYBACK_SAMPLE_RATE constants (useNovaLiveVoice.ts) exactly, so no
-//     client-side audio pipeline change is implied; a
-//     BidiGenerateContentContextUpdate message (mid-session system-
-//     instruction/tool replacement) is reported as a new 3.8-live-
-//     specific capability this app does not use and does not need to.
+//     string" per the model page's own migration note; audio I/O is
+//     reported as 16-bit PCM in at 16kHz / out at 24kHz, matching this
+//     app's existing CAPTURE_SAMPLE_RATE/PLAYBACK_SAMPLE_RATE constants
+//     (useNovaLiveVoice.ts) exactly, so no client-side audio pipeline
+//     change is implied; a BidiGenerateContentContextUpdate message
+//     (mid-session system-instruction/tool replacement) is reported as a
+//     new 3.8-live-specific capability this app does not use and does
+//     not need to.
+//
+// PHASE 6D (Priority 2) - a second, more thorough research pass (still
+// via search-index corroboration only - ai.google.dev remains
+// unreachable from this sandbox) reached what present as cached
+// snapshots of the actual official migration-notes text and resolved
+// the affective-dialogue discrepancy noted above, plus surfaced two
+// further migration differences this app's Live config was checked
+// against directly (see nova-live-gemini-3-8-live-migration.test.ts,
+// which asserts the real config object sent to ai.live.connect under
+// this override contains none of the following):
+//   - thinking_level is reported NOT ACCEPTED by gemini-3.8-live AT ALL
+//     (not merely restricted to a subset, as gemini-3.8-flash's TEXT
+//     path is) - must be omitted from session setup entirely. This
+//     app's Live path has never set it, so this is a non-issue today,
+//     but it rules out ever reusing the text path's
+//     getSupportedThinkingLevels restriction-list pattern for the Live
+//     path if someone later wants to add Live thinking-level support.
+//   - Affective dialogue is reported REMOVED from the API outright on
+//     this model ("Remove any enable_affective_dialog configurations
+//     from your code.") - resolving the earlier-noted discrepancy. This
+//     app's Live config has never set this field either.
+//   - Proactive audio is reported PERMANENTLY ENABLED on gemini-3.8-live
+//     - explicitly setting proactive_audio:false is reported to return a
+//     hard ERROR (not merely ignored). This app's Live config has never
+//     set this field, so the migration is not blocked by it today - but
+//     this is the one finding in this list that could silently BREAK a
+//     future, unrelated change (e.g. someone adding proactivity config
+//     to make Nova less likely to go quiet) if that change assumed the
+//     old model's behaviour still applied once this override is active.
+//   - Async (NON_BLOCKING) function calling is reported as the new
+//     DEFAULT execution mode - this app's tool-call dispatch in
+//     server.ts already awaits executeNovaTool and calls
+//     sendToolResponse once resolved, never assuming a synchronous/
+//     blocking turn, so no code change was needed; confirmed by running
+//     the same dispatch path under this override in the test file above.
 // None of this has been exercised against a real Gemini Live connection
 // in this environment (no live-credential mode exists for voice at all -
-// see nova-voice-evaluation-runner.test.ts's header comment). Selectable
-// via GEMINI_LIVE_MODEL_OVERRIDE for a future authorised real
+// see nova-voice-evaluation-runner.test.ts's header comment, and
+// NOVA_PHASE6D_VOICE_EVALUATION_PROCEDURE.md for what a real,
+// explicitly-authorised test of this model would still require).
+// Selectable via GEMINI_LIVE_MODEL_OVERRIDE for a future authorised real
 // compatibility test; NOT the default.
 const KNOWN_GEMINI_LIVE_MODELS = ["gemini-3.1-flash-live-preview", "gemini-3.8-live"] as const;
 
