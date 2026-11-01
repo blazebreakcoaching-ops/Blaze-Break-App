@@ -35,7 +35,20 @@ const env = { ...process.env, NOVA_LIVE_CHAT_EVAL: '0', GEMINI_API_KEY: '',
   TEST_MODE: 'true' };
 delete env.NHEI_EDUCATIONAL_MODE_ENABLED;
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const outDir = join(root, 'test-results', 'offline-release-gate');
+// Deliberately NOT under `test-results/`: both playwright.config.ts and
+// playwright.realapp.config.ts use Playwright's default outputDir, which
+// is `test-results/` at the repo root, and Playwright CLEARS that entire
+// directory at the start of every run. When this script's own log folder
+// lived at `test-results/offline-release-gate` (its previous location),
+// the first Playwright stage silently deleted every earlier stage's log
+// file, and the second Playwright stage then deleted the first Playwright
+// stage's log too - leaving only the very last stage's log on disk
+// despite all ten stages having actually run and passed. (An earlier fix
+// here only recreated the directory before each write to stop that
+// deletion from crashing the process with ENOENT; it did not stop the
+// deletion itself.) Living in a sibling directory Playwright never
+// touches is what actually preserves every stage's evidence.
+const outDir = join(root, 'release-gate-logs');
 mkdirSync(outDir, { recursive: true });
 const git = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
 const branch = spawnSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' });
@@ -67,14 +80,10 @@ function run(label, argv, runEnv = env) {
   const path = join(outDir, String(results.length + 1).padStart(2, '0') + '-' +
     label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.log');
   const log = [proc.stdout || '', proc.stderr || '', proc.error?.message || ''].join('\n');
-  // Playwright's own default outputDir is also `test-results/` at the repo
-  // root (both playwright.config.ts and playwright.realapp.config.ts use
-  // Playwright's default), and Playwright clears that directory at the
-  // start of a run - deleting this script's own `offline-release-gate`
-  // subfolder out from under it once either Playwright stage runs, so a
-  // later stage's writeFileSync below crashed the whole process with
-  // ENOENT. Recreating the directory immediately before every write
-  // (cheap, idempotent) survives that regardless of which stage wiped it.
+  // outDir lives outside `test-results/` precisely so a Playwright stage
+  // can never delete it (see the comment where outDir is defined above).
+  // Recreating it before every write is cheap, idempotent, and keeps this
+  // safe even if something else ever removes it mid-run.
   mkdirSync(outDir, { recursive: true });
   writeFileSync(path, log, { mode: 0o600 });
   results.push({ label, argv, status: code === 0 ? 'PASS' : 'FAIL', exitCode: code, startedAt, logPath: path });
@@ -105,7 +114,7 @@ const report = { verdict: passed ? 'ENGINEERING_CHECKS_PASS__NOT_DEPLOYMENT_APPR
   requested: { all, cleanInstall }, results,
   caveat: 'Passing checks do not authorise deployment, paid AI calls or independent safeguarding approval.' };
 const reportPath = join(outDir, 'latest.json');
-mkdirSync(outDir, { recursive: true }); // see the same note in run() - a Playwright stage may have wiped this directory
+mkdirSync(outDir, { recursive: true });
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
 console.log('\n[RELEASE-GATE] ' + report.verdict + '\nEvidence: ' + reportPath);
 process.exitCode = passed ? 0 : 1;

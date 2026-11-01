@@ -8,6 +8,7 @@ coverage/
 !.env.example
 functions/lib/
 test-results/
+release-gate-logs/
 playwright-report/
 blob-report/
 firestore-debug.log
