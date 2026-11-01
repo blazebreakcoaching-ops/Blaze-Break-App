@@ -27,20 +27,12 @@
 // only (directive §4: "executes only a bounded, allowlisted synthetic
 // test suite").
 //
-// Known, disclosed limitation on cost/token accounting: the real
-// `/api/nova/chat` route's own JSON response does not echo Gemini's
-// usageMetadata back to the caller (see server.ts's `res.json({ text,
-// privacyMetadata, planTrace })` - no usage field), and this phase
-// deliberately does not widen that production response shape just to
-// serve an eval-only concern. Spend is therefore bounded by a hard CALL
-// COUNT ceiling (`maxScenarios`), not a token budget - `estimatedCostUsd`
-// in the resulting report is consequently always `null` for this mode.
-// nhei-real-model-evaluation-runner.ts achieves real token accounting by
-// calling the Gemini client directly rather than through an HTTP route;
-// this file trades that away deliberately, in exchange for exercising
-// the REAL route's full orchestration (auth, quota, consent-gated
-// context, system-prompt assembly, the tool-call loop) end to end, which
-// is this phase's actual object of evaluation.
+// Phase 6B onward: the real /api/nova/chat route returns measured
+// provider usageMetadata to controlled evaluation callers. This harness
+// makes conservative pre-call cost reservations and checks measured
+// tokens after each call. These are NOT hard billing ceilings: a
+// timed-out provider request may continue and incur charges. Phase 6E
+// disables retries and blocks unknown pricing/missing usage.
 
 import { NOVA_CHAT_SCENARIOS } from './nova-chat-scenario-library';
 import { runScenario, type NovaChatInvoker } from './nova-chat-scenario-runner';
@@ -90,7 +82,7 @@ export interface NovaChatLiveEvalConfig {
   maxOutputTokensPerCall?: number;
   /** PHASE 6B (directive §3) - per-call wall-clock timeout in ms. Default 20000. */
   requestTimeoutMs?: number;
-  /** PHASE 6B (directive §3) - "No unbounded retries." Default 0 (no retries at all) - raise only deliberately. */
+  /** Phase 6E: must be 0. Positive retries block evaluation because requests cannot be cancelled after timeout. */
   maxRetriesPerCall?: number;
   /**
    * PHASE 6B.1 (Priority 5) - "an appropriately bounded, documented
@@ -248,8 +240,8 @@ export async function runNovaChatLiveModelEvaluation(
   let truncatedByTokenCapCount = 0;
 
   // PHASE 6B (directive §3) - wraps the caller-supplied invoker with:
-  // (1) a hard per-call request timeout, (2) a bounded retry count (0 by
-  // default - "no unbounded retries"), (3) a PRE-CALL conservative
+  // (1) a per-call wait timeout (not provider-side cancellation), (2)
+  // no retries, (3) a PRE-CALL conservative
   // budget reservation that refuses to even attempt the call if the
   // already-spent total plus this call's worst-case estimate (its
   // pessimistic input-token estimate AND the full maxOutputTokensPerCall
@@ -338,6 +330,7 @@ export async function runNovaChatLiveModelEvaluation(
 
   const report = buildRunReport('live_gemini', results, {
     modelId: config.modelId,
+    callsAttempted: callCount,
     featureFlagState: {
       NOVA_TOOLS_ENABLED: env.NOVA_TOOLS_ENABLED !== 'false',
       NOVA_AGENTIC_JOURNEY_ENABLED: env.NOVA_AGENTIC_JOURNEY_ENABLED === 'true',
