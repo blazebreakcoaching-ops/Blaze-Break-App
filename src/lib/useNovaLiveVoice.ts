@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth, getAppCheckToken } from './firebase';
 import { secureApiFetch } from './secure-api';
+import { getMfaSessionToken } from './mfa-session';
 import { buildContinuityPreamble, VoiceSessionRecord } from '../../voice-continuity';
 
 // One shared home for the real-time voice-coach client logic, used by every
@@ -271,7 +272,16 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       const proto = viaHostingRewrite || window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsUrl = `${proto}://${wsHost}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}` +
         (sessionContext ? `&context=${encodeURIComponent(sessionContext)}` : '');
-      const ws = new WebSocket(wsUrl);
+      // Keep MFA proof out of the URL; browsers cannot supply custom
+      // WebSocket headers. The server negotiates only the non-sensitive
+      // first protocol, never the credential-bearing second protocol.
+      const protocols = ['nova-live-v1'];
+      const mfaProof = getMfaSessionToken(auth.currentUser.uid);
+      if (mfaProof) {
+        const encoded = window.btoa(mfaProof).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        protocols.push(`nova-mfa.${encoded}`);
+      }
+      const ws = new WebSocket(wsUrl, protocols);
       wsRef.current = ws;
 
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: CAPTURE_SAMPLE_RATE });

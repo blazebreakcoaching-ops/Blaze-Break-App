@@ -18000,13 +18000,50 @@ export async function handleNovaLiveConnection(clientWs: any, req: any): Promise
     clientWs.send(JSON.stringify({ error: "Missing authentication token." }));
     return clientWs.close();
   }
+  // Nova Live must enforce the same revoked-token and session-MFA checks
+  // as authenticateFirebaseUser for REST API calls. WebSocket upgrades do
+  // not traverse that middleware.
   let uid: string;
+  let mfaEnabled: boolean;
   try {
-    const decoded = await getAuth().verifyIdToken(idToken);
+    const decoded = await getAuth().verifyIdToken(idToken, true);
     uid = decoded.uid;
+    mfaEnabled = decoded.mfaEnabled === true;
   } catch (e) {
     clientWs.send(JSON.stringify({ error: "Invalid or expired session. Please refresh and try again." }));
     return clientWs.close();
+  }
+
+  if (mfaEnabled) {
+    // A browser WebSocket cannot set X-MFA-Session-Token. The client
+    // supplies the signed session proof as a second, base64url-encoded
+    // subprotocol, not as a URL parameter. The server negotiates ONLY
+    // 'nova-live-v1': the proof must never be echoed to the browser as
+    // the selected WebSocket protocol. Never log the proof or this header.
+    const header = req.headers['sec-websocket-protocol'];
+    const offeredProtocols = typeof header === 'string'
+      ? header.split(',').map((value: string) => value.trim())
+      : [];
+    const proofs = offeredProtocols.filter((value: string) => value.startsWith('nova-mfa.'));
+    let verified = false;
+    if (proofs.length === 1 && offeredProtocols.includes('nova-live-v1')) {
+      const encoded = proofs[0].slice('nova-mfa.'.length);
+      if (encoded.length > 0 && encoded.length <= 1024 && /^[A-Za-z0-9_-]+$/.test(encoded)) {
+        try {
+          const proof = Buffer.from(encoded, 'base64url').toString('utf8');
+          verified = verifyMfaSessionToken(proof, uid);
+        } catch {
+          // Malformed, expired, or incorrectly signed proof fails closed.
+        }
+      }
+    }
+    if (!verified) {
+      clientWs.send(JSON.stringify({
+        error: 'Two-factor verification is required again for this voice session.',
+        code: 'MFA_SESSION_REQUIRED',
+      }));
+      return clientWs.close();
+    }
   }
 
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
@@ -18374,7 +18411,13 @@ if (process.env.TEST_MODE !== 'true') {
       logger.info(`Server running on http://localhost:${PORT}`);
     });
 
-    const wss = new WebSocketServer({ server, path: "/api/nova/live" });
+    const wss = new WebSocketServer({
+      server,
+      path: "/api/nova/live",
+      // Never return the 'nova-mfa.*' credential as the selected
+      // subprotocol. Legacy clients requesting no protocol still work.
+      handleProtocols: (protocols) => protocols.has('nova-live-v1') ? 'nova-live-v1' : false,
+    });
     wss.on("connection", handleNovaLiveConnection);
   });
 }
