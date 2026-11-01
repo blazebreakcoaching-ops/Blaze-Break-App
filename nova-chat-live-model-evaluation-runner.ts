@@ -314,7 +314,7 @@ export async function runNovaChatLiveModelEvaluation(
 
   for (const scenario of scenarios) {
     try {
-      const result = await runScenario(scenario, budgetedInvoker, uidForScenario(scenario.id), undefined, { stopOnServerOrTransportError: true });
+      const result = await runScenario(scenario, budgetedInvoker, uidForScenario(scenario.id), undefined, { stopOnNonSuccessResponse: true });
       results.push(result);
       // "Stops on ... unexpected errors": a 5xx, OR an invoker-level
       // failure (httpStatus 0 - runScenario's own turn loop degrades any
@@ -325,10 +325,10 @@ export async function runNovaChatLiveModelEvaluation(
       // exception - see nova-chat-scenario-runner.ts) on any turn this
       // run never deliberately targets is treated as unexpected, not as
       // a normal scenario outcome to just record and move past.
-      const unexpectedServerError = result.turnResults.some((t) => t.httpStatus >= 500 || t.httpStatus === 0);
-      if (unexpectedServerError) {
+      const unsuccessfulTurn = result.turnResults.some((t) => t.httpStatus !== 200);
+      if (unsuccessfulTurn) {
         stoppedEarly = true;
-        const failedTurn = result.turnResults.find((t) => t.httpStatus >= 500 || t.httpStatus === 0);
+        const failedTurn = result.turnResults.find((t) => t.httpStatus !== 200);
         stopReason = `Unexpected failure during scenario ${scenario.id}: ${failedTurn?.error ?? `HTTP ${failedTurn?.httpStatus}`} - stopping rather than continuing to spend real model calls against a possibly-broken or over-budget run.`;
         break;
       }
