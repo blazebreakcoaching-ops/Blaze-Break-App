@@ -129,11 +129,17 @@ export default function PulseScreen() {
             <>
               <Text style={styles.cardTitle}>{recommendation.title}</Text>
               <Text style={styles.cardMessage}>{recommendation.message}</Text>
-              <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress}>
-                <Text style={styles.cardButtonText}>
-                  {TAB_ROUTES[recommendation.tab] ? `Open ${recommendation.tool}` : 'Talk it through with Nova'}
+              {(TAB_ROUTES[recommendation.tab] || recommendation.tab === 'home') ? (
+                <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress} accessibilityRole="button">
+                  <Text style={styles.cardButtonText}>
+                    {TAB_ROUTES[recommendation.tab] ? `Open ${recommendation.tool}` : 'Open quick check-in'}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.cardSubtext}>
+                  This option is available in Blaze Break on the web. We're bringing it to the mobile app.
                 </Text>
-              </TouchableOpacity>
+              )}
             </>
           ) : (
             <Text style={styles.cardMessage}>Nothing urgent right now - come back any time.</Text>
