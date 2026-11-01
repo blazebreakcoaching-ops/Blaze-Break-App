@@ -218,6 +218,8 @@ describe('runNovaChatLiveModelEvaluation - fail-closed cost controls', () => {
     if (outcome.status === 'completed') {
       expect(outcome.stoppedEarly).toBe(true);
       expect(outcome.report.note).toContain('actual spend is unknown');
+      expect(outcome.report.estimatedCostUsd).toBeNull();
+      expect(outcome.report.usage).toBeNull();
     }
     expect(invoker).toHaveBeenCalledTimes(1);
   });
