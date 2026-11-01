@@ -43,11 +43,25 @@ if (git.status !== 0 || !git.stdout.trim()) {
   console.error('ABORT: A Git commit SHA is required to tie test results to source.');
   process.exit(2);
 }
+// TEST_MODE='true' tells server.ts to skip app.listen() entirely (see
+// server.ts's own `if (process.env.TEST_MODE !== 'true') { setupVite().then(...) }`)
+// so Vitest/Components/the Firebase-emulator stage can import `app`
+// directly without opening a real port. Both Playwright webServer
+// configs that run `npx tsx server.ts` as an actual listening process
+// (playwright.realapp.config.ts; playwright.config.ts itself runs plain
+// `vite`, unaffected) inherit this same env and therefore never listen
+// either - Playwright then reports "Process from config.webServer
+// exited early" with no further detail, since the Node process just
+// finishes its top-level script and exits 0, no error thrown. Those two
+// stages get a derived env with TEST_MODE removed so the real webServer
+// actually starts.
+const playwrightEnv = { ...env };
+delete playwrightEnv.TEST_MODE;
 const results = [];
-function run(label, argv) {
+function run(label, argv, runEnv = env) {
   console.log('\n[RELEASE-GATE] ' + label);
   const startedAt = new Date().toISOString();
-  const proc = spawnSync(npmCmd, argv, { cwd: root, env, shell: false,
+  const proc = spawnSync(npmCmd, argv, { cwd: root, env: runEnv, shell: false,
     encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   const code = proc.error ? -1 : (proc.status ?? -1);
   const path = join(outDir, String(results.length + 1).padStart(2, '0') + '-' +
@@ -79,8 +93,8 @@ if (installOK) {
   if (all) {
     run('Firebase emulator', ['exec', '--no', '--', 'firebase', 'emulators:exec',
       '--only', 'firestore,auth', '--project', 'default', 'npm run test:emulator']);
-    run('Playwright preview', ['run', 'test:e2e']);
-    run('Playwright real app', ['run', 'test:e2e:realapp']);
+    run('Playwright preview', ['run', 'test:e2e'], playwrightEnv);
+    run('Playwright real app', ['run', 'test:e2e:realapp'], playwrightEnv);
   }
 }
 const passed = all && cleanInstall && results.length === 10 &&
