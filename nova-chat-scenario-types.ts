@@ -205,6 +205,8 @@ export interface NovaEvaluationRunReport {
   featureFlagState: Record<string, boolean | string>;
   generatedAt: string;
   scenarioResults: NovaScenarioEvaluationResult[];
+  /** Actual provider attempts observed by the live harness; null for offline/legacy reports. */
+  callsAttempted?: number | null;
   usage: { promptTokens: number; outputTokens: number } | null;
   estimatedCostUsd: number | null;
   unresolvedRisks: string[];
