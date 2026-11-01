@@ -54,7 +54,7 @@ function memoryConsentFromPermissionsDoc(permissionsDoc: Record<string, unknown>
   return Boolean(perms?.allowNovaMemory && perms?.allowNovaUseSavedMemories);
 }
 
-export type NovaScenarioOnAfterTurn = (turnIndex: number, turn: NovaScenarioTurn) => Promise<void;
+export type NovaScenarioOnAfterTurn = (turnIndex: number, turn: NovaScenarioTurn) => Promise<void>;
 
 export interface NovaScenarioRunOptions {
   /**
