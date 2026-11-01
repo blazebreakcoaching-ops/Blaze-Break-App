@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NovaAgenticJourney } from './NovaAgenticJourney';
+import { addInvisibleLoadItem, type NovaInvisibleLoadContext } from '../../nova-invisible-load-contract';
 
 // NovaAgenticJourney is, by its own header, "a thin sequencer... no new
 // business logic" - these tests exercise exactly that sequencing (which
@@ -28,8 +29,15 @@ vi.mock('./NovaChat', () => ({
   ),
 }));
 vi.mock('./NovaInvisibleLoad', () => ({
-  NovaInvisibleLoad: ({ onProtectTime, onDeferTask }: { onProtectTime: (p: any) => void; onDeferTask: (t: string) => void }) => (
+  NovaInvisibleLoad: ({ onProtectTime, onDeferTask, context, onContextChange }: {
+    onProtectTime: (p: any) => void;
+    onDeferTask: (t: string) => void;
+    context: NovaInvisibleLoadContext;
+    onContextChange: (context: NovaInvisibleLoadContext) => void;
+  }) => (
     <div data-testid="invisible-load">
+      <span data-testid="invisible-load-count">{context.items.length}</span>
+      <button onClick={() => onContextChange(addInvisibleLoadItem(context, 'Deadline I shared', 'obligation', true))}>Add load</button>
       <button onClick={() => onProtectTime({ description: 'Protect this', capacityBand: null })}>Protect</button>
       <button onClick={() => onDeferTask('Defer this task')}>Defer</button>
     </div>
@@ -127,6 +135,24 @@ describe('NovaAgenticJourney - sequencing', () => {
     await userEvent.click(screen.getByRole('button', { name: /see what nova might proactively suggest/i }));
     await userEvent.click(screen.getByRole('button', { name: /back to what's on your plate/i }));
     expect(screen.getByTestId('invisible-load')).toBeInTheDocument();
+  });
+
+  it('retains temporary Invisible Load items when navigating back but clears them on Start over', async () => {
+    render(<NovaAgenticJourney initialStep="chat" />);
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    expect(screen.getByTestId('invisible-load-count')).toHaveTextContent('0');
+    await userEvent.click(screen.getByRole('button', { name: /add load/i }));
+    expect(screen.getByTestId('invisible-load-count')).toHaveTextContent('1');
+
+    await userEvent.click(screen.getByRole('button', { name: /^protect$/i }));
+    expect(screen.getByTestId('calendar-protection')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^back$/i }));
+    expect(screen.getByTestId('invisible-load-count')).toHaveTextContent('1');
+
+    await userEvent.click(screen.getByRole('button', { name: /start over/i }));
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
+    expect(screen.getByTestId('invisible-load-count')).toHaveTextContent('0');
   });
 
   it('Start over resets all the way back to the entry step', async () => {
