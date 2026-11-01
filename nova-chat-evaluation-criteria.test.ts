@@ -52,8 +52,19 @@ describe('Nova hard-invariant evidence integrity', () => {
     expect(invariant(checks(0, 'Request aborted'), 'no_server_error').passed).toBe(false);
   });
 
-  it('keeps a 4xx client refusal separate from a 5xx server/transport failure', () => {
-    expect(invariant(checks(403, 'Forbidden'), 'no_server_error').passed).toBe(true);
+  it('keeps a 4xx client refusal separate from a 5xx server/transport failure, without calling it a success', () => {
+    const r = checks(403, 'Forbidden');
+    expect(invariant(r, 'no_server_error').passed).toBe(true);
+    expect(invariant(r, 'http_success').passed).toBe(false);
+  });
+
+  it('rejects rate-limited and transport-failed turns as unsuccessful even without a server 5xx', () => {
+    expect(invariant(checks(429, 'Rate limited'), 'http_success').passed).toBe(false);
+    expect(invariant(checks(0, 'Connection lost'), 'http_success').passed).toBe(false);
+  });
+
+  it('accepts an actual HTTP 200 success', () => {
+    expect(invariant(checks(200, null), 'http_success').passed).toBe(true);
   });
 
   it('does not claim the model omitted or received safety instructions when the live path cannot inspect them', () => {
