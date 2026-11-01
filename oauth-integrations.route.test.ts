@@ -256,7 +256,7 @@ describe('GET /api/integrations/callback/:service - token exchange', () => {
     const state = await getSignedState('jira_user', 'jira');
     fetchMock.mockImplementationOnce(async () => ({
       ok: false,
-      json: async () => ({ error: 'invalid_grant', error_description: 'The provided authorization grant is invalid.', access_token: 'LEAKED_TOKEN_MUST_NOT_BE_LOGGED', client_secret: 'LEAKED_SECRET_MUST_NOT_BE_LOGGED' }),
+      json: async () => ({ error: 'invalid_grant', error_description: 'The provider echoed LEAKED_TOKEN_MUST_NOT_BE_LOGGED', error_uri: 'https://provider.example/error?client_secret=LEAKED_SECRET_MUST_NOT_BE_LOGGED', access_token: 'LEAKED_TOKEN_MUST_NOT_BE_LOGGED', client_secret: 'LEAKED_SECRET_MUST_NOT_BE_LOGGED' }),
     }));
 
     await request(app).get(`/api/integrations/callback/jira?code=bad-code&state=${encodeURIComponent(state)}`);
@@ -267,7 +267,9 @@ describe('GET /api/integrations/callback/:service - token exchange', () => {
     const loggedLine = errorSpy.mock.calls.map(([line]) => String(line)).find((line) => line.includes('token exchange failed'));
     expect(loggedLine).toBeDefined();
     const logged = JSON.parse(loggedLine!);
-    expect(logged).toMatchObject({ error: 'invalid_grant', errorDescription: 'The provided authorization grant is invalid.' });
+    expect(logged).toMatchObject({ error: 'invalid_grant', errorDescription: null, errorUri: null });
+    expect(loggedLine).not.toContain('LEAKED_TOKEN_MUST_NOT_BE_LOGGED');
+    expect(loggedLine).not.toContain('LEAKED_SECRET_MUST_NOT_BE_LOGGED');
     expect(logged.otherFieldNames.sort()).toEqual(['access_token', 'client_secret']);
     errorSpy.mockRestore();
   });
