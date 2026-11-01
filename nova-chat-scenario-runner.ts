@@ -54,7 +54,16 @@ function memoryConsentFromPermissionsDoc(permissionsDoc: Record<string, unknown>
   return Boolean(perms?.allowNovaMemory && perms?.allowNovaUseSavedMemories);
 }
 
-export type NovaScenarioOnAfterTurn = (turnIndex: number, turn: NovaScenarioTurn) => Promise<void>;
+export type NovaScenarioOnAfterTurn = (turnIndex: number, turn: NovaScenarioTurn) => Promise<void;
+
+export interface NovaScenarioRunOptions {
+  /**
+   * Live evaluation only: stop as soon as a request fails at the
+   * transport/server layer. Offline scenarios keep their historical
+   * multi-turn behaviour, including scripted failures.
+   */
+  stopOnServerOrTransportError?: boolean;
+}
 
 export async function runScenario(
   scenario: NovaScenarioDefinition,
@@ -69,6 +78,7 @@ export async function runScenario(
   // `permissionsDocAfterThisTurn`, simulating a REAL mid-conversation
   // consent withdrawal (S30) rather than a static, scenario-wide setting.
   onAfterTurn?: NovaScenarioOnAfterTurn,
+  options: NovaScenarioRunOptions = {},
 ): Promise<NovaScenarioEvaluationResult> {
   const history: unknown[] = [];
   const turnResults: NovaScenarioTurnResult[] = [];
@@ -125,6 +135,11 @@ export async function runScenario(
       currentMemoryConsentGranted = memoryConsentFromPermissionsDoc(turn.permissionsDocAfterThisTurn);
     }
     if (onAfterTurn) await onAfterTurn(i, turn);
+    if (options.stopOnServerOrTransportError && (result.status === 0 || result.status >= 500)) {
+      // Preserve this failed turn as evidence; never make a later
+      // provider call in the same multi-turn scenario.
+      break;
+    }
   }
 
   const allHardInvariantsPassed = turnResults.every((t) => t.hardInvariants.every((h) => h.passed));
