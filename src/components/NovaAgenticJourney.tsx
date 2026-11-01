@@ -200,6 +200,9 @@ export const NovaAgenticJourney = ({
     setBeforeWordsContext(null);
     setCalendarProblem(null);
     setDeferralTaskDescription('');
+    // A fresh journey must also discard voluntarily shared Invisible
+    // Load items. Back navigation preserves them; Start over does not.
+    setInvisibleLoadContext(initNovaInvisibleLoadContext());
   };
 
   return (
