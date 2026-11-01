@@ -236,6 +236,9 @@ export async function runNovaChatLiveModelEvaluation(
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
   let callCount = 0;
+  // If a provider request times out or returns without valid usage, a
+  // zero from measured counters is NOT evidence of zero billed spend.
+  let usageAccountingComplete = true;
   // PHASE 6B.1 (Priority 5) - see NovaChatLiveEvalOutcome's own comment.
   let truncatedByTokenCapCount = 0;
 
@@ -268,11 +271,17 @@ export async function runNovaChatLiveModelEvaluation(
     // Exactly one attempt per turn. No retry is safe here while the
     // underlying provider request cannot be cancelled on timeout.
     callCount++;
-    const result = await withTimeout(
-      invoker({ ...args, maxOutputTokens: maxOutputTokensPerCall, ...(thinkingLevel ? { thinkingLevel } : {}) }),
-      requestTimeoutMs,
-      'Live-model evaluation call',
-    );
+    let result: Awaited<ReturnType<NovaChatInvoker>>;
+    try {
+      result = await withTimeout(
+        invoker({ ...args, maxOutputTokens: maxOutputTokensPerCall, ...(thinkingLevel ? { thinkingLevel } : {}) }),
+        requestTimeoutMs,
+        'Live-model evaluation call',
+      );
+    } catch (e) {
+      usageAccountingComplete = false;
+      throw e;
+    }
     const usage = result.body?.usage as
       | { promptTokens?: number; outputTokens?: number; thinkingTokens?: number; finishReason?: string | null }
       | undefined;
@@ -281,6 +290,7 @@ export async function runNovaChatLiveModelEvaluation(
     if (!usage || !Number.isFinite(usage.promptTokens) || !Number.isFinite(usage.outputTokens) ||
         !Number.isFinite(usage.thinkingTokens ?? 0) ||
         usage.promptTokens! < 0 || usage.outputTokens! < 0 || (usage.thinkingTokens ?? 0) < 0) {
+      usageAccountingComplete = false;
       throw new Error('Live-model evaluation received no valid token-usage metadata; actual spend is unknown. Stopping without further calls.');
     }
     const billableOutputTokens = usage.outputTokens! + (usage.thinkingTokens ?? 0);
@@ -288,6 +298,7 @@ export async function runNovaChatLiveModelEvaluation(
     totalOutputTokens += billableOutputTokens;
     const realCostUsd = estimateModelCostUsd(config.modelId, usage.promptTokens!, billableOutputTokens);
     if (realCostUsd === null || !Number.isFinite(realCostUsd)) {
+      usageAccountingComplete = false;
       throw new Error('Live-model evaluation could not price measured token usage; stopping without further calls.');
     }
     spentUsd += realCostUsd;
@@ -336,13 +347,18 @@ export async function runNovaChatLiveModelEvaluation(
       NOVA_AGENTIC_JOURNEY_ENABLED: env.NOVA_AGENTIC_JOURNEY_ENABLED === 'true',
       GUARDIAN_SUPPORT_INVITATION_ENABLED: env.GUARDIAN_SUPPORT_INVITATION_ENABLED === 'true',
     },
-    usage: { promptTokens: totalPromptTokens, outputTokens: totalOutputTokens },
-    estimatedCostUsd: estimateModelCostUsd(config.modelId, totalPromptTokens, totalOutputTokens),
+    usage: usageAccountingComplete && callCount > 0 ? { promptTokens: totalPromptTokens, outputTokens: totalOutputTokens } : null,
+    estimatedCostUsd: usageAccountingComplete && callCount > 0
+      ? estimateModelCostUsd(config.modelId, totalPromptTokens, totalOutputTokens)
+      : null,
     note:
       `Controlled live-model run against ${results.length}/${scenarios.length} allowlisted scenario(s) (cap: ${maxScenarios}), ` +
       `model "${config.modelId}", via the real, unmodified /api/nova/chat route with a genuinely unmocked Gemini client. ` +
-      `${callCount} real API call(s) made. Real token usage this run: ${totalPromptTokens} prompt / ${totalOutputTokens} output ` +
-      `(from server.ts's own usageMetadata capture - see that route's own comment). Budget ceiling: $${maxTotalUsd}, spent (estimate from real tokens): $${spentUsd.toFixed(5)}. ` +
+      `${callCount} invoker attempt(s) made; final provider billing must be checked separately. ` +
+      `${usageAccountingComplete && callCount > 0
+        ? `Measured token usage: ${totalPromptTokens} prompt / ${totalOutputTokens} output. Estimated measured-token cost: ${spentUsd.toFixed(5)}.`
+        : 'ACTUAL COST UNKNOWN: no complete usage accounting for all provider attempts; any displayed zero counters would be misleading.'} ` +
+      `Budget ceiling (estimate, not a provider guarantee): ${maxTotalUsd}. ` +
       `Per-call controls: maxOutputTokens=${maxOutputTokensPerCall} (provider-enforced), estimatedInputCeiling=${maxEstimatedInputTokensPerCall} (not provider-enforced), thinkingLevel=${thinkingLevel ?? '(model default)'}, requestTimeoutMs=${requestTimeoutMs}, retries disabled. Timed-out calls may still incur charges; USD ceilings are conservative estimates, not verified provider billing limits. ` +
       `No real external action, email, SMS, calendar write, or Guardian outreach is reachable from this path regardless of ` +
       `model output - every agentic tool in this app's NOVA_TOOLS is propose/offer/search-only at the server-tool-execution ` +
