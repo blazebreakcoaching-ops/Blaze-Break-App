@@ -432,3 +432,40 @@ the new tests have **not** been executed in this session because the
 local environment cannot resolve GitHub to retrieve repository
 dependencies, and GitHub Actions was deliberately not invoked. No test
 pass is claimed here.
+
+## Phase 6F live-model evaluation hardening (2026-11-01; branch-only)
+
+**Engineering changes committed, not yet test-executed.** The
+`runNovaChatLiveModelEvaluation` preflight now refuses unpriced models,
+invalid/zero/non-finite spend or token parameters, empty batches, and
+configured retries. A timed-out provider call cannot be cancelled by
+this harness's `Promise.race`, so retrying it risks a second charge;
+the harness now makes at most one invoker attempt per turn. Conservative
+pre-call reservations use the configured full input allowance and stop
+before a call when the estimated input exceeds that allowance.
+Measured token usage is required after each attempted provider call;
+missing/invalid data or timeouts render recorded spend **unknown**,
+not $0. These are operational safeguards based on estimated registry
+rates and **not** an enforceable Google Cloud Billing hard cap.
+
+The live scenario runner now stops on any unsuccessful HTTP result,
+including 401/403/429, as well as a 5xx or transport failure. It never
+proceeds with the remaining turns in that scenario after the first
+failure, reducing unnecessary billable requests. Default scripted
+offline scenario behaviour remains unchanged. A new universal
+`http_success` invariant requires HTTP 200 so that the existing
+`no_server_error` invariant cannot mistake a 4xx refusal for an
+overall successful evaluation. The report records the number of
+invoker attempts and labels **zero-attempt** runs **NOT RUN** even
+when a model was selected. It distinguishes a proven hard-invariant
+failure from evidence that remains explicitly **NOT VERIFIED**.
+
+Synthetic, non-network regression tests were added or extended for
+these boundaries. **The full test suite, TypeScript build, browser
+tests and real Gemini evaluations were not run during this work.**
+This environment cannot resolve github.com for a local checkout,
+and no GitHub Actions credits or paid provider tokens were used.
+Therefore the changes are **awaiting runtime validation**; they
+must not be described as verified passing, clinically approved or
+ready for production. All prior reviewer, consent, legal/privacy and
+real-model evidence gates remain open and unchanged.
