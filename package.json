@@ -19,7 +19,8 @@
     "test:emulator": "vitest run --config vitest.emulator.config.ts",
     "test:nova-live-eval": "vitest run --config vitest.live-eval.config.ts",
     "test:e2e": "playwright test",
-    "test:e2e:realapp": "firebase emulators:exec --only firestore,auth --project default \"playwright test --config playwright.realapp.config.ts\""
+    "test:e2e:realapp": "firebase emulators:exec --only firestore,auth --project default \"playwright test --config playwright.realapp.config.ts\"",
+    "verify:release:offline": "node scripts/verify-release-offline.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
