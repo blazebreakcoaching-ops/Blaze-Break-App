@@ -75,3 +75,19 @@ While automated runner usage is not authorised, commits on this preparation bran
 - [ ] Real-Gemini response quality, clinical/safeguarding review, consent and retention decisions remain separate, open pilot blockers.
 
 **Current decision: NO-GO for production merge.** Fixes are committed and static source checks completed, but no fresh post-fix test run, no real-model validation, and no controlled deployment approval exists.
+
+## 2026-11-01 additional closeout implementation
+
+A repeatable local verification runner is now available on the framework branch:
+
+```bash
+npm run verify:release:offline -- --all
+```
+
+This one command performs a clean npm install, dependency audit, TypeScript, ESLint, production build, Vitest, component tests, Firebase emulator tests, and both Playwright suites. It writes per-stage logs and `test-results/offline-release-gate/latest.json` containing the exact source commit SHA and stages' exit codes. That folder is gitignored. It overrides live Gemini/Calendar/NHEI environment flags to keep the test path offline-controlled. It does **not** call GitHub Actions or deploy production services. Npm installation/audit may still use the public npm registry; the browser/emulator suites require local browser/Java prerequisites.
+
+The runner itself was syntax-checked under Node 22, and its pass/fail aggregation was exercised in a **synthetic Git checkout with an npm stub**: ten stubbed stages passed yielded a non-deployment PASS, and an intentionally failing stubbed build yielded a nonzero exit status and NOT VERIFIED. These are self-tests of the runner, **not** evidence that Blaze Break's real TypeScript, build, browser or unit tests passed. There remains no working local checkout of the full repository in this environment (GitHub DNS is inaccessible), so running the genuine gate on the current code remains outstanding.
+
+A further security review closed an untrusted-OAuth-diagnostic-value gap on PR #140 and the framework branch: a provider can include secrets inside `error_description`, `error_uri`, arbitrary error codes or JSON field names. The logging helper now emits only fixed recognised error codes, a boolean, and safely bounded field names, and new synthetic regression cases cover these exfiltration variants. Security-branch source and unit-test hashes are identical to the framework branch's corresponding versions. **These additional security tests also remain unexecuted** and are not approval to merge.
+
+The release decision remains **NO-GO** until the actual target-commit suite passes, independent security review is concluded, and the main-branch automatic Cloud Run/Firestore deployment trigger is explicitly accounted for. No claim of a live-Gemini model-quality or clinical/safeguarding verdict is made.
