@@ -254,6 +254,18 @@ export function sanitiseExportCollectionsMap(
 // was), and is useful for noticing a provider's failure shape has
 // changed without ever risking the value underneath.
 const OAUTH_SAFE_DIAGNOSTIC_FIELDS = new Set(['error', 'error_description', 'error_uri', 'ok']);
+// Even the RFC's error_description and error_uri are provider-controlled
+// VALUES, not necessarily safe to log. A malicious/misconfigured provider
+// may echo an access token, authorisation code or client secret into
+// these strings. Only a fixed set of canonical, low-entropy error CODES
+// is logged; unknown code values are omitted entirely.
+const OAUTH_SAFE_ERROR_CODES = new Set([
+  'invalid_request', 'invalid_client', 'invalid_grant', 'unauthorized_client',
+  'unsupported_grant_type', 'invalid_scope', 'access_denied',
+  'server_error', 'temporarily_unavailable', 'invalid_code',
+  'invalid_auth', 'not_authed', 'account_inactive', 'token_expired',
+  'bad_verification_code', 'missing_scope',
+]);
 
 export interface OAuthFailureDiagnostics {
   error: string | null;
@@ -274,11 +286,17 @@ export interface OAuthFailureDiagnostics {
 
 export function extractOAuthFailureDiagnostics(body: Record<string, unknown> | null | undefined): OAuthFailureDiagnostics {
   const safeBody = body || {};
-  const otherFieldNames = Object.keys(safeBody).filter((key) => !OAUTH_SAFE_DIAGNOSTIC_FIELDS.has(key));
+  // JSON object keys are provider-controlled as well; a malicious key
+  // could itself contain a bearer token. Limit names to conservative
+  // identifiers and cap the number recorded to bound log volume.
+  const otherFieldNames = Object.keys(safeBody)
+    .filter((key) => !OAUTH_SAFE_DIAGNOSTIC_FIELDS.has(key) && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))
+    .slice(0, 16);
   return {
-    error: typeof safeBody.error === 'string' ? safeBody.error : null,
-    errorDescription: typeof safeBody.error_description === 'string' ? safeBody.error_description : null,
-    errorUri: typeof safeBody.error_uri === 'string' ? safeBody.error_uri : null,
+    error: typeof safeBody.error === 'string' && OAUTH_SAFE_ERROR_CODES.has(safeBody.error)
+      ? safeBody.error : null,
+    errorDescription: null, // never log arbitrary provider-supplied text
+    errorUri: null, // may carry credentials in URL path/query
     ok: typeof safeBody.ok === 'boolean' ? safeBody.ok : null,
     otherFieldNames,
   };
