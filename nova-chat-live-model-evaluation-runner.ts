@@ -43,7 +43,7 @@
 // is this phase's actual object of evaluation.
 
 import { NOVA_CHAT_SCENARIOS } from './nova-chat-scenario-library';
-import { runScenario, type NovaChatInvoker, type NovaChatInvokerResult } from './nova-chat-scenario-runner';
+import { runScenario, type NovaChatInvoker } from './nova-chat-scenario-runner';
 import { buildRunReport } from './nova-chat-evaluation-report';
 import { estimateModelCostUsd } from './ai-model-price-registry';
 import type { NovaEvaluationRunReport } from './nova-chat-scenario-types';
@@ -123,7 +123,7 @@ export interface NovaChatLiveEvalConfig {
 }
 
 export type NovaChatLiveEvalOutcome =
-  | { status: 'blocked'; reason: 'not_explicitly_enabled' | 'no_credentials'; note: string }
+  | { status: 'blocked'; reason: 'not_explicitly_enabled' | 'no_credentials' | 'invalid_configuration' | 'unpriced_model' | 'unsafe_retries'; note: string }
   | {
       status: 'completed';
       report: NovaEvaluationRunReport;
@@ -194,14 +194,48 @@ export async function runNovaChatLiveModelEvaluation(
   }
 
   const allowlisted = NOVA_CHAT_SCENARIOS.filter((s) => s.allowedForLiveModelEval);
-  const maxScenarios = Math.max(0, config.maxScenarios ?? 3);
-  const scenarios = allowlisted.slice(0, maxScenarios);
+  const maxScenarios = config.maxScenarios ?? 3;
   const maxTotalUsd = config.maxTotalUsd ?? 0.05;
   const maxEstimatedInputTokensPerCall = config.maxEstimatedInputTokensPerCall ?? 4000;
   const maxOutputTokensPerCall = config.maxOutputTokensPerCall ?? 512;
   const requestTimeoutMs = config.requestTimeoutMs ?? 20000;
-  const maxRetriesPerCall = Math.max(0, config.maxRetriesPerCall ?? 0);
+  const maxRetriesPerCall = config.maxRetriesPerCall ?? 0;
   const thinkingLevel = config.thinkingLevel;
+
+  // An invalid budget must never become an unbounded/no-op budget via
+  // Infinity, NaN, zero, or a negative token ceiling. In particular,
+  // maxScenarios=0 must not produce a misleading "completed" run.
+  const validInt = (n: number) => Number.isSafeInteger(n) && n > 0;
+  if (!validInt(maxScenarios) || maxScenarios > allowlisted.length ||
+      !Number.isFinite(maxTotalUsd) || maxTotalUsd <= 0 ||
+      !validInt(maxEstimatedInputTokensPerCall) ||
+      !validInt(maxOutputTokensPerCall) || !validInt(requestTimeoutMs)) {
+    return {
+      status: 'blocked',
+      reason: 'invalid_configuration',
+      note: 'Live evaluation NOT RUN: scenario count, token limits, timeout and total USD budget must all be finite positive values; scenario count must not exceed the approved allowlist.',
+    };
+  }
+  // The invoker has no AbortSignal. A timed-out promise can still be
+  // billed by the provider after Promise.race rejects; retrying it would
+  // create overlapping, potentially billable calls. Fail closed until
+  // cancellation/settlement support is explicitly implemented.
+  if (maxRetriesPerCall !== 0) {
+    return {
+      status: 'blocked',
+      reason: 'unsafe_retries',
+      note: 'Live evaluation NOT RUN: retries are disabled because an HTTP timeout/rejection does not prove the previous Gemini request was cancelled or unbilled. Set maxRetriesPerCall=0.',
+    };
+  }
+  const priceCheck = estimateModelCostUsd(config.modelId, maxEstimatedInputTokensPerCall, maxOutputTokensPerCall);
+  if (priceCheck === null || !Number.isFinite(priceCheck) || priceCheck <= 0) {
+    return {
+      status: 'blocked',
+      reason: 'unpriced_model',
+      note: 'Live evaluation NOT RUN: the chosen model has no usable positive current price estimate. Budget enforcement cannot safely proceed without a priced model.',
+    };
+  }
+  const scenarios = allowlisted.slice(0, maxScenarios);
 
   const results: NovaEvaluationRunReport['scenarioResults'] = [];
   let stoppedEarly = false;
@@ -224,66 +258,60 @@ export async function runNovaChatLiveModelEvaluation(
   // server.ts now returns, which can also trip the same stop condition
   // even when the pre-call estimate underestimated reality.
   const budgetedInvoker: NovaChatInvoker = async (args) => {
-    const estimatedInputTokens = Math.min(
-      estimateInputTokensConservatively(args.message, args.history.length),
-      maxEstimatedInputTokensPerCall,
-    );
-    const worstCaseCostUsd = estimateModelCostUsd(config.modelId, estimatedInputTokens, maxOutputTokensPerCall);
-    if (worstCaseCostUsd !== null && spentUsd + worstCaseCostUsd > maxTotalUsd) {
+    const estimatedInputTokens = estimateInputTokensConservatively(args.message, args.history.length);
+    if (estimatedInputTokens > maxEstimatedInputTokensPerCall) {
+      throw new Error('Live-model evaluation input estimate exceeded the configured per-call ceiling; no provider request was sent.');
+    }
+    // Reserve against the ENTIRE configured input-token allowance,
+    // not the message's lower estimate. This remains an estimate, not
+    // a provider-enforced exact billing cap.
+    const worstCaseCostUsd = estimateModelCostUsd(config.modelId, maxEstimatedInputTokensPerCall, maxOutputTokensPerCall)!;
+    if (spentUsd + worstCaseCostUsd > maxTotalUsd) {
       throw new Error(
         `Live-model evaluation budget reservation refused this call: already spent $${spentUsd.toFixed(5)}, ` +
         `this call's worst-case estimate is $${worstCaseCostUsd.toFixed(5)}, ceiling is $${maxTotalUsd}. Stopping before making the call.`,
       );
     }
 
-    let lastError: unknown = null;
-    for (let attempt = 0; attempt <= maxRetriesPerCall; attempt++) {
-      try {
-        callCount++;
-        const result = await withTimeout(
-          invoker({ ...args, maxOutputTokens: maxOutputTokensPerCall, ...(thinkingLevel ? { thinkingLevel } : {}) }),
-          requestTimeoutMs,
-          `Live-model evaluation call (scenario attempt ${attempt + 1}/${maxRetriesPerCall + 1})`,
-        );
-        const usage = (result as NovaChatInvokerResult).body?.usage as
-          | { promptTokens?: number; outputTokens?: number; thinkingTokens?: number; finishReason?: string | null }
-          | undefined;
-        if (usage) {
-          totalPromptTokens += usage.promptTokens ?? 0;
-          // PHASE 6B.1 (Priority 3) - billable output includes thinking
-          // tokens, same as estimateNovaTextCostFromMeasuredTokens.
-          const billableOutputTokens = (usage.outputTokens ?? 0) + (usage.thinkingTokens ?? 0);
-          totalOutputTokens += billableOutputTokens;
-          const realCostUsd = estimateModelCostUsd(config.modelId, usage.promptTokens ?? 0, billableOutputTokens);
-          if (realCostUsd !== null) spentUsd += realCostUsd;
-        }
-        // PHASE 6B.1 (Priority 5) - "detect truncated or empty responses
-        // caused by token limits... report as a test-configuration
-        // limitation, not a normal intelligence failure." A response cut
-        // off by the token cap (finishReason MAX_TOKENS) with little or
-        // no visible text is exactly that case - counted here so the
-        // final report can state it explicitly rather than letting a
-        // scenario's hard-invariant/qualitative review silently treat an
-        // empty reply as a conversational failure.
-        const responseText = (result as NovaChatInvokerResult).body?.text;
-        if (usage?.finishReason === 'MAX_TOKENS' && (!responseText || responseText.trim().length === 0)) {
-          truncatedByTokenCapCount++;
-        }
-        if (spentUsd > maxTotalUsd) {
-          throw new Error(`Live-model evaluation budget EXCEEDED after a real call: spent $${spentUsd.toFixed(5)} against a $${maxTotalUsd} ceiling. Stopping.`);
-        }
-        return result;
-      } catch (e) {
-        lastError = e;
-        if (attempt >= maxRetriesPerCall) throw e;
-      }
+    // Exactly one attempt per turn. No retry is safe here while the
+    // underlying provider request cannot be cancelled on timeout.
+    callCount++;
+    const result = await withTimeout(
+      invoker({ ...args, maxOutputTokens: maxOutputTokensPerCall, ...(thinkingLevel ? { thinkingLevel } : {}) }),
+      requestTimeoutMs,
+      'Live-model evaluation call',
+    );
+    const usage = result.body?.usage as
+      | { promptTokens?: number; outputTokens?: number; thinkingTokens?: number; finishReason?: string | null }
+      | undefined;
+    // A successful HTTP response without valid measured usage is NOT a
+    // free call. Never silently treat it as $0 and send another request.
+    if (!usage || !Number.isFinite(usage.promptTokens) || !Number.isFinite(usage.outputTokens) ||
+        !Number.isFinite(usage.thinkingTokens ?? 0) ||
+        usage.promptTokens! < 0 || usage.outputTokens! < 0 || (usage.thinkingTokens ?? 0) < 0) {
+      throw new Error('Live-model evaluation received no valid token-usage metadata; actual spend is unknown. Stopping without further calls.');
     }
-    throw lastError;
+    const billableOutputTokens = usage.outputTokens! + (usage.thinkingTokens ?? 0);
+    totalPromptTokens += usage.promptTokens!;
+    totalOutputTokens += billableOutputTokens;
+    const realCostUsd = estimateModelCostUsd(config.modelId, usage.promptTokens!, billableOutputTokens);
+    if (realCostUsd === null || !Number.isFinite(realCostUsd)) {
+      throw new Error('Live-model evaluation could not price measured token usage; stopping without further calls.');
+    }
+    spentUsd += realCostUsd;
+    const responseText = result.body?.text;
+    if (usage.finishReason === 'MAX_TOKENS' && (!responseText || responseText.trim().length === 0)) {
+      truncatedByTokenCapCount++;
+    }
+    if (spentUsd > maxTotalUsd) {
+      throw new Error(`Live-model evaluation budget EXCEEDED after a real call: spent $${spentUsd.toFixed(5)} against a $${maxTotalUsd} ceiling. Stopping without retry.`);
+    }
+    return result;
   };
 
   for (const scenario of scenarios) {
     try {
-      const result = await runScenario(scenario, budgetedInvoker, uidForScenario(scenario.id));
+      const result = await runScenario(scenario, budgetedInvoker, uidForScenario(scenario.id), undefined, { stopOnServerOrTransportError: true });
       results.push(result);
       // "Stops on ... unexpected errors": a 5xx, OR an invoker-level
       // failure (httpStatus 0 - runScenario's own turn loop degrades any
@@ -322,7 +350,7 @@ export async function runNovaChatLiveModelEvaluation(
       `model "${config.modelId}", via the real, unmodified /api/nova/chat route with a genuinely unmocked Gemini client. ` +
       `${callCount} real API call(s) made. Real token usage this run: ${totalPromptTokens} prompt / ${totalOutputTokens} output ` +
       `(from server.ts's own usageMetadata capture - see that route's own comment). Budget ceiling: $${maxTotalUsd}, spent (estimate from real tokens): $${spentUsd.toFixed(5)}. ` +
-      `Per-call controls: maxOutputTokens=${maxOutputTokensPerCall} (real, provider-enforced), thinkingLevel=${thinkingLevel ?? '(model default)'}, requestTimeoutMs=${requestTimeoutMs}, maxRetriesPerCall=${maxRetriesPerCall} (no unbounded retries). ` +
+      `Per-call controls: maxOutputTokens=${maxOutputTokensPerCall} (provider-enforced), estimatedInputCeiling=${maxEstimatedInputTokensPerCall} (not provider-enforced), thinkingLevel=${thinkingLevel ?? '(model default)'}, requestTimeoutMs=${requestTimeoutMs}, retries disabled. Timed-out calls may still incur charges; USD ceilings are conservative estimates, not verified provider billing limits. ` +
       `No real external action, email, SMS, calendar write, or Guardian outreach is reachable from this path regardless of ` +
       `model output - every agentic tool in this app's NOVA_TOOLS is propose/offer/search-only at the server-tool-execution ` +
       `layer (see executeOfferGuardianSupport/executeOfferPracticalAssistance/executeProposeRecoveryAction in server.ts), ` +
