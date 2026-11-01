@@ -208,15 +208,16 @@ settled" — the whole point of this register is that they are not.
 
 ## Blocking the Phase 5 experience/consent/agentic UI
 
-18. **A real, working consent-writing backend for any NHEI purpose.**
-    *Not started.* `NheiPrivacyConsent.tsx` (Phase 5) exists but every
-    consent-requiring toggle is rendered visibly disabled — confirmed by
-    grep that `server.ts` has no route for setting or withdrawing
-    `reflection_storage`, `longitudinal_tracking`, or `routing_insights`.
-    This is the same underlying gap as items 7, 9, and 13 above, now also
-    blocking the consent *screen* specifically, not only the modes it
-    gates. No real consent grant has been saved through this or any other
-    incomplete flow.
+18. **A real, working consent-writing backend for NHEI purposes.**
+    *Decided and implemented for the backend; real user-facing entry remains
+    offline.* Phase 5C added authenticated `GET`/`POST /api/nhei/consent`
+    for `reflection_storage`, `longitudinal_tracking`, and
+    `routing_insights`. Each purpose is independently scoped to the
+    authenticated user, including withdrawal. `NheiPrivacyConsent.tsx`
+    connects to the route, but is not yet mounted in the live app.
+    The remaining blocker is the approved user-facing consent journey
+    and its human/privacy review (items 7, 9 and 13), not a missing
+    backend. This updates the stale Phase 5 snapshot below.
 19. **Independent human review of the Phase 5 UI's own user-facing text and
     presentation**, including the recovery suggestion card, the reflection/
     correction preview, and the Before Words prompts, in a youth age band.
@@ -224,16 +225,18 @@ settled" — the whole point of this register is that they are not.
     suggestion text), since Phase 5 adds its own new copy (consent
     explanations, Before Words prompts, agentic-action descriptions) that
     register has never covered.
-20. **Wiring any Phase 5 component into live navigation.** *Decided and
-    implemented offline; wiring is not started.* As of Phase 5D, seven
-    `.tsx` files (`NheiPrivacyConsent`, `NheiRecoverySuggestionCard`,
-    `NheiReflectionPreview`, `NheiBeforeWords`, `NheiAgenticActionPreview`,
-    `NovaInvisibleLoad`, `NovaTakeTheLoad`) are reachable only from each
-    other and the `NheiPhase5Preview.tsx` harness — confirmed by
-    `grep -rln` returning no other importer. A future phase wiring any of
-    them in must independently re-verify every prerequisite above (consent
-    backend, safeguarding, human review) still holds, not assume "offline,
-    tested" implies readiness.
+20. **Live navigation for Phase 5/Nova Agentic components.**
+    *Partially implemented, strictly flag-gated.* Later phases added
+    `NovaAgenticJourney.tsx` and wired the non-NHEI agentic journey into
+    `App.tsx`, gated by `NOVA_AGENTIC_JOURNEY_ENABLED`. Its journey
+    imports `NheiBeforeWords`, `NovaInvisibleLoad`, and
+    `NovaTakeTheLoad`, among other components. Therefore the older
+    Phase 5D claim that every component is preview-only is no longer
+    accurate. This is **not** evidence that NHEI Personal Reflection,
+    Longitudinal Mode, the recovery bridge, or the independent
+    safeguarding system is enabled; their own gates and outstanding
+    approvals remain blocking. `NheiPrivacyConsent` and NHEI reflection
+    preview are not promoted into live navigation by this agentic route.
 21. **A real connector integration for any agentic action.** *Partially
     addressed, Phase 5E — credential/connector gap for calendar
     protection specifically is closed; execution is still disabled.*
@@ -405,3 +408,27 @@ resolved, the corresponding env var / Firestore document must actually be
 flipped by an authorised operator in a real environment — this register
 tracks readiness, not activation, and activation is never implied by an
 item here moving to "decided and implemented."
+
+
+## Phase 6E evaluation evidence integrity (2026-11-01; branch-only)
+
+The Nova chat evaluation/reporting layer was corrected so a blocked
+live-model run is visibly labelled **NOT RUN**, and a real-model run
+with automated hard-invariant passes still records independent human
+qualitative/safeguarding review as outstanding. A usable model response
+is distinguished from an HTTP error or empty model response. The
+`no_server_error` invariant now rejects 5xx and status-0 transport
+failures regardless of whether the runner captured error text; the live
+safety-instruction invariant is explicitly **NOT VERIFIED** when the
+provider call cannot be inspected, rather than claiming the instruction
+was definitely omitted or successfully observed. Additive regression
+tests cover these cases.
+
+These code changes do **not** close any independent reviewer, legal,
+privacy, consent-screen or real-model evaluation blocker. No production
+feature flag or execution permission was changed and no Gemini API call
+was attempted. The branch changes have been checked through GitHub;
+the new tests have **not** been executed in this session because the
+local environment cannot resolve GitHub to retrieve repository
+dependencies, and GitHub Actions was deliberately not invoked. No test
+pass is claimed here.
