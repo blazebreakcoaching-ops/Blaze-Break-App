@@ -126,7 +126,7 @@ export default defineConfig({
         baseURL: `http://127.0.0.1:${FLAG_ON_PORT}`,
         launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
       },
-      testMatch: /real-app-flag-gating\.spec\.ts/,
+      testMatch: [/real-app-flag-gating\.spec\.ts/, /real-app-agentic-journey\.spec\.ts/],
     },
   ],
 });
