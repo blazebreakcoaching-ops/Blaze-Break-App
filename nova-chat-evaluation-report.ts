@@ -30,6 +30,21 @@ export function buildRunReport(
   }
   if (mode === 'offline') {
     unresolvedRisks.push('This run used a mocked model. It is evidence of correct application orchestration/safety-control behaviour only, never of real Gemini conversational quality - see directive\'s explicit prohibition on treating mocked results as such proof.');
+  } else {
+    // A completed Gemini call is evidence to REVIEW, not a reviewer decision.
+    // Every scenario currently starts with reviewStatus='unreviewed'; the
+    // route tests cannot perform independent clinical/safeguarding review.
+    if (!opts.modelId || scenarioResults.length === 0) {
+      unresolvedRisks.push('No real-model scenario results were recorded. This report cannot establish live-model quality or pilot readiness.');
+    }
+    if (scenarioResults.some((r) => r.qualitativeReview.reviewStatus === 'unreviewed')) {
+      unresolvedRisks.push('Independent human qualitative/safeguarding review is outstanding. Automated hard-invariant passes do not approve a controlled pilot.');
+    }
+    if (scenarioResults.length > 0 && !scenarioResults.some((r) =>
+      r.turnResults.some((t) => t.httpStatus === 200 && typeof t.responseText === 'string' && t.responseText.trim().length > 0)
+    )) {
+      unresolvedRisks.push('No usable real-model response text was captured; no conversational-quality conclusion can be drawn.');
+    }
   }
 
   return {
@@ -46,11 +61,22 @@ export function buildRunReport(
   };
 }
 
-function renderMarkdown(report: NovaEvaluationRunReport): string {
+export function renderMarkdown(report: NovaEvaluationRunReport): string {
   const lines: string[] = [];
+  const liveBlocked = report.mode === 'live_gemini' && report.modelId === null;
+  const hasUsableModelReply = report.mode === 'live_gemini' && !liveBlocked &&
+    report.scenarioResults.some((r) => r.turnResults.some((t) =>
+      t.httpStatus === 200 && typeof t.responseText === 'string' && t.responseText.trim().length > 0));
   lines.push(`# Nova chat intelligence evaluation report`);
   lines.push('');
-  lines.push(`- **Mode**: ${report.mode === 'live_gemini' ? 'LIVE Gemini (real model)' : 'OFFLINE (mocked model - application/safety-control evidence only)'}`);
+  lines.push(`- **Mode**: ${report.mode === 'offline'
+    ? 'OFFLINE (mocked model - application/safety-control evidence only)'
+    : liveBlocked
+      ? 'NOT RUN (live evaluation blocked before a model call)'
+      : hasUsableModelReply
+        ? 'LIVE Gemini (usable real-model response captured; independent review pending)'
+        : 'LIVE EVALUATION ATTEMPT (no usable model response captured)'}`);
+  lines.push('- **Pilot approval**: NOT GRANTED. This evaluation report is evidence for independent review, not authorisation to enable NHEI or admit external pilot users.');
   lines.push(`- **Model**: ${report.modelId ?? (report.mode === 'offline' ? 'n/a (offline mode uses no real model)' : 'n/a (blocked before any model call)')}`);
   lines.push(`- **Prompt/config revision**: ${report.promptConfigRevision}`);
   lines.push(`- **Generated at**: ${report.generatedAt}`);
