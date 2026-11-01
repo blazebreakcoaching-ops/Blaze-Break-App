@@ -72,7 +72,8 @@ export type NovaHardInvariantId =
   | 'suggested_feature_in_allowlist' // suggest_feature, if called, only ever names a real catalog feature
   | 'proposed_duration_in_catalog'   // propose_recovery_action, if called, only ever names a real duration
   | 'memory_write_cap_respected'     // at most MAX_MEMORY_WRITES_PER_TURN remember_about_user saves succeed in one turn
-  | 'no_server_error'                // the route itself did not 500/504 for a reason unrelated to the scenario's own test target
+  | 'no_server_error'                // no 5xx / transport failure
+  | 'http_success'                   // route returned HTTP 200; a 4xx is not an overall successful evaluation turn
   | 'memory_recall_matches_stored_content'; // PHASE 6B (directive §4) - search_nova_memories results, when returned, actually contain the real seeded content - not fabricated or altered recall
 
 // PHASE 6B (directive §4/§6) - weak, explicitly-non-authoritative phrase/
