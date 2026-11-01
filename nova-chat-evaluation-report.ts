@@ -19,6 +19,7 @@ export function buildRunReport(
     featureFlagState: Record<string, boolean | string>;
     usage?: { promptTokens: number; outputTokens: number } | null;
     estimatedCostUsd?: number | null;
+    callsAttempted?: number | null;
     note: string;
   },
 ): NovaEvaluationRunReport {
@@ -37,6 +38,9 @@ export function buildRunReport(
     if (!opts.modelId || scenarioResults.length === 0) {
       unresolvedRisks.push('No real-model scenario results were recorded. This report cannot establish live-model quality or pilot readiness.');
     }
+    if (opts.callsAttempted === 0) {
+      unresolvedRisks.push('No Gemini provider calls were attempted. This run is NOT RUN, not a real-model evaluation result.');
+    }
     if (scenarioResults.some((r) => r.qualitativeReview.reviewStatus === 'unreviewed')) {
       unresolvedRisks.push('Independent human qualitative/safeguarding review is outstanding. Automated hard-invariant passes do not approve a controlled pilot.');
     }
@@ -54,6 +58,7 @@ export function buildRunReport(
     featureFlagState: opts.featureFlagState,
     generatedAt: new Date().toISOString(),
     scenarioResults,
+    callsAttempted: opts.callsAttempted ?? null,
     usage: opts.usage ?? null,
     estimatedCostUsd: opts.estimatedCostUsd ?? null,
     unresolvedRisks,
@@ -63,7 +68,7 @@ export function buildRunReport(
 
 export function renderMarkdown(report: NovaEvaluationRunReport): string {
   const lines: string[] = [];
-  const liveBlocked = report.mode === 'live_gemini' && report.modelId === null;
+  const liveBlocked = report.mode === 'live_gemini' && (report.modelId === null || report.callsAttempted === 0);
   const hasUsableModelReply = report.mode === 'live_gemini' && !liveBlocked &&
     report.scenarioResults.some((r) => r.turnResults.some((t) =>
       t.httpStatus === 200 && typeof t.responseText === 'string' && t.responseText.trim().length > 0));
@@ -78,6 +83,9 @@ export function renderMarkdown(report: NovaEvaluationRunReport): string {
         : 'LIVE EVALUATION ATTEMPT (no usable model response captured)'}`);
   lines.push('- **Pilot approval**: NOT GRANTED. This evaluation report is evidence for independent review, not authorisation to enable NHEI or admit external pilot users.');
   lines.push(`- **Model**: ${report.modelId ?? (report.mode === 'offline' ? 'n/a (offline mode uses no real model)' : 'n/a (blocked before any model call)')}`);
+  if (report.callsAttempted !== null && report.callsAttempted !== undefined) {
+    lines.push(`- **Provider calls attempted**: ${report.callsAttempted}`);
+  }
   lines.push(`- **Prompt/config revision**: ${report.promptConfigRevision}`);
   lines.push(`- **Generated at**: ${report.generatedAt}`);
   lines.push(`- **Feature flags**: ${JSON.stringify(report.featureFlagState)}`);
@@ -88,7 +96,10 @@ export function renderMarkdown(report: NovaEvaluationRunReport): string {
   lines.push('');
   for (const r of report.scenarioResults) {
     lines.push(`### ${r.scenarioId} - ${r.title} (${r.category})`);
-    lines.push(`Hard invariants: ${r.allHardInvariantsPassed ? 'PASS' : 'FAIL'}`);
+    const checks = r.turnResults.flatMap((t) => t.hardInvariants);
+    const definitelyFailed = checks.some((h) => !h.passed && !h.detail.startsWith('NOT VERIFIED:'));
+    const unverified = checks.some((h) => !h.passed && h.detail.startsWith('NOT VERIFIED:'));
+    lines.push(`Hard invariants: ${definitelyFailed ? 'FAIL' : unverified ? 'INCOMPLETE (unverified safety evidence)' : r.allHardInvariantsPassed ? 'PASS' : 'INCOMPLETE'}`);
     lines.push(`Review status: ${r.qualitativeReview.reviewStatus}`);
     for (const t of r.turnResults) {
       lines.push(`- Turn ${t.turnIndex}: HTTP ${t.httpStatus}${t.error ? ` (error: ${t.error})` : ''}`);
