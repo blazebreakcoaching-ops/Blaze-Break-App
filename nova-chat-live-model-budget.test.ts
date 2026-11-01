@@ -136,7 +136,7 @@ describe('runNovaChatLiveModelEvaluation - timeout and retry limits (directive Â
     }
   }, 10000);
 
-  it('retries exactly maxRetriesPerCall times on failure, never more, and still fails the run if every attempt fails', async () => {
+  it('blocks a configured retry count before any paid call because timed-out requests may still be billed', async () => {
     const invoker: NovaChatInvoker = vi.fn(async () => { throw new Error('simulated transient failure'); });
     const outcome = await runNovaChatLiveModelEvaluation(
       { ...BASE_CONFIG, maxRetriesPerCall: 2 },
@@ -144,10 +144,9 @@ describe('runNovaChatLiveModelEvaluation - timeout and retry limits (directive Â
       (id) => `budget_${id}`,
       ENV_ENABLED,
     );
-    expect(outcome.status).toBe('completed');
-    if (outcome.status === 'completed') expect(outcome.stoppedEarly).toBe(true);
-    // 1 initial attempt + 2 retries = 3 total, never unbounded.
-    expect((invoker as any).mock.calls.length).toBe(3);
+    expect(outcome.status).toBe('blocked');
+    if (outcome.status === 'blocked') expect(outcome.reason).toBe('unsafe_retries');
+    expect(invoker).not.toHaveBeenCalled();
   });
 
   it('does not retry at all when a later attempt would succeed but maxRetriesPerCall is 0 and the first attempt fails', async () => {
@@ -163,5 +162,86 @@ describe('runNovaChatLiveModelEvaluation - timeout and retry limits (directive Â
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') expect(outcome.stoppedEarly).toBe(true);
     expect((invoker as any).mock.calls.length).toBe(1); // never reached the would-have-succeeded second attempt
+  });
+});
+
+describe('runNovaChatLiveModelEvaluation - fail-closed cost controls', () => {
+  it('blocks unknown or unpriced models before calling the invoker', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => okResult(1, 1));
+    const outcome = await runNovaChatLiveModelEvaluation(
+      { ...BASE_CONFIG, modelId: 'unknown-model-no-rate' },
+      invoker, (id) => `budget_${id}`, ENV_ENABLED,
+    );
+    expect(outcome.status).toBe('blocked');
+    if (outcome.status === 'blocked') expect(outcome.reason).toBe('unpriced_model');
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { maxScenarios: 0 },
+    { maxScenarios: Number.POSITIVE_INFINITY },
+    { maxTotalUsd: Number.POSITIVE_INFINITY },
+    { maxTotalUsd: -1 },
+    { maxOutputTokensPerCall: 0 },
+    { requestTimeoutMs: Number.NaN },
+    { maxEstimatedInputTokensPerCall: 0 },
+  ])('blocks invalid cost control configuration: %j', async (override) => {
+    const invoker: NovaChatInvoker = vi.fn(async () => okResult(1, 1));
+    const outcome = await runNovaChatLiveModelEvaluation(
+      { ...BASE_CONFIG, ...override },
+      invoker, (id) => `budget_${id}`, ENV_ENABLED,
+    );
+    expect(outcome.status).toBe('blocked');
+    if (outcome.status === 'blocked') expect(outcome.reason).toBe('invalid_configuration');
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it('rejects an input estimate above the configured ceiling before any provider call', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => okResult(1, 1));
+    const outcome = await runNovaChatLiveModelEvaluation(
+      { ...BASE_CONFIG, maxEstimatedInputTokensPerCall: 1 },
+      invoker, (id) => `budget_${id}`, ENV_ENABLED,
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') expect(outcome.stoppedEarly).toBe(true);
+    expect(invoker).not.toHaveBeenCalled();
+  });
+
+  it('stops after missing usage metadata rather than assuming an unmetered call was free', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => ({
+      status: 200, body: { text: 'Reply without usage', planTrace: [] },
+    }));
+    const outcome = await runNovaChatLiveModelEvaluation(
+      BASE_CONFIG, invoker, (id) => `budget_${id}`, ENV_ENABLED,
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.stoppedEarly).toBe(true);
+      expect(outcome.report.note).toContain('actual spend is unknown');
+    }
+    expect(invoker).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after nonsensical token usage rather than reporting negative or NaN cost', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => ({
+      status: 200, body: { text: 'Reply', planTrace: [], usage: { promptTokens: -1, outputTokens: 0 } },
+    }));
+    const outcome = await runNovaChatLiveModelEvaluation(
+      BASE_CONFIG, invoker, (id) => `budget_${id}`, ENV_ENABLED,
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') expect(outcome.stoppedEarly).toBe(true);
+    expect(invoker).toHaveBeenCalledTimes(1);
+  });
+
+  it('never retries an over-budget response even when the caller asks for retries', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => okResult(50_000_000, 50_000_000));
+    const outcome = await runNovaChatLiveModelEvaluation(
+      { ...BASE_CONFIG, maxRetriesPerCall: 0, maxTotalUsd: 0.01 },
+      invoker, (id) => `budget_${id}`, ENV_ENABLED,
+    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') expect(outcome.stoppedEarly).toBe(true);
+    expect(invoker).toHaveBeenCalledTimes(1);
   });
 });
