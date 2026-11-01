@@ -63,6 +63,8 @@ export interface NovaScenarioRunOptions {
    * multi-turn behaviour, including scripted failures.
    */
   stopOnServerOrTransportError?: boolean;
+  /** For live tests, any non-200 (including rate-limit/auth failures) stops the current multi-turn scenario. */
+  stopOnNonSuccessResponse?: boolean;
 }
 
 export async function runScenario(
@@ -135,7 +137,8 @@ export async function runScenario(
       currentMemoryConsentGranted = memoryConsentFromPermissionsDoc(turn.permissionsDocAfterThisTurn);
     }
     if (onAfterTurn) await onAfterTurn(i, turn);
-    if (options.stopOnServerOrTransportError && (result.status === 0 || result.status >= 500)) {
+    if ((options.stopOnNonSuccessResponse && result.status !== 200) ||
+        (options.stopOnServerOrTransportError && (result.status === 0 || result.status >= 500))) {
       // Preserve this failed turn as evidence; never make a later
       // provider call in the same multi-turn scenario.
       break;
