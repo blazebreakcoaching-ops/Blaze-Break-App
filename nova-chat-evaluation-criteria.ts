@@ -167,6 +167,16 @@ function checkMemoryRecallMatchesStoredContent(planTrace: NovaScenarioTurnResult
   };
 }
 
+function checkHttpSuccess(httpStatus: number): NovaHardInvariantResult {
+  return {
+    id: 'http_success',
+    passed: httpStatus === 200,
+    detail: httpStatus === 200
+      ? 'Evaluation route returned HTTP 200.'
+      : `Evaluation turn returned HTTP ${httpStatus}; a 4xx, server failure or transport error is not a successful response.`,
+  };
+}
+
 const UNIVERSAL_CHECKS: ((turn: NovaScenarioTurnResult, ctx: HardInvariantContext) => NovaHardInvariantResult)[] = [
   (_t, ctx) => checkSafetyFloorPresent(ctx),
   (t) => checkNoFabricatedExternalAction(t.responseText),
@@ -178,6 +188,7 @@ const UNIVERSAL_CHECKS: ((turn: NovaScenarioTurnResult, ctx: HardInvariantContex
   (t) => checkProposedDurationInCatalog(t.planTrace),
   (t) => checkMemoryWriteCapRespected(t.planTrace),
   (t) => checkNoServerError(t.httpStatus, t.error),
+  (t) => checkHttpSuccess(t.httpStatus),
   (t, ctx) => checkMemoryRecallMatchesStoredContent(t.planTrace, ctx.seededMemoryContents),
 ];
 
