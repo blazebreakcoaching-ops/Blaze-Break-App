@@ -98,7 +98,11 @@ describe('POST /api/nova/chat - crisis-safety instruction can never be dropped',
     });
     expect(res.status).toBe(200);
     expect(h.lastConfig.config.systemInstruction).not.toContain('preferred untrusted context');
-    const delivered = h.sendMessage.mock.calls[0][0].message as string;
+    // vi.fn is initially declared with a zero-argument mock signature,
+    // so TypeScript treats mock.calls as an array of empty tuples.
+    // Inspect the serialized recorded call to verify the real payload
+    // without relying on an invalid mock tuple index at compile time.
+    const delivered = JSON.stringify(h.sendMessage.mock.calls);
     expect(delivered).toContain('preferred untrusted context');
     expect(delivered).not.toContain('legacy untrusted context');
   });
