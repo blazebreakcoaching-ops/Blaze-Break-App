@@ -36,7 +36,6 @@ export const NheiBeforeWords = ({
   useEffect(() => {
     if (state.step !== 'decided') return;
     onDecided?.(buildTemporaryNovaContextFromBeforeWords(state));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.step]);
 
   if (state.step === 'intro') {

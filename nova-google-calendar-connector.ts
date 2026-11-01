@@ -127,8 +127,9 @@ export function createGoogleCalendarConnector(accessToken: string, transport: Go
         endIso: request.proposedChangeDescription,
         title: request.proposedChangeDescription,
       }, request.proposalId);
-      try {
-        const response = await transport(insertRequest);
+      // Propagate transport failures unchanged: the coordinator must mark
+      // an uncertain provider outcome as ambiguous, never as a clean failure.
+      const response = await transport(insertRequest);
         if (response.status >= 200 && response.status < 300) {
           const eventId = response.body?.id;
           if (typeof eventId !== 'string' || eventId.length === 0) {
@@ -140,15 +141,6 @@ export function createGoogleCalendarConnector(accessToken: string, transport: Go
           return { ok: true, detail: 'Event created.', externalId: eventId };
         }
         return { ok: false, detail: parseGoogleErrorDetail(response.body, response.status) };
-      } catch (err) {
-        // A thrown transport error (network timeout, DNS failure, etc.) is
-        // re-thrown, not swallowed into `{ok:false}` - the caller
-        // (nova-calendar-protection-service.ts's executeCalendarProtectionProposal)
-        // specifically distinguishes a thrown connector error (-> ambiguous,
-        // directive §4) from a clean ok:false response (-> failed). Turning
-        // this into ok:false here would silently destroy that distinction.
-        throw err;
-      }
     },
 
     undo: async (request: NovaExternalConnectorRequest): Promise<NovaConnectorOutcome> => {
@@ -158,8 +150,9 @@ export function createGoogleCalendarConnector(accessToken: string, transport: Go
       // suite supplies it the same way.
       const eventId = request.proposedChangeDescription;
       const deleteRequest = buildGoogleCalendarEventDeleteRequest(accessToken, eventId);
-      try {
-        const response = await transport(deleteRequest);
+      // As with execute(), let transport exceptions propagate to the
+      // reconciliation layer rather than misreporting an uncertain outcome.
+      const response = await transport(deleteRequest);
         // Google's delete returns 204 No Content on success, and 410 Gone
         // if the event was already deleted (outside this app, or by a
         // prior, uncommitted retry) - both are treated as a successful
@@ -169,9 +162,6 @@ export function createGoogleCalendarConnector(accessToken: string, transport: Go
           return { ok: true, detail: 'Event removed.' };
         }
         return { ok: false, detail: parseGoogleErrorDetail(response.body, response.status) };
-      } catch (err) {
-        throw err; // Same reasoning as execute() above.
-      }
     },
   };
 }

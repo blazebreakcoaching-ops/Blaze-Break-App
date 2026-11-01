@@ -70,7 +70,7 @@ import { listAllKnowledgeEntriesForReview } from './nhei-knowledge-service';
 import { importKnowledgeContentLibrary } from './nhei-knowledge-import-service';
 import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL, getSupportedThinkingLevels } from './ai-model-registry';
-import { estimateModelCostUsd, estimatePotentialCacheDiscountUsd } from './ai-model-price-registry';
+import { estimateModelCostUsd } from './ai-model-price-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
 import {
   buildPriceIdMap, resolveStripeSubscriptionPatch, buildPastDuePatch, extractPriceIdFromSubscriptionItems,
