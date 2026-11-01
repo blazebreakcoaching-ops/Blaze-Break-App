@@ -50,6 +50,14 @@ describe('Nova scenario runner live-evaluation stop-on-error option', () => {
     expect(result.turnResults).toHaveLength(3);
   });
 
+  it('stops after a 429 rate limit in the live fail-fast mode', async () => {
+    const invoker: NovaChatInvoker = vi.fn(async () => ({ status: 429, body: { error: 'synthetic rate limit' } }));
+    const result = await runScenario(scenario, invoker, 'synthetic_user', undefined, { stopOnNonSuccessResponse: true });
+    expect(invoker).toHaveBeenCalledTimes(1);
+    expect(result.turnResults).toHaveLength(1);
+    expect(result.turnResults[0].httpStatus).toBe(429);
+  });
+
   it('preserves existing offline multi-turn behaviour by default', async () => {
     const invoker: NovaChatInvoker = vi.fn()
       .mockResolvedValueOnce({ status: 500, body: { error: 'Scripted offline failure' } })
