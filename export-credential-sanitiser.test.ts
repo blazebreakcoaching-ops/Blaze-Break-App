@@ -217,8 +217,30 @@ describe('extractOAuthFailureDiagnostics', () => {
     });
     expect(JSON.stringify(diagnostics)).not.toContain(SENTINEL);
     expect(diagnostics.error).toBe('invalid_grant');
-    expect(diagnostics.errorDescription).toBe('Token has been expired or revoked.');
+    expect(diagnostics.errorDescription).toBeNull(); // provider text is untrusted
     expect(diagnostics.otherFieldNames.sort()).toEqual(['access_token', 'client_secret', 'refresh_token']);
+  });
+
+  it('does not log injected credentials inside canonical-looking OAuth error descriptions or URLs', () => {
+    const diagnostics = extractOAuthFailureDiagnostics({
+      error: 'invalid_grant',
+      error_description: 'Access token was ' + SENTINEL,
+      error_uri: 'https://provider.example/error?access_token=' + SENTINEL,
+      access_token: SENTINEL,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain(SENTINEL);
+    expect(diagnostics).toMatchObject({ error: 'invalid_grant', errorDescription: null, errorUri: null });
+  });
+
+  it('discards arbitrary provider error codes and token-shaped JSON field names', () => {
+    const diagnostics = extractOAuthFailureDiagnostics({
+      error: SENTINEL,
+      ['token-' + SENTINEL]: true,
+      ordinaryCode: 123,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain(SENTINEL);
+    expect(diagnostics.error).toBeNull();
+    expect(diagnostics.otherFieldNames).toEqual(['ordinaryCode']);
   });
 
   it('handles Slack\'s own {ok, error} shape, never including a sentinel authed_user token block', () => {
