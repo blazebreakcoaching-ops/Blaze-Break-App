@@ -33,8 +33,10 @@ export interface NovaChatInvokerResult {
    * `@google/genai` client captures this directly). Live mode leaves
    * this undefined - it calls the real, unmocked SDK, so there is
    * nothing to intercept without changing the very call being verified.
-   * `safety_floor_present` degrades to a documented "not inspectable in
-   * this mode" pass rather than a false failure when this is absent.
+   * `safety_floor_present` fails closed with NOT VERIFIED when the
+   * prompt cannot be observed, without asserting it was definitely omitted.
+   * This missing evidence remains a release blocker, not a live-model
+   * quality finding.
    */
   systemInstructionSentToModel?: string | null;
 }
