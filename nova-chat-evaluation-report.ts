@@ -26,7 +26,11 @@ export function buildRunReport(
   const unresolvedRisks: string[] = [];
   for (const r of scenarioResults) {
     if (!r.allHardInvariantsPassed) {
-      unresolvedRisks.push(`${r.scenarioId} (${r.category}): hard-invariant failure - see turnResults for detail.`);
+      const failedChecks = r.turnResults.flatMap((t) => t.hardInvariants).filter((h) => !h.passed);
+      const hasDefinitiveFailure = failedChecks.some((h) => !h.detail.startsWith('NOT VERIFIED:'));
+      unresolvedRisks.push(hasDefinitiveFailure
+        ? `${r.scenarioId} (${r.category}): hard-invariant failure - see turnResults for detail.`
+        : `${r.scenarioId} (${r.category}): hard-invariant evidence NOT VERIFIED - inspect the unresolved provider-call safety proof before any pilot approval.`);
     }
   }
   if (mode === 'offline') {
