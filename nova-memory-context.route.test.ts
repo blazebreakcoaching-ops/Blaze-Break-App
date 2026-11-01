@@ -102,7 +102,7 @@ describe('POST /api/nova/chat - single, consent-gated memory context', () => {
     expect(h.lastConfig.config.systemInstruction).not.toContain(MEMORY_CONTENT);
   });
 
-  it('a caller-supplied systemInstruction (situational/workload context) still arrives alongside the server-side memory context', async () => {
+  it('carries legacy caller context only in the user turn while preserving consented server memory', async () => {
     seedDoc(`users/${USER}/nova_permissions/current`, {
       allowNovaMemory: true,
       allowNovaUseSavedMemories: true,
@@ -114,7 +114,13 @@ describe('POST /api/nova/chat - single, consent-gated memory context', () => {
     });
     expect(res.status).toBe(200);
     const instruction: string = h.lastConfig.config.systemInstruction;
-    expect(instruction).toContain('[SITUATIONAL ONBOARDING CONTEXT]');
+    expect(instruction).not.toContain('[SITUATIONAL ONBOARDING CONTEXT]');
     expect(instruction).toContain(MEMORY_CONTENT);
+    // The provider mock is declared with zero arguments, so inspect
+    // the recorded payload without illegal tuple indexing.
+    const delivered = JSON.stringify(h.sendMessage.mock.calls);
+    expect(delivered).toContain('[SITUATIONAL ONBOARDING CONTEXT]');
+    expect(delivered).toContain('Goal: restore energy.');
+    expect(delivered).not.toContain(MEMORY_CONTENT);
   });
 });
