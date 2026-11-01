@@ -846,7 +846,9 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           // answer could still push this over the server's 3000-character
           // cap and silently break the whole chat with a "forbidden fields"
           // validation error.
-          systemInstruction: fullSystemInstruction.length > NOVA_SYSTEM_INSTRUCTION_LIMIT
+          // Context is untrusted; the server places it only in the
+          // user-turn message, never its privileged system prompt.
+          conversationContext: fullSystemInstruction.length > NOVA_SYSTEM_INSTRUCTION_LIMIT
             ? fullSystemInstruction.slice(0, NOVA_SYSTEM_INSTRUCTION_LIMIT)
             : fullSystemInstruction,
           ...(temporaryBeforeWordsContext ? { beforeWordsContext: temporaryBeforeWordsContext } : {}),
