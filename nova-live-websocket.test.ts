@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import crypto from 'crypto';
 
 // QA Batch 2 - the Nova Live WebSocket relay (handleNovaLiveConnection in
 // server.ts) was previously only ever registered inline inside the
@@ -20,6 +21,7 @@ const h = vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
   process.env.GEMINI_API_KEY = 'test-key-not-a-placeholder';
+  process.env.MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
   // Short enough that the timeout test doesn't slow the suite down, long
   // enough that the "successful relay" tests' real (but fast) Firestore/
   // mock work never trips it by accident.
@@ -55,9 +57,11 @@ vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
-    verifyIdToken: async (token: string) => {
-      if (token === 'bad-token') throw new Error('invalid token');
-      return { uid: token, email: `${token}@test.dev` };
+    verifyIdToken: async (token: string, checkRevoked?: boolean) => {
+      if (token === 'bad-token' || (token === 'revoked-token' && checkRevoked === true)) {
+        throw new Error('invalid or revoked token');
+      }
+      return { uid: token, email: `${token}@test.dev`, mfaEnabled: token === 'mfa_user' };
     },
   }),
 }));
@@ -94,7 +98,20 @@ class FakeClientSocket extends EventEmitter {
   }
 }
 
-const fakeReq = (query: string) => ({ url: `/api/nova/live?${query}`, headers: { host: 'localhost' } });
+const fakeReq = (query: string, encodedMfaProof?: string) => ({
+  url: `/api/nova/live?${query}`,
+  headers: {
+    host: 'localhost',
+    ...(encodedMfaProof ? { 'sec-websocket-protocol': `nova-live-v1, nova-mfa.${encodedMfaProof}` } : {}),
+  },
+});
+
+const signedMfaProof = (uid: string, expiresAt: number): string => {
+  const payload = `${uid}.${expiresAt}`;
+  const signature = crypto.createHmac('sha256', Buffer.from(process.env.MFA_ENCRYPTION_KEY!, 'base64'))
+    .update(payload).digest('hex');
+  return Buffer.from(`${payload}.${signature}`).toString('base64url');
+};
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => `month-${todayKey().slice(0, 7)}`;
@@ -138,6 +155,55 @@ describe('handleNovaLiveConnection - auth and configuration gates', () => {
     expect(ws.sent).toEqual([{ error: 'Invalid or expired session. Please refresh and try again.' }]);
     expect(ws.closed).toBe(true);
     expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a revoked Firebase ID token rather than accepting it until expiry', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=revoked-token'));
+    expect(ws.sent[0].error).toMatch(/Invalid or expired session/);
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects MFA-enabled accounts without verified session proof', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user'));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid MFA proof', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', Buffer.from('tampered').toString('base64url')));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired MFA proof', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', Date.now() - 60_000)));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects MFA proof signed for another account', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('another_user', Date.now() + 120_000)));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('accepts correctly signed, unexpired MFA proof for the authenticated account', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', Date.now() + 120_000)));
+    await flush();
+    expect(h.liveConnect).toHaveBeenCalledTimes(1);
+    expect(ws.sent).toContainEqual({ ready: true });
+    ws.emit('close');
   });
 
   it('rejects when Gemini is not configured on this server', async () => {
