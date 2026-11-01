@@ -21,10 +21,19 @@ if ([...flags].some((a) => !['--all', '--skip-install'].includes(a)) ||
 }
 const all = flags.has('--all');
 const cleanInstall = !flags.has('--skip-install');
+// NHEI_EDUCATIONAL_MODE_ENABLED is deliberately left unset, not set to
+// 'false': nhei-educational-mode-flag.test.ts and
+// nhei-educational-chat-integration.route.test.ts assert this exact env
+// var is `undefined` (not merely falsy) to prove the real default-off
+// path - the one nothing-sets-it path a genuine deployment starts from.
+// Setting it to the string 'false' here made both tests fail without
+// changing the actual disabled behaviour, since nheiEducationalModeIsEnabledNow()
+// already treats "unset" as off.
 const env = { ...process.env, NOVA_LIVE_CHAT_EVAL: '0', GEMINI_API_KEY: '',
   CALENDAR_PROTECTION_EXECUTION_ENABLED: 'false',
-  NHEI_EDUCATIONAL_MODE_ENABLED: 'false', NHEI_RETENTION_SWEEP_ENABLED: 'false',
+  NHEI_RETENTION_SWEEP_ENABLED: 'false',
   TEST_MODE: 'true' };
+delete env.NHEI_EDUCATIONAL_MODE_ENABLED;
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const outDir = join(root, 'test-results', 'offline-release-gate');
 mkdirSync(outDir, { recursive: true });
@@ -44,6 +53,15 @@ function run(label, argv) {
   const path = join(outDir, String(results.length + 1).padStart(2, '0') + '-' +
     label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.log');
   const log = [proc.stdout || '', proc.stderr || '', proc.error?.message || ''].join('\n');
+  // Playwright's own default outputDir is also `test-results/` at the repo
+  // root (both playwright.config.ts and playwright.realapp.config.ts use
+  // Playwright's default), and Playwright clears that directory at the
+  // start of a run - deleting this script's own `offline-release-gate`
+  // subfolder out from under it once either Playwright stage runs, so a
+  // later stage's writeFileSync below crashed the whole process with
+  // ENOENT. Recreating the directory immediately before every write
+  // (cheap, idempotent) survives that regardless of which stage wiped it.
+  mkdirSync(outDir, { recursive: true });
   writeFileSync(path, log, { mode: 0o600 });
   results.push({ label, argv, status: code === 0 ? 'PASS' : 'FAIL', exitCode: code, startedAt, logPath: path });
   console.log('[' + (code === 0 ? 'PASS' : 'FAIL') + '] ' + label + ' — ' + path);
@@ -73,6 +91,7 @@ const report = { verdict: passed ? 'ENGINEERING_CHECKS_PASS__NOT_DEPLOYMENT_APPR
   requested: { all, cleanInstall }, results,
   caveat: 'Passing checks do not authorise deployment, paid AI calls or independent safeguarding approval.' };
 const reportPath = join(outDir, 'latest.json');
+mkdirSync(outDir, { recursive: true }); // see the same note in run() - a Playwright stage may have wiped this directory
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
 console.log('\n[RELEASE-GATE] ' + report.verdict + '\nEvidence: ' + reportPath);
 process.exitCode = passed ? 0 : 1;
