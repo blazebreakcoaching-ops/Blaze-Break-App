@@ -243,16 +243,14 @@ export function sanitiseExportCollectionsMap(
 // author can fully anticipate (a provider could return a secret-shaped
 // value under a field name nobody has seen yet).
 //
-// This function flips that: rather than collecting the full payload and
-// subtracting what looks dangerous, it collects ONLY a fixed, known-safe
-// allowlist of standard OAuth2 diagnostic fields (`error`,
-// `error_description`, `error_uri` - RFC 6749 §5.2) plus Slack's own
-// `ok` boolean (`oauth.v2.access` uses `{ok: false, error: "..."}` rather
-// than the RFC 6749 shape). Every other field in the payload is reduced
-// to its NAME only, in `otherFieldNames` - a field name alone is safe to
-// log (it says "a field called x was present", never what x's value
-// was), and is useful for noticing a provider's failure shape has
-// changed without ever risking the value underneath.
+// This function flips that: it allows only recognised, canonical
+// OAuth/Slack error CODES and the Slack boolean 'ok'. The provider's
+// 'error_description' and 'error_uri' fields are never logged, because
+// their values may include reusable credentials; both remain null in
+// the returned shape for backwards-compatible log structure. Other
+// provider fields contribute only conservatively-formatted, bounded
+// field NAMES, not values. Nothing here provides a human-readable raw
+// provider response or collects bearer tokens.
 const OAUTH_SAFE_DIAGNOSTIC_FIELDS = new Set(['error', 'error_description', 'error_uri', 'ok']);
 // Even the RFC's error_description and error_uri are provider-controlled
 // VALUES, not necessarily safe to log. A malicious/misconfigured provider
