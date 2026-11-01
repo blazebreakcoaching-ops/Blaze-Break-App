@@ -75,6 +75,35 @@ describe('Nova evaluation report evidence integrity', () => {
     expect(report.unresolvedRisks).not.toEqual([]);
   });
 
+  it('renders NOT RUN when a priced model was selected but no actual invoker attempt happened', () => {
+    const report = buildRunReport('live_gemini', [], {
+      ...config,
+      modelId: 'synthetic-model-id',
+      callsAttempted: 0,
+    });
+
+    expect(renderMarkdown(report)).toContain('NOT RUN (live evaluation blocked before a model call)');
+    expect(renderMarkdown(report)).toContain('Provider calls attempted**: 0');
+    expect(report.unresolvedRisks).toEqual(expect.arrayContaining([
+      expect.stringContaining('No Gemini provider calls were attempted'),
+    ]));
+  });
+
+  it('distinguishes unverified safety floor from a proven failing safety check in report text', () => {
+    const incomplete = scenario(200, 'Scripted reply');
+    incomplete.allHardInvariantsPassed = false;
+    incomplete.turnResults[0].hardInvariants = [{
+      id: 'safety_floor_present', passed: false,
+      detail: 'NOT VERIFIED: provider-call system prompt was not observable',
+    }];
+    const report = buildRunReport('live_gemini', [incomplete], {
+      ...config, modelId: 'synthetic-model-id', callsAttempted: 1,
+    });
+    expect(renderMarkdown(report)).toContain('Hard invariants: INCOMPLETE (unverified safety evidence)');
+    expect(renderMarkdown(report)).toContain('Provider calls attempted**: 1');
+    expect(renderMarkdown(report)).toContain('Pilot approval**: NOT GRANTED');
+  });
+
   it('never presents an offline mock as proof of conversational quality', () => {
     const report = buildRunReport('offline', [scenario(200, 'Scripted mock')], config);
 
