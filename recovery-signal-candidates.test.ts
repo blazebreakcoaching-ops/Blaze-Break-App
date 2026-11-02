@@ -150,6 +150,51 @@ describe('buildSignalCandidates - RECOVER', () => {
   });
 });
 
+describe('shared Pulse / Recovery Intelligence debt signal', () => {
+  const validDebt = {
+    status: 'available',
+    direction: 'rising',
+    value: 80,
+    calculatedAt: new Date(NOW - 2 * 86400000).toISOString(),
+  };
+
+  it('routes a fresh, high, rising self-reported debt trend to Energy Delta', () => {
+    const candidates = buildSignalCandidates({ ...baseInput, derivedRecoveryDebt: validDebt });
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        candidateId: 'energy_delta_rising_recovery_debt',
+        sourceModule: 'energy_delta',
+        routeType: 'RECOVER',
+        reasonCode: 'recovery_foundation_low',
+        userEffort: 'low_bandwidth',
+        requiresExternalAction: false,
+        requiresHumanContact: false,
+      }),
+    ]);
+  });
+
+  it('does not create any candidate for a stale, incomplete or falling summary', () => {
+    for (const value of [
+      { ...validDebt, status: 'not_enough_data' },
+      { ...validDebt, calculatedAt: new Date(NOW - 20 * 86400000).toISOString() },
+      { ...validDebt, direction: 'falling' },
+      { ...validDebt, value: 40 },
+    ]) {
+      expect(buildSignalCandidates({ ...baseInput, derivedRecoveryDebt: value })).toEqual([]);
+    }
+  });
+
+  it('carries the existing module cooldown, rather than bypassing it with derived data', () => {
+    const candidates = buildSignalCandidates({
+      ...baseInput, derivedRecoveryDebt: validDebt,
+      moduleHistory: { energy_delta: { recentlyUsed: true, cooldownActive: true } },
+    });
+    expect(candidates[0]).toMatchObject({
+      sourceModule: 'energy_delta', recentlyUsed: true, cooldownActive: true,
+    });
+  });
+});
+
 describe('buildSignalCandidates - moduleHistory', () => {
   it('defaults every candidate to no history when moduleHistory is omitted', () => {
     const candidates = buildSignalCandidates({ ...baseInput, deltaState: 'over_capacity' });
