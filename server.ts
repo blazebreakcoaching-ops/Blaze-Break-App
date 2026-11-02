@@ -15109,7 +15109,26 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
     }
 
     const db = getDb();
-    const { checkins = [], energy_budgets = [], mood_pulses = [], body_checkins = [], wins = [], weekly_reviews = [], goals = [] } = req.body;
+
+    // Recovery summaries are an input to the Pulse recommendation engine.
+    // Never persist those as authoritative server-derived summaries using
+    // arbitrary arrays in req.body: a client could submit fictitious wins,
+    // check-ins or moods and poison the recommendations that follow.
+    // Load the signed-in user's own persisted, self-reported records instead.
+    // This is an on-demand endpoint; cap each collection so a long-time
+    // member cannot trigger an unbounded seven-collection Firestore scan.
+    const RECORDS_PER_RECOVERY_SOURCE = 100;
+    const recoverySourceNames = [
+      'checkins', 'energy_budgets', 'mood_pulses', 'body_checkins',
+      'wins', 'weekly_reviews', 'goals',
+    ] as const;
+    const sourceSnapshots = await Promise.all(
+      recoverySourceNames.map((name) =>
+        db.collection('users').doc(uid).collection(name).limit(RECORDS_PER_RECOVERY_SOURCE).get()
+      )
+    );
+    const [checkins, energy_budgets, mood_pulses, body_checkins, wins, weekly_reviews, goals] =
+      sourceSnapshots.map((snap) => snap.docs.map((record) => record.data() || {}));
 
     const now = new Date();
     const periodEnd = now.toISOString();
