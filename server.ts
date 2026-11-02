@@ -110,6 +110,10 @@ import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState, SESSION_R
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { isUsableRecoveryDerivedSummary, isHighRisingRecoveryDebt } from './recovery-derived-signals';
 import { buildDecisionCopy, MODULE_TARGET_TAB, moduleDisplayName } from './recovery-decision-copy';
+import {
+  reserveRecommendationOffer, resolveStaleInterventionAbandonment,
+  nextSessionCounterState, todayUtcDateKey, SessionCounterField,
+} from './recovery-routing-persistence';
 import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -16438,84 +16442,55 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     let isNewOffer = true;
     if (verificationStatus !== 'rejected' && routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
       const candidate = routingDecision.selectedCandidate;
-      const decisionsCol = db.collection("users").doc(user.uid).collection("recovery_routing_decisions");
-      const sessionRef = db.collection("users").doc(user.uid).collection("recovery_routing").doc("session_state");
+      // The one shared, atomic reservation gate /api/recovery/routing-decision
+      // also calls - deduplication (an existing open offer for this module
+      // is reused, not duplicated) and the budget re-check both happen as
+      // reads-then-writes inside the *same* transaction, not a plain query
+      // used as the deduplication guard on its own. See
+      // recovery-routing-persistence.ts for exactly how this closes the
+      // "two simultaneous first-time requests" race.
+      const reservation = await reserveRecommendationOffer(db, user.uid, {
+        selectedRoute: routingDecision.selectedRoute,
+        selectedModule: candidate.sourceModule,
+        routingOutcome: routingDecision.routingOutcome,
+        reasonCodes: routingDecision.reasonCodes,
+        confidence: routingDecision.confidence,
+        consideredModules: routingCandidates.map((c) => c.sourceModule),
+        bandwidthBand: routingBandwidth.band,
+        sourceSurface: 'pulse_home_recommendation',
+        isExplicitRequest: false, // GET /api/user/recommendation never carries an explicit module request
+        recentWindowMs: RECENTLY_USED_WINDOW_MS,
+        sessionOfferLimit: SESSION_RECOMMENDATION_OFFER_LIMIT,
+        nowMs: now,
+      });
 
-      // Idempotent re-offer: a repeated GET (page refresh, a re-render, two
-      // near-simultaneous loads) for the *same* module, while an earlier
-      // offer of it is still open (no terminal outcome recorded yet,
-      // within the same recency window the router's own cooldown uses),
-      // is the one genuine offer being viewed again - not a second one.
-      // Reuse its real, persisted id rather than minting a new decision
-      // and incrementing the shared budget for one event twice.
-      const recentWindowStart = new Date(now - RECENTLY_USED_WINDOW_MS).toISOString();
-      const existingOpenSnap = await decisionsCol
-        .where('selectedModule', '==', candidate.sourceModule)
-        .where('createdAt', '>=', recentWindowStart)
-        .orderBy('createdAt', 'desc')
-        .limit(1)
-        .get();
-      const existingOpen = existingOpenSnap.docs[0];
-
-      if (existingOpen && !existingOpen.data().outcome) {
-        decisionId = existingOpen.id;
+      if (reservation.kind === 'reused') {
+        decisionId = reservation.decisionId;
         isNewOffer = false;
+      } else if (reservation.kind === 'reserved') {
+        decisionId = reservation.decisionId;
+      } else if (reservation.kind === 'budget_exhausted') {
+        // A real, verified outcome - the shared daily budget is genuinely
+        // spent. Never fabricated, and distinct from an infra failure.
+        const budgetCopy = buildDecisionCopy({
+          routingOutcome: 'suppressed_by_budget', selectedRoute: 'NONE', selectedModule: null,
+          reasonCodes: ['no_intervention_needed'], confidence: 'high',
+        });
+        recommendation = {
+          tool: '', tab: '', title: budgetCopy.headline, message: budgetCopy.whyThis,
+          points: 0, sourcesUsed: [], type: 'no_action',
+        };
       } else {
-        // A genuinely new offer - re-verify the shared budget *inside* the
-        // same transaction that increments it and creates the decision
-        // doc, immediately before committing. The optimistic candidate
-        // choice above (computed from a plain, non-transactional read)
-        // must never be shown as "selected" if a concurrent request's
-        // transaction already exhausted today's budget first - the last
-        // one to actually commit is the authoritative answer, not the
-        // first one to merely compute a candidate.
-        const newDecisionRef = decisionsCol.doc();
-        let budgetStillAllows = true;
-        try {
-          await db.runTransaction(async (tx) => {
-            const sessionSnap = await tx.get(sessionRef);
-            const today = todayUtcDateKey();
-            const current = sessionSnap.exists && sessionSnap.data()?.day === today ? sessionSnap.data()! : { ...EMPTY_SESSION_STATE };
-            if ((current.recommendationsOffered || 0) >= SESSION_RECOMMENDATION_OFFER_LIMIT) {
-              budgetStillAllows = false;
-              return;
-            }
-            tx.set(sessionRef, nextSessionCounterState(current, today, 'recommendationsOffered'), { merge: true });
-            tx.set(newDecisionRef, {
-              createdAt: new Date().toISOString(),
-              selectedRoute: routingDecision.selectedRoute,
-              selectedModule: candidate.sourceModule,
-              routingOutcome: routingDecision.routingOutcome,
-              reasonCodes: routingDecision.reasonCodes,
-              confidence: routingDecision.confidence,
-              consideredModules: routingCandidates.map((c) => c.sourceModule),
-              bandwidthBand: routingBandwidth.band,
-              sourceSurface: 'pulse_home_recommendation',
-            });
-          });
-        } catch {
-          // Non-fatal - recommendation remains visible, but the client
-          // must not render feedback controls without an actual saved
-          // decision.
-          budgetStillAllows = false;
-        }
-        if (budgetStillAllows) {
-          decisionId = newDecisionRef.id;
-        } else {
-          // Lost the race (or the write itself failed) - never fabricate a
-          // countable offer. Downgrade to the same honest no_action
-          // payload the router's own suppressed_by_budget case uses,
-          // *before* the ledger write below, so a recommendation that was
-          // never actually accepted is never logged as one either.
-          const budgetCopy = buildDecisionCopy({
-            routingOutcome: 'suppressed_by_budget', selectedRoute: 'NONE', selectedModule: null,
-            reasonCodes: ['no_intervention_needed'], confidence: 'high',
-          });
-          recommendation = {
-            tool: '', tab: '', title: budgetCopy.headline, message: budgetCopy.whyThis,
-            points: 0, sourcesUsed: [], type: 'no_action',
-          };
-        }
+        // A genuine transaction/infra failure - never told to the user as
+        // "you've reached your limit" (that would be a lie about why
+        // nothing was saved) and decisionId stays null, so the client
+        // never renders Start/Not now against an id that was never
+        // actually persisted. The already-computed, genuinely-grounded
+        // recommendation content still reaches the user (a real
+        // suggestion, just not trackable this one time) rather than an
+        // error page; the failure itself is logged for operators rather
+        // than silently swallowed.
+        logger.error('Recovery routing offer reservation failed for /api/user/recommendation', errorFields(reservation.error));
       }
     }
 
@@ -16530,12 +16505,31 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     };
     // A deliberate non-action is not a recommendation offered and should
     // not inflate the recommendation ledger; nor should viewing the exact
-    // same still-open decision again (a refresh, a re-render) - only a
-    // genuinely new offer is logged.
+    // same still-open router decision again (a refresh, a re-render).
+    // The legacy rule-based chain has no decision-identity concept at all
+    // (every GET that falls through to it has always logged unconditionally,
+    // long before the router convergence work began) - its own repeated,
+    // byte-identical nudge (e.g. "you haven't checked in today", shown on
+    // every refresh of an otherwise-unchanged home screen) is deduplicated
+    // here the same way, by content rather than identity, reusing only the
+    // existing recommendation_ledger collection: never logged again if the
+    // most recent entry already says the exact same thing within the same
+    // recency window the rest of this route uses. A genuinely different
+    // recommendation (new content) is never suppressed by this check.
     if (recommendation.type !== 'no_action' && isNewOffer) {
-      db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
-        // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
-      });
+      const recentLedgerWindowStart = new Date(now - RECENTLY_USED_WINDOW_MS).toISOString();
+      const latestLedgerSnap = await db.collection("users").doc(user.uid).collection("recommendation_ledger")
+        .orderBy('timestamp', 'desc').limit(1).get();
+      const latestLedgerEntry = latestLedgerSnap.docs[0]?.data();
+      const isDuplicateOfMostRecent = !!latestLedgerEntry
+        && latestLedgerEntry.type === ledgerEntry.type
+        && latestLedgerEntry.content === ledgerEntry.content
+        && latestLedgerEntry.timestamp >= recentLedgerWindowStart;
+      if (!isDuplicateOfMostRecent) {
+        db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
+          // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
+        });
+      }
     }
 
     if (verificationStatus === 'rejected') {
@@ -16690,8 +16684,6 @@ const COOLDOWN_DECLINE_THRESHOLD = 3;
 // days ago would be confusing, not useful.
 const PENDING_OUTCOME_STALE_MS = 24 * 60 * 60 * 1000;
 
-const todayUtcDateKey = (): string => new Date().toISOString().split('T')[0]!;
-
 // Trigger Journal (RecoveryIntelligenceLayer.tsx's saveTriggers) stores
 // severity as a number (3/6/9), not the 'low'/'medium'/'high' string the
 // picker itself shows - the same <=4/<7 bands that file's own read-back
@@ -16721,7 +16713,7 @@ const classifyTriggerSeverity = (raw: unknown): 'low' | 'medium' | 'high' => {
 const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: string): Promise<SessionRecommendationState> => {
   const ref = db.collection("users").doc(uid).collection("recovery_routing").doc("session_state");
   const snap = await ref.get();
-  const today = todayUtcDateKey();
+  const today = todayUtcDateKey(Date.now());
   if (!snap.exists || snap.data()?.day !== today) {
     return { ...EMPTY_SESSION_STATE };
   }
@@ -16737,43 +16729,16 @@ const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: str
   };
 };
 
-// Increments one session_state counter the same day-aware way
-// loadRoutingSessionState reads it - never a raw FieldValue.increment here,
-// since that would partially update a stale (previous-day) doc instead of
-// resetting it the way every read of this doc already assumes. Runs inside
-// a transaction (not a plain read-then-write) so two concurrent routing
-// requests for the same user - e.g. a retried network call racing the
-// original - can't both read the same pre-increment count and each write
-// current+1, silently dropping one of the increments.
-type SessionCounterField = 'recommendationsOffered' | 'recommendationsDeclined' | 'interventionsStarted' | 'interventionsCompleted' | 'interventionsAbandoned';
-
-// Pure: the next day-aware session_state document given whatever is
-// currently stored (or nothing/a stale previous day, which resets to
-// EMPTY_SESSION_STATE first) and the one field to increment. Shared by
-// incrementSessionCounter below and by the routing-outcome route's own
-// transaction, so both ever only ever compute "the next state" the same
-// one way - never two divergent copies of this reset-then-increment logic.
-const nextSessionCounterState = (currentData: Record<string, any> | undefined, today: string, field: SessionCounterField) => {
-  const current = currentData && currentData.day === today ? currentData : { ...EMPTY_SESSION_STATE };
-  return {
-    day: today,
-    recommendationsOffered: current.recommendationsOffered || 0,
-    recommendationsDeclined: current.recommendationsDeclined || 0,
-    interventionsStarted: current.interventionsStarted || 0,
-    interventionsCompleted: current.interventionsCompleted || 0,
-    interventionsAbandoned: current.interventionsAbandoned || 0,
-    [field]: (current[field] || 0) + 1,
-    updatedAt: new Date().toISOString(),
-  };
-};
-
 // Runs inside a transaction (not a plain read-then-write) so two concurrent
 // routing requests for the same user - e.g. a retried network call racing
 // the original - can't both read the same pre-increment count and each
 // write current+1, silently dropping one of the increments.
+// nextSessionCounterState/todayUtcDateKey live in recovery-routing-persistence.ts
+// so reserveRecommendationOffer/resolveStaleInterventionAbandonment there
+// share this exact reset-then-increment rule rather than a second copy.
 const incrementSessionCounter = async (db: FirebaseFirestore.Firestore, uid: string, field: SessionCounterField): Promise<void> => {
   const ref = db.collection("users").doc(uid).collection("recovery_routing").doc("session_state");
-  const today = todayUtcDateKey();
+  const today = todayUtcDateKey(Date.now());
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     tx.set(ref, nextSessionCounterState(snap.exists ? snap.data() : undefined, today, field), { merge: true });
@@ -16829,10 +16794,19 @@ const loadRoutingHistory = async (
   }
 
   if (staleUnresolvedDoc) {
-    db.collection("users").doc(uid).collection("recovery_routing_decisions").doc(staleUnresolvedDoc.id).set({
-      outcome: 'abandoned', outcomeAt: new Date(nowMs).toISOString(),
-    }, { merge: true }).catch(() => {});
-    incrementSessionCounter(db, uid, 'interventionsAbandoned').catch(() => {});
+    // Atomic and idempotent: marking the decision abandoned and
+    // incrementing interventionsAbandoned happen in one transaction,
+    // guarded by re-checking at commit time that the decision is still
+    // unresolved. Pulse's GET and the Hub's POST can both call this
+    // function moments apart and both find the same stale decision - at
+    // most one of them actually abandons/counts it; the other's
+    // transaction sees the already-recorded outcome and does nothing
+    // further. Awaited (not fire-and-forget) so a genuine write failure
+    // is observable rather than silently swallowed.
+    const abandonResult = await resolveStaleInterventionAbandonment(db, uid, staleUnresolvedDoc.id, nowMs);
+    if (abandonResult.kind === 'infra_error') {
+      logger.error('Failed to resolve stale routing decision as abandoned', errorFields(abandonResult.error));
+    }
   }
 
   const moduleHistory: Record<string, { recentlyUsed: boolean; cooldownActive: boolean }> = {};
@@ -16949,47 +16923,106 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
 
     const decision = selectRoute(candidates, bandwidth, sessionState);
 
-    // Only a real "selected"/"needs_clarification" outcome counts as a
-    // recommendation actually having been offered - NONE outcomes (nothing
-    // needed, or suppressed by budget) never consume the budget themselves.
-    if (decision.routingOutcome === 'selected' || decision.routingOutcome === 'needs_clarification') {
-      await incrementSessionCounter(db, user.uid, 'recommendationsOffered');
-    }
-
     // Awaited (not fire-and-forget) so the real doc ID can be returned to
     // the client - PR8's outcome loop needs it to report back against this
     // exact decision later (Start / Not Now / "did it help?").
     let decisionId: string | null = null;
-    try {
-      const ref = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
-        createdAt: new Date().toISOString(),
+    // Overrides the optimistically-computed decision above when the
+    // *authoritative*, transactional reservation below disagrees with it
+    // (lost a budget race to a concurrent request on either surface) -
+    // the last thing to actually commit is the real answer, not the first
+    // thing to merely compute a candidate.
+    let outcomeOverride: { routingOutcome: string; selectedRoute: string; selectedModule: string | null } | null = null;
+
+    if (decision.routingOutcome === 'selected' && decision.selectedCandidate) {
+      const candidate = decision.selectedCandidate;
+      // The exact same atomic reservation gate /api/user/recommendation
+      // uses, against the exact same two collections - this is what makes
+      // "the Hub and Pulse cannot independently exceed the same
+      // recommendation limit under concurrent traffic" true by
+      // construction: one shared function, one shared transaction,
+      // regardless of which route called it. See
+      // recovery-routing-persistence.ts.
+      const reservation = await reserveRecommendationOffer(db, user.uid, {
         selectedRoute: decision.selectedRoute,
-        selectedModule: decision.selectedCandidate?.sourceModule ?? null,
+        selectedModule: candidate.sourceModule,
         routingOutcome: decision.routingOutcome,
         reasonCodes: decision.reasonCodes,
         confidence: decision.confidence,
         consideredModules: candidates.map((c) => c.sourceModule),
         bandwidthBand: bandwidth.band,
+        sourceSurface: 'recovery_hub',
+        // Per selectRoute's own rule, an explicit user request bypasses
+        // the budget *ceiling* - preserved here exactly, never the
+        // deduplication guarantee.
+        isExplicitRequest: !!candidate.explicitUserRequest,
+        recentWindowMs: RECENTLY_USED_WINDOW_MS,
+        sessionOfferLimit: SESSION_RECOMMENDATION_OFFER_LIMIT,
+        nowMs,
       });
-      decisionId = ref.id;
-    } catch (e) {
-      // Non-fatal - the decision still reaches the user even if the audit write fails, just without an outcome loop for this one.
+
+      if (reservation.kind === 'reused' || reservation.kind === 'reserved') {
+        decisionId = reservation.decisionId;
+      } else if (reservation.kind === 'budget_exhausted') {
+        outcomeOverride = { routingOutcome: 'suppressed_by_budget', selectedRoute: 'NONE', selectedModule: null };
+      } else {
+        // A genuine transaction/infra failure - never reported to the
+        // caller as a budget verdict (that would misstate why nothing was
+        // saved), and never a fabricated decisionId. The Hub has no
+        // legacy-chain equivalent to degrade to, so this is an honest,
+        // recoverable server error the client's existing retry path
+        // already handles - not a silently-swallowed 200.
+        logger.error('Recovery routing offer reservation failed for /api/recovery/routing-decision', errorFields(reservation.error));
+        return res.status(500).json({ error: GENERIC_SERVER_ERROR });
+      }
+    } else if (decision.routingOutcome === 'needs_clarification') {
+      // Pre-existing behaviour, unchanged by this fix: asking the one
+      // lightweight bandwidth question still counts toward the daily
+      // budget and is recorded for history, but has no selected module to
+      // deduplicate by (there is nothing yet to avoid duplicating).
+      await incrementSessionCounter(db, user.uid, 'recommendationsOffered').catch(() => {});
+      try {
+        const ref = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
+          createdAt: new Date().toISOString(), selectedRoute: decision.selectedRoute, selectedModule: null,
+          routingOutcome: decision.routingOutcome, reasonCodes: decision.reasonCodes, confidence: decision.confidence,
+          consideredModules: candidates.map((c) => c.sourceModule), bandwidthBand: bandwidth.band, sourceSurface: 'recovery_hub',
+        });
+        decisionId = ref.id;
+      } catch (e) {
+        // Non-fatal - the decision still reaches the user even if the audit write fails, just without an outcome loop for this one.
+      }
+    } else {
+      // none_needed / suppressed_by_budget from the optimistic read itself
+      // (not a reservation race) - pre-existing behaviour, unchanged: a
+      // plain audit record, never counted against the budget.
+      try {
+        const ref = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
+          createdAt: new Date().toISOString(), selectedRoute: decision.selectedRoute, selectedModule: null,
+          routingOutcome: decision.routingOutcome, reasonCodes: decision.reasonCodes, confidence: decision.confidence,
+          consideredModules: candidates.map((c) => c.sourceModule), bandwidthBand: bandwidth.band, sourceSurface: 'recovery_hub',
+        });
+        decisionId = ref.id;
+      } catch (e) {
+        // Non-fatal - same as above.
+      }
     }
 
     res.json({
       decisionId,
-      selectedRoute: decision.selectedRoute,
-      selectedModule: decision.selectedCandidate?.sourceModule ?? null,
-      routingOutcome: decision.routingOutcome,
+      selectedRoute: outcomeOverride?.selectedRoute ?? decision.selectedRoute,
+      selectedModule: outcomeOverride?.selectedModule ?? decision.selectedCandidate?.sourceModule ?? null,
+      routingOutcome: outcomeOverride?.routingOutcome ?? decision.routingOutcome,
       reasonCodes: decision.reasonCodes,
       confidence: decision.confidence,
       bandwidthBand: bandwidth.band,
       sufficientBandwidthData: bandwidth.sufficientData,
       // The submitting candidate's own short, real-data-grounded detail and
       // what it rests on - recovery-decision-copy.ts's buildDecisionCopy
-      // prefers this over its generic per-reason-code fallback.
-      evidenceDetail: decision.selectedCandidate?.evidence.detail ?? null,
-      evidenceSource: decision.selectedCandidate?.evidence.source ?? null,
+      // prefers this over its generic per-reason-code fallback. Suppressed
+      // when a reservation race overrode the decision above - that detail
+      // belongs to a candidate that was never actually offered.
+      evidenceDetail: outcomeOverride ? null : (decision.selectedCandidate?.evidence.detail ?? null),
+      evidenceSource: outcomeOverride ? null : (decision.selectedCandidate?.evidence.source ?? null),
       // An earlier intervention the user started but never reported back
       // on (within the last 24h) - the Hub asks the one lightweight
       // outcome question about this before showing anything new.

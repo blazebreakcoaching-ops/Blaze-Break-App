@@ -486,6 +486,39 @@ describe('GET /api/user/recommendation - idempotent offers (Report 26)', () => {
     expect(decisions.length).toBe(1);
   });
 
+  it('does not duplicate the recommendation_ledger for a repeated, byte-identical legacy fallback', async () => {
+    // No capacity check-in at all - the shared router can never decide,
+    // so every call here falls through to the pre-existing rule-based
+    // chain, which has no decision-identity concept of its own at all.
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, { lastCheckIn: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString() });
+    const first = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(first.body.tool).toBe('Pulse Check-In');
+    expect(first.body.decisionId).toBeNull();
+
+    const second = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(second.body.tool).toBe('Pulse Check-In');
+
+    const ledger = await request(app).get('/api/user/recommendation-ledger').set(auth(USER));
+    expect(ledger.body.entries).toHaveLength(1);
+  });
+
+  it('still logs a genuinely different legacy recommendation once the underlying evidence changes', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, { lastCheckIn: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString() });
+    await request(app).get('/api/user/recommendation').set(auth(USER));
+    // A fresh check-in moments later changes the chain's own answer.
+    seedDoc(`users/${USER}/derived/stats`, {
+      lastCheckIn: new Date().toISOString(), lastMoodPulse: new Date().toISOString(),
+      lastBoundaryRehearsal: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    seedDoc(`users/${USER}/energy_commitments/c1`, { status: 'active', energyDrain: 10 });
+    await request(app).get('/api/user/recommendation').set(auth(USER));
+
+    const ledger = await request(app).get('/api/user/recommendation-ledger').set(auth(USER));
+    expect(ledger.body.entries).toHaveLength(2);
+  });
+
   it('creates a genuinely new decision once the open one is resolved (completed)', async () => {
     seedSelectable(USER);
     const first = await request(app).get('/api/user/recommendation').set(auth(USER));
@@ -622,6 +655,82 @@ describe('GET /api/user/recommendation-ledger', () => {
     expect(res.status).toBe(500);
     expect(errorSpy).toHaveBeenCalled();
     restore();
+    errorSpy.mockRestore();
+  });
+});
+
+// Report 28 - route-level (HTTP, via the fake) concurrency and
+// cross-surface regression coverage. These prove the Express routes wire
+// correctly into the shared, atomic recovery-routing-persistence module -
+// NOT, on their own, proof of real Firestore optimistic-concurrency
+// behaviour under genuine parallelism. The in-memory fake's
+// runTransaction serializes whole transaction bodies on a FIFO queue
+// (test/fake-firestore.ts's own documented design), so two
+// Promise.all-raced requests here are proven correct via sequential
+// transaction execution, not via a real conflict-and-retry. The actual
+// optimistic-concurrency guarantee is proven separately, against a real
+// Firestore emulator, in recovery-routing-persistence.emulator.test.ts.
+describe('Route-level concurrency and cross-surface integration (Report 28)', () => {
+  const recentIso = () => new Date().toISOString();
+  const seedSelectable = (uid: string) => {
+    seedCheckIns(uid, 3);
+    seedDoc(`users/${uid}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${uid}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+  };
+
+  it('two simultaneous GET requests for a brand-new user produce exactly one counted offer', async () => {
+    seedSelectable(USER);
+    const [a, b] = await Promise.all([
+      request(app).get('/api/user/recommendation').set(auth(USER)),
+      request(app).get('/api/user/recommendation').set(auth(USER)),
+    ]);
+    expect(a.body.decisionId).toBe(b.body.decisionId);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+  });
+
+  it('cross-surface: a simultaneous Pulse GET and Hub POST for the same module produce exactly one decision', async () => {
+    seedSelectable(USER);
+    const [pulseRes, hubRes] = await Promise.all([
+      request(app).get('/api/user/recommendation').set(auth(USER)),
+      request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' }),
+    ]);
+    // Both surfaces must agree on exactly one decision identity for the
+    // one real offer, whichever one actually "won" the reservation.
+    const ids = [pulseRes.body.decisionId, hubRes.body.decisionId].filter(Boolean);
+    expect(new Set(ids).size).toBe(1);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+  });
+
+  it('never claims the budget is exhausted when the reservation transaction itself fails (recommendation)', async () => {
+    seedSelectable(USER);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    restore();
+    expect(res.status).toBe(200);
+    // The real, grounded recommendation content still reaches the user -
+    // never the "you've done enough here for now" budget message, which
+    // would misstate why nothing was saved.
+    expect(res.body.type).not.toBe('no_action');
+    expect(res.body.decisionId).toBeNull();
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('500s rather than fabricating a decision when the reservation transaction fails (routing-decision)', async () => {
+    seedDoc(`users/${USER}/capacity_checkins/ci1`, {
+      physical: 'low', mental: 'low', emotional: 'low', score: 25, createdAt: recentIso(),
+    });
+    seedDoc(`users/${USER}/workload_reality_check/state`, {
+      tasks: [{ id: 't1', title: 'x', category: 'must', energyDrain: 40, priority: 'high', dueDate: '', completed: false }],
+      completed: false, updatedAt: recentIso(),
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    restore();
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });
 });
