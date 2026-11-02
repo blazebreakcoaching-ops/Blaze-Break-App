@@ -32,6 +32,18 @@ interface AuthContextType {
   // whether to offer the optional post-signup 2FA step, since that step
   // should only ever appear right after a genuine signup, never on a
   // returning sign-in.
+  // Ensures a signed-in Firebase session exists before entering the app
+  // as a guest, without ever auto-triggering one just from landing on the
+  // marketing page. Needed because logOut()'s explicitSignOutRef
+  // deliberately skips the automatic anonymous re-sign-in that would
+  // otherwise follow an explicit sign-out (so the person actually lands
+  // on a genuinely signed-out state, not a confusing instant new guest
+  // session) - which otherwise left "See a live demo" entering the app
+  // with no Firebase session at all for the rest of that tab's life,
+  // silently degrading every feature that reads auth.currentUser
+  // (including the Agentic Journey flag, which never got a user to
+  // fetch its config for). A no-op when already signed in.
+  continueAsGuest: () => Promise<void>;
   signIn: () => Promise<{ isNewUser: boolean }>;
   signInWithCalendar: () => Promise<string | null>;
   signInWithMicrosoft: () => Promise<{ isNewUser: boolean }>;
@@ -52,6 +64,7 @@ const AuthContext = createContext<AuthContextType>({
   emailVerified: false,
   refreshEmailVerified: async () => {},
   mfaPending: false,
+  continueAsGuest: async () => {},
   signIn: async () => ({ isNewUser: false }),
   signInWithCalendar: async () => null,
   signInWithMicrosoft: async () => ({ isNewUser: false }),
@@ -89,6 +102,20 @@ export const useAuth = () => useContext(AuthContext);
 // one extra click for the common case (only ever using one account) and
 // prevents a genuinely confusing "I can't switch accounts" bug for
 // anyone who uses more than one.
+// See the AuthContextType field's own comment for why this exists: after
+// an explicit sign-out, nothing else in the app re-establishes a Firebase
+// session, so "See a live demo" must do it itself before entering the
+// app. Idempotent - a returning guest or an already-signed-in person must
+// never be silently swapped for a fresh anonymous identity.
+export async function continueAsGuest(authInstance: FirebaseAuth): Promise<void> {
+  if (authInstance.currentUser) return;
+  try {
+    await signInAnonymously(authInstance);
+  } catch (e) {
+    console.error("Anonymous sign-in failed - continuing without a signed-in session.", e);
+  }
+}
+
 export async function signInWithGoogle(authInstance: FirebaseAuth) {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -515,7 +542,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, appRole, loading, accessToken, emailVerified, refreshEmailVerified, mfaPending, signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
+    <AuthContext.Provider value={{ user, appRole, loading, accessToken, emailVerified, refreshEmailVerified, mfaPending, continueAsGuest: () => continueAsGuest(auth), signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

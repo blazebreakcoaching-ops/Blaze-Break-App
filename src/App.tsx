@@ -1113,7 +1113,7 @@ const Header = ({
 };
 
 export default function App() {
-  const { user, appRole, loading: authLoading, accessToken, mfaPending } = useAuth();
+  const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
 
   // Bulletproof global super admin check, now delegating the owner-email
   // allowlist to admin-roles.ts's shared DEFAULT_OWNER_BOOTSTRAP_EMAILS
@@ -2291,7 +2291,7 @@ export default function App() {
       <>
         <LandingPage
           onStart={() => setFlow("onboarding")}
-          onViewDemo={() => setFlow("app")}
+          onViewDemo={() => { void continueAsGuest().then(() => setFlow("app")); }}
           onOpenTrustCentre={() => setFlow("trust-centre")}
           darkMode={darkMode}
           setDarkMode={setDarkMode}

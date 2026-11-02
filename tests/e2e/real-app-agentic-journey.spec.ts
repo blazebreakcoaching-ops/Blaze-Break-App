@@ -233,7 +233,27 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     expect(body).not.toHaveProperty('agenticJourneyEnabled');
   });
 
-  test('sign-out then a fresh identity on the same flag-on server: no leftover Invisible Load content from the old identity', async ({ page }) => {
+  test('sign-out then a fresh identity on the same flag-on server: a real session resumes, the journey re-enables, and nothing leaks from the old identity', async ({ page }) => {
+    // ROOT CAUSE, found by tracing Firebase auth events and component
+    // mounting (Report 21's open finding): "See a live demo" (App.tsx's
+    // onViewDemo) only ever called setFlow("app") - a local view-state
+    // flip, never a Firebase call. The automatic anonymous sign-in that
+    // gives a brand-new visitor a session lives entirely in auth.tsx's
+    // onAuthStateChanged effect, which deliberately skips re-running it
+    // right after an explicit sign-out (logOut()'s explicitSignOutRef) -
+    // on purpose, so a person who just signed out lands on a genuinely
+    // signed-out page instead of an instant, confusing new guest session.
+    // But nothing else ever re-triggered it afterwards either: clicking
+    // "See a live demo" again left `flow` as "app" with `auth.currentUser`
+    // still null for the rest of the tab's life. App.tsx's own
+    // `flow === "app" && !user` branch then rendered the OmniNova
+    // floating-widget fallback instead of the real signed-in Nova tab -
+    // which is why a chat-shaped UI appeared to work while
+    // useNovaAgenticJourneyEnabled() never got a user to fetch its config
+    // for. Fixed by giving AuthProvider a `continueAsGuest()` that
+    // establishes a session (idempotent if one already exists) and
+    // having onViewDemo await it before flipping `flow` - see auth.tsx
+    // and App.tsx's own comments on continueAsGuest.
     await gotoFlagOnApp(page);
     await openNovaTab(page);
     // First identity: enable the journey, add an Invisible Load item.
@@ -251,24 +271,16 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     await clickRobustly(page, page.getByRole('button', { name: /sign out/i }));
     await expect(page.getByRole('button', { name: 'See a live demo' })).toBeVisible({ timeout: 15_000 });
 
-    // A fresh anonymous identity on the SAME flag-on server. GENUINE
-    // FINDING from this phase's own testing (not asserted below, since
-    // root-causing it is out of this phase's scope): a direct network
-    // trace showed /api/nova/journey-config is fetched exactly once, for
-    // the FIRST identity, and never fetched again after this specific
-    // sign-out -> immediate re-sign-in sequence in the same tab - the
-    // second identity's Nova tab mounted plain NovaChat, not the Agentic
-    // Journey, even though the server-side flag never changed. This is
-    // reported to ChatGPT as an open real-app finding (possibly Firebase
-    // JS SDK anonymous-session reuse not firing onAuthStateChanged again,
-    // or an App.tsx-level guard) rather than asserted here as either
-    // correct or incorrect behaviour. What IS safe to assert, and the
-    // actual point of this test: whichever Nova surface the second
-    // identity gets, it must never show the first identity's content.
+    // A fresh anonymous identity on the SAME flag-on server: a real
+    // Firebase session must now exist (continueAsGuest), its own fetch
+    // must independently re-enable the journey, and it must start on a
+    // clean Invisible Load with no trace of the first identity's item.
     await clickRobustly(page, page.getByRole('button', { name: 'See a live demo' }));
     await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });
     await dismissAnyOpenModal(page);
     await openNovaTab(page);
+    await expect(page.getByLabel('Journey stage')).toBeVisible({ timeout: 15_000 });
+    await openInvisibleLoadViaPracticalAssistance(page, 'Second identity: a completely different message.');
     await expect(page.getByText('First identity private item')).toHaveCount(0);
   });
 

@@ -26,14 +26,15 @@ vi.mock('firebase/auth', async () => {
     signInWithPopup: vi.fn(),
     linkWithPopup: vi.fn(),
     signInWithCredential: vi.fn(),
+    signInAnonymously: vi.fn(),
     GoogleAuthProvider,
     OAuthProvider,
     FacebookAuthProvider,
   };
 });
 
-import { signInWithPopup, linkWithPopup, signInWithCredential, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider } from 'firebase/auth';
-import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook, revokeGoogleCalendarAccess } from './auth';
+import { signInWithPopup, linkWithPopup, signInWithCredential, signInAnonymously, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider } from 'firebase/auth';
+import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook, revokeGoogleCalendarAccess, continueAsGuest } from './auth';
 
 const fakeAuth = (currentUser: { isAnonymous: boolean } | null): Auth => ({ currentUser } as unknown as Auth);
 const fakeResult = { user: { uid: 'real-uid' } } as any;
@@ -174,5 +175,24 @@ describe('revokeGoogleCalendarAccess', () => {
     await revokeGoogleCalendarAccess('tok/with+special=chars');
     const [, opts] = fetchMock.mock.calls[0];
     expect(opts.body).toBe(`token=${encodeURIComponent('tok/with+special=chars')}`);
+  });
+});
+
+describe('continueAsGuest (the fix for "See a live demo" not re-establishing a session after sign-out)', () => {
+  it('signs in anonymously when there is no current session', async () => {
+    (signInAnonymously as any).mockResolvedValue(undefined);
+    await continueAsGuest(fakeAuth(null));
+    expect(signInAnonymously).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when a session (anonymous or real) already exists - never swaps an active identity', async () => {
+    await continueAsGuest(fakeAuth({ isAnonymous: true }));
+    await continueAsGuest(fakeAuth({ isAnonymous: false }));
+    expect(signInAnonymously).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when the anonymous sign-in itself fails', async () => {
+    (signInAnonymously as any).mockRejectedValue(new Error('offline'));
+    await expect(continueAsGuest(fakeAuth(null))).resolves.toBeUndefined();
   });
 });
