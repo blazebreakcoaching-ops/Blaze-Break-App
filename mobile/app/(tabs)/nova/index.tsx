@@ -5,12 +5,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../../src/lib/auth-context';
-import { secureApiFetch } from '../../src/lib/secure-api';
+import { router } from 'expo-router';
+import { useAuth } from '../../../src/lib/auth-context';
+import { secureApiFetch } from '../../../src/lib/secure-api';
 import {
   buildNovaMobileChatBody, NOVA_MOBILE_MAX_MESSAGE_LENGTH,
   type NovaMobileMessage,
-} from '../../src/lib/nova-chat-contract';
+} from '../../../src/lib/nova-chat-contract';
 
 // The actual native Nova screen, not a WebView. It uses the same protected
 // /api/nova/chat route and server-side entitlement/safeguarding rules as
@@ -21,12 +22,32 @@ import {
 // never in unencrypted AsyncStorage. Keying by Firebase uid prevents
 // old account content crossing into a new session; encrypted persistence
 // and advanced agentic steps are distinct follow-up integrations.
+//
+// offer_practical_assistance card: same planTrace pattern as the web
+// app's NovaChat.tsx (data.planTrace.find(tool === 'offer_practical_
+// assistance' && result.offered)) - reusing the server's own decision,
+// never a client-side guess at when to show it. "Review what's on my
+// plate" opens the real Invisible Load sub-screen (nova/invisible-load),
+// not a placeholder.
+
+interface PracticalAssistanceOffer {
+  reason: string;
+}
+
+function findPracticalAssistanceOffer(planTrace: unknown): PracticalAssistanceOffer | null {
+  if (!Array.isArray(planTrace)) return null;
+  const call = planTrace.find((t: any) => t && t.tool === 'offer_practical_assistance' && t.result?.offered);
+  if (!call || typeof call.result?.reason !== 'string') return null;
+  return { reason: call.result.reason };
+}
 
 function NovaConversation() {
   const [messages, setMessages] = useState<NovaMobileMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [practicalAssistanceOffer, setPracticalAssistanceOffer] = useState<PracticalAssistanceOffer | null>(null);
+  const practicalAssistanceOfferShownRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const canSend = !busy && draft.trim().length > 0 &&
     draft.trim().length <= NOVA_MOBILE_MAX_MESSAGE_LENGTH;
@@ -47,6 +68,11 @@ function NovaConversation() {
         throw new Error('Nova returned an unexpected response. Please try again.');
       }
       setMessages((current) => [...current, { role: 'model', parts: [{ text: reply.text as string }] }]);
+      const offer = 'planTrace' in reply ? findPracticalAssistanceOffer(reply.planTrace) : null;
+      if (offer && !practicalAssistanceOfferShownRef.current) {
+        practicalAssistanceOfferShownRef.current = true;
+        setPracticalAssistanceOffer(offer);
+      }
     } catch (err: unknown) {
       // No fake answer is inserted. The person can retry their message
       // rather than believing an external model replied successfully.
@@ -61,7 +87,15 @@ function NovaConversation() {
   const clear = () => {
     Alert.alert('Clear this conversation?', 'This clears the messages shown in this session.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: () => { setMessages([]); setError(null); setDraft(''); } },
+      {
+        text: 'Clear', style: 'destructive', onPress: () => {
+          setMessages([]);
+          setError(null);
+          setDraft('');
+          setPracticalAssistanceOffer(null);
+          practicalAssistanceOfferShownRef.current = false;
+        },
+      },
     ]);
   };
 
@@ -116,6 +150,21 @@ function NovaConversation() {
               </Text>
             </View>
           ))}
+          {practicalAssistanceOffer && (
+            <View style={styles.offerCard} accessibilityLabel="Nova is offering practical assistance">
+              <Text style={styles.offerReason}>{practicalAssistanceOffer.reason}</Text>
+              <TouchableOpacity
+                style={styles.offerButton}
+                accessibilityRole="button"
+                onPress={() => router.push('/(tabs)/nova/invisible-load')}
+              >
+                <Text style={styles.offerButtonText}>Review what's on my plate</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setPracticalAssistanceOffer(null)}>
+                <Text style={styles.offerDismiss}>Not now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {busy && <ActivityIndicator accessibilityLabel="Nova is responding" style={styles.spinner} color="#9a3412" />}
         </ScrollView>
 
@@ -175,6 +224,11 @@ const styles = StyleSheet.create({
   messageText: { color: '#111827', fontSize: 16, lineHeight: 23 },
   userText: { color: '#fff' },
   spinner: { alignSelf: 'flex-start', padding: 12 },
+  offerCard: { alignSelf: 'flex-start', maxWidth: '92%', backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 16, padding: 14, gap: 10 },
+  offerReason: { color: '#111827', fontSize: 14, lineHeight: 20 },
+  offerButton: { backgroundColor: '#c2410c', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  offerButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  offerDismiss: { color: '#6b7280', fontSize: 12, textAlign: 'center' },
   error: { paddingHorizontal: 16, paddingVertical: 6, color: '#b91c1c', fontSize: 13 },
   composer: { paddingHorizontal: 12, paddingTop: 10, flexDirection: 'row', gap: 8, alignItems: 'flex-end', borderTopWidth: 1, borderColor: '#e5e7eb' },
   input: { flex: 1, maxHeight: 126, minHeight: 46, paddingHorizontal: 14, paddingVertical: 12, color: '#111827', fontSize: 16, backgroundColor: '#f3f4f6', borderRadius: 16 },

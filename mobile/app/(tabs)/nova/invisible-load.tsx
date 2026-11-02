@@ -1,0 +1,164 @@
+// RN port of the add/list/remove core of ../../../../src/components/
+// NovaInvisibleLoad.tsx, reusing nova-invisible-load-contract.ts
+// directly (see nova-invisible-load-context.tsx's own header - that file
+// has zero imports and is framework-agnostic, so there is nothing
+// web-specific to port here).
+//
+// NOT YET PORTED from the web version: Calendar Protection and Task
+// Deferral ("Get help with this" there branches into either). Neither
+// has a native screen yet, so each item's own help action here is an
+// honest "not available here yet, ask Nova" - routing back to chat,
+// never a dead button and never claiming a capability that does not
+// exist on this platform yet. Breakdown steps/corrections/defer are also
+// deferred - this covers the add/review/remove core the practical-
+// assistance offer promises.
+import React, { useState } from 'react';
+import {
+  KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useNovaInvisibleLoad } from '../../../src/lib/nova-invisible-load-context';
+import type { NovaInvisibleLoadCategory } from '../../../../nova-invisible-load-contract';
+
+const CATEGORY_LABEL: Record<NovaInvisibleLoadCategory, string> = {
+  commitment: 'Commitment',
+  obligation: 'Obligation',
+  practical_friction: 'Practical friction',
+};
+const CATEGORIES = Object.keys(CATEGORY_LABEL) as NovaInvisibleLoadCategory[];
+const MAX_DESCRIPTION_LENGTH = 300;
+
+export default function InvisibleLoadScreen() {
+  const { state, addItem, removeItem } = useNovaInvisibleLoad();
+  const [draft, setDraft] = useState('');
+  const [category, setCategory] = useState<NovaInvisibleLoadCategory>('obligation');
+  const [helpItemId, setHelpItemId] = useState<string | null>(null);
+
+  const canAdd = draft.trim().length > 0 && draft.trim().length <= MAX_DESCRIPTION_LENGTH;
+
+  const handleAdd = () => {
+    if (!canAdd) return;
+    // userCertain always true here - this screen has no "I'm not sure
+    // this belongs here" input yet, matching the web component's own
+    // default when that toggle is left alone.
+    addItem(draft.trim(), category, true);
+    setDraft('');
+  };
+
+  return (
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back to Nova chat" style={styles.backButton}>
+            <Ionicons name="chevron-back" size={24} color="#111827" />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.title}>What's on your plate</Text>
+            <Text style={styles.subtitle}>Kept only for this session - not saved or scored.</Text>
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.list}>
+          {state.items.length === 0 && (
+            <Text style={styles.empty}>Nothing added yet.</Text>
+          )}
+          {state.items.map((item) => (
+            <View key={item.id} style={styles.card} accessible accessibilityLabel={`${CATEGORY_LABEL[item.category]}: ${item.description}`}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.categoryBadge}>{CATEGORY_LABEL[item.category]}</Text>
+                <TouchableOpacity onPress={() => removeItem(item.id)} accessibilityRole="button" accessibilityLabel={`Remove ${item.description}`}>
+                  <Ionicons name="close" size={18} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.cardText}>{item.description}</Text>
+              {helpItemId === item.id ? (
+                <View style={styles.helpNotice}>
+                  <Text style={styles.helpNoticeText}>
+                    Calendar Protection and Task Deferral aren't available on mobile yet - ask Nova directly in chat and it can talk it through with you.
+                  </Text>
+                  <TouchableOpacity onPress={() => router.push('/(tabs)/nova')}>
+                    <Text style={styles.helpNoticeLink}>Go to Nova chat</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => setHelpItemId(item.id)} accessibilityRole="button" style={styles.helpButton}>
+                  <Text style={styles.helpButtonText}>Get help with this</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+
+        <View style={styles.composer}>
+          <View style={styles.categoryRow}>
+            {CATEGORIES.map((c) => (
+              <TouchableOpacity
+                key={c}
+                onPress={() => setCategory(c)}
+                accessibilityRole="button"
+                accessibilityLabel={`Category: ${CATEGORY_LABEL[c]}`}
+                style={[styles.categoryChip, category === c && styles.categoryChipActive]}
+              >
+                <Text style={[styles.categoryChipText, category === c && styles.categoryChipTextActive]}>{CATEGORY_LABEL[c]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.addRow}>
+            <TextInput
+              accessibilityLabel="Describe an obligation, commitment, or friction"
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="Something you're carrying right now..."
+              placeholderTextColor="#6b7280"
+              style={styles.input}
+              maxLength={MAX_DESCRIPTION_LENGTH}
+              multiline
+            />
+            <TouchableOpacity
+              onPress={handleAdd}
+              disabled={!canAdd}
+              accessibilityRole="button"
+              accessibilityLabel="Add"
+              style={[styles.addButton, !canAdd && styles.addButtonDisabled]}
+            >
+              <Ionicons name="add" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  safeArea: { flex: 1, backgroundColor: '#fff' },
+  topBar: { minHeight: 62, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: '#e5e7eb' },
+  backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 18, fontWeight: '800', color: '#111827' },
+  subtitle: { fontSize: 11, color: '#6b7280' },
+  list: { padding: 16, gap: 12, flexGrow: 1 },
+  empty: { color: '#6b7280', fontSize: 14, textAlign: 'center', marginTop: 24 },
+  card: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 14, padding: 14, gap: 8 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  categoryBadge: { fontSize: 11, fontWeight: '700', color: '#9a3412', textTransform: 'uppercase', letterSpacing: 0.5 },
+  cardText: { fontSize: 15, color: '#111827', lineHeight: 21 },
+  helpButton: { alignSelf: 'flex-start' },
+  helpButtonText: { fontSize: 13, color: '#c2410c', fontWeight: '600' },
+  helpNotice: { backgroundColor: '#f3f4f6', borderRadius: 10, padding: 10, gap: 6 },
+  helpNoticeText: { fontSize: 13, color: '#4b5563', lineHeight: 18 },
+  helpNoticeLink: { fontSize: 13, color: '#c2410c', fontWeight: '700' },
+  composer: { padding: 12, gap: 10, borderTopWidth: 1, borderColor: '#e5e7eb' },
+  categoryRow: { flexDirection: 'row', gap: 8 },
+  categoryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: '#e5e7eb' },
+  categoryChipActive: { backgroundColor: '#c2410c', borderColor: '#c2410c' },
+  categoryChipText: { fontSize: 12, color: '#4b5563', fontWeight: '600' },
+  categoryChipTextActive: { color: '#fff' },
+  addRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' },
+  input: { flex: 1, maxHeight: 100, minHeight: 44, paddingHorizontal: 14, paddingVertical: 10, color: '#111827', fontSize: 15, backgroundColor: '#f3f4f6', borderRadius: 14 },
+  addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#c2410c', alignItems: 'center', justifyContent: 'center' },
+  addButtonDisabled: { opacity: 0.45 },
+});
