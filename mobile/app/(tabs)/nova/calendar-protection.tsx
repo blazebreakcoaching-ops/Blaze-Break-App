@@ -21,6 +21,8 @@ interface CalendarProposal {
   state: string;
   approvalFingerprint: string;
   title: string;
+  startIso: string;
+  endIso: string;
 }
 
 type Phase = 'form' | 'prepared' | 'awaiting_approval' | 'approved' | 'result';
@@ -158,7 +160,7 @@ export default function CalendarProtectionScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={styles.description}>
             Nova can prepare a specific calendar change for you to review and approve. Every step below calls a
-            real server route - nothing is simulated. Real execution is turned off platform-wide right now, so
+            real server route. Preparing and approving the proposal are real recorded steps, but external execution is disabled, so
             even an approved change will not actually reach your calendar yet.
           </Text>
 
@@ -192,6 +194,19 @@ export default function CalendarProtectionScreen() {
                 placeholderTextColor="#6b7280" style={styles.input}
               />
               <PrimaryButton label="Prepare this proposal" onPress={propose} disabled={!canPropose || busy} />
+            </View>
+          )}
+
+          {proposal && ['prepared', 'awaiting_approval', 'approved'].includes(phase) && (
+            <View style={styles.proposalSummary} accessible accessibilityLabel="Calendar proposal details for review">
+              <Text style={styles.proposalSummaryTitle}>Review the exact calendar proposal</Text>
+              <Text style={styles.proposalSummaryText}>Title: {proposal.title}</Text>
+              <Text style={styles.proposalSummaryText}>Start: {proposal.startIso}</Text>
+              <Text style={styles.proposalSummaryText}>End: {proposal.endIso}</Text>
+              <Text style={styles.proposalSummaryNote}>
+                These are the details returned by the server. Approval applies only to this proposal;
+                no calendar change has been made.
+              </Text>
             </View>
           )}
 
@@ -277,6 +292,10 @@ const styles = StyleSheet.create({
   permissionButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#c2410c' },
   permissionButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   section: { gap: 12 },
+  proposalSummary: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 14, gap: 8, backgroundColor: '#f9fafb' },
+  proposalSummaryTitle: { fontSize: 15, color: '#111827', fontWeight: '700' },
+  proposalSummaryText: { fontSize: 14, color: '#111827', lineHeight: 21 },
+  proposalSummaryNote: { fontSize: 12, color: '#4b5563', lineHeight: 18 },
   statusText: { fontSize: 15, color: '#111827', lineHeight: 21 },
   input: { minHeight: 46, borderRadius: 12, backgroundColor: '#f3f4f6', color: '#111827', paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
   button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#c2410c' },
