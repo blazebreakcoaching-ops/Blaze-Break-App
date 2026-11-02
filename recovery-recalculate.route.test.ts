@@ -27,7 +27,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 import { vi } from 'vitest';
 import request from 'supertest';
 import { app } from './server';
-import { getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
+import { getDocRaw, resetStore, forceDocError, seedDoc } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -43,26 +43,26 @@ describe('POST /api/recovery/recalculate', () => {
   });
 
   it('persists all 4 derived summaries server-side, not just returns them', async () => {
+    // A signed-in member's persisted records are the only permitted
+    // calculation inputs; request-body arrays are deliberately ignored.
+    for (const [i, entry] of [
+      { stressLoad: 6, energyLevel: 5 },
+      { stressLoad: 7, energyLevel: 4 },
+      { stressLoad: 5, energyLevel: 6 },
+    ].entries()) {
+      seedDoc(`users/${USER}/checkins/c${i}`, entry);
+    }
+    for (const [i, entry] of [
+      { moodLabel: 'calm', intensity: 5 },
+      { moodLabel: 'tired', intensity: 4 },
+      { moodLabel: 'frustrated', intensity: 6 },
+    ].entries()) {
+      seedDoc(`users/${USER}/mood_pulses/m${i}`, entry);
+    }
     const res = await request(app)
       .post('/api/recovery/recalculate')
       .set(auth(USER))
-      .send({
-        checkins: [
-          { stressLoad: 6, energyLevel: 5 },
-          { stressLoad: 7, energyLevel: 4 },
-          { stressLoad: 5, energyLevel: 6 },
-        ],
-        energy_budgets: [],
-        mood_pulses: [
-          { moodLabel: 'calm', intensity: 5 },
-          { moodLabel: 'tired', intensity: 4 },
-          { moodLabel: 'frustrated', intensity: 6 },
-        ],
-        body_checkins: [],
-        wins: [],
-        weekly_reviews: [],
-        goals: [],
-      });
+      .send({});
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -87,6 +87,41 @@ describe('POST /api/recovery/recalculate', () => {
     const stored = getDocRaw(`users/${USER}/derived/recovery_debt`);
     expect(stored).toBeDefined();
     expect((stored as any).status).toBe('not_enough_data');
+  });
+
+  it('ignores fabricated client data and uses only the authenticated user\'s saved records', async () => {
+    seedDoc(`users/${USER}/checkins/genuine`, { stressLoad: 4, energyLevel: 6 });
+    // Another account's records must never be consulted.
+    for (let i = 0; i < 5; i++) {
+      seedDoc(`users/other_user/checkins/other_${i}`, { stressLoad: 10, energyLevel: 1 });
+    }
+    const response = await request(app)
+      .post('/api/recovery/recalculate')
+      .set(auth(USER))
+      .send({
+        checkins: Array.from({ length: 40 }, () => ({ stressLoad: 10, energyLevel: 1 })),
+        mood_pulses: Array.from({ length: 40 }, () => ({ moodLabel: 'overwhelmed', intensity: 10 })),
+        goals: Array.from({ length: 40 }, () => ({ status: 'completed' })),
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.summaries.recovery_debt.sourceCount).toBe(1);
+    expect(response.body.summaries.recovery_debt.status).toBe('not_enough_data');
+    expect(response.body.summaries.mood_trend.status).toBe('not_enough_data');
+    expect(response.body.summaries.recovery_velocity.status).toBe('not_enough_data');
+    expect(getDocRaw(`users/other_user/derived/recovery_debt`)).toBeUndefined();
+  });
+
+  it('caps per-user source reads before calculating and persisting a summary', async () => {
+    for (let i = 0; i < 150; i++) {
+      seedDoc(`users/${USER}/checkins/checkin_${String(i).padStart(3, '0')}`, {
+        stressLoad: 6, energyLevel: 4,
+      });
+    }
+    const response = await request(app).post('/api/recovery/recalculate')
+      .set(auth(USER)).send({});
+    expect(response.status).toBe(200);
+    expect(response.body.summaries.recovery_debt.sourceCount).toBe(100);
+    expect(response.body.summaries.energy_trend.sourceCount).toBe(100);
   });
 
   it('500s if persisting a derived summary throws', async () => {
