@@ -176,6 +176,15 @@ describe('NovaAgenticJourney - Phase 5K production mount additions', () => {
     expect(screen.queryByRole('button', { name: /start over/i })).not.toBeInTheDocument();
   });
 
+  it('opens optional Before Words from the real app\'s chat-first entry and returns to chat', async () => {
+    render(<NovaAgenticJourney initialStep="chat" />);
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /start with before words \(optional\)/i }));
+    expect(screen.getByTestId('before-words')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^decide$/i }));
+    expect(screen.getByTestId('nova-chat')).toBeInTheDocument();
+  });
+
   it('Start over with initialStep="chat" returns to chat, not the entry screen', async () => {
     render(<NovaAgenticJourney initialStep="chat" />);
     await userEvent.click(screen.getByRole('button', { name: /continue to what's on your plate/i }));
