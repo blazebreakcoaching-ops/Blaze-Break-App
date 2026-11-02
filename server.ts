@@ -15117,6 +15117,10 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
     // Load the signed-in user's own persisted, self-reported records instead.
     // This is an on-demand endpoint; cap each collection so a long-time
     // member cannot trigger an unbounded seven-collection Firestore scan.
+    const now = new Date();
+    const periodEnd = now.toISOString();
+    const periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const calculatedAt = now.toISOString();
     const RECORDS_PER_RECOVERY_SOURCE = 100;
     const recoverySourceNames = [
       'checkins', 'energy_budgets', 'mood_pulses', 'body_checkins',
@@ -15124,16 +15128,19 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
     ] as const;
     const sourceSnapshots = await Promise.all(
       recoverySourceNames.map((name) =>
-        db.collection('users').doc(uid).collection(name).limit(RECORDS_PER_RECOVERY_SOURCE).get()
+        db.collection('users').doc(uid).collection(name)
+          .where('createdAt', '>=', periodStart)
+          .orderBy('createdAt', 'desc')
+          .limit(RECORDS_PER_RECOVERY_SOURCE)
+          .get()
       )
     );
+    // The model's direction comparisons expect oldest -> newest; the
+    // Firestore query fetches the *latest* bounded records first. Reverse
+    // each snapshot before computing trends. Older/undated entries are
+    // excluded so a 30-day report cannot silently summarize all history.
     const [checkins, energy_budgets, mood_pulses, body_checkins, wins, weekly_reviews, goals] =
-      sourceSnapshots.map((snap) => snap.docs.map((record) => record.data() || {}));
-
-    const now = new Date();
-    const periodEnd = now.toISOString();
-    const periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const calculatedAt = now.toISOString();
+      sourceSnapshots.map((snap) => snap.docs.slice().reverse().map((record) => record.data() || {}));
 
     const getDirection = (numList: number[]) => {
       if (numList.length < 2) return "stable";
