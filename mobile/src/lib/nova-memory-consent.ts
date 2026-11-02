@@ -35,7 +35,10 @@ export async function getNovaMemoryConsent(uid: string): Promise<boolean> {
     // isNovaMemoryConsentGrantedSync.
     return data?.allowNovaMemory !== false;
   } catch {
-    return true;
+    // A failed Firestore read is NOT proof that consent is enabled.
+    // Preserve the existing default for genuinely missing documents,
+    // but let the UI display an unverified state on network/rules errors.
+    throw new Error('Could not verify your current behavioural learning preference.');
   }
 }
 
