@@ -84,6 +84,62 @@ describe('POST /api/recovery/routing-decision', () => {
     expect(res.body.selectedModule).toBe('guided_reset');
   });
 
+  it('uses the same recent, high recovery-debt summary as Pulse through the existing router', async () => {
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'available', direction: 'rising', value: 75,
+      calculatedAt: new Date().toISOString(),
+    });
+    // No capacity signal: the existing bandwidth gate still asks first,
+    // even with a derived summary available.
+    const unknown = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({});
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.routingOutcome).toBe('needs_clarification');
+
+    const res = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(res.status).toBe(200);
+    expect(res.body.selectedRoute).toBe('RECOVER');
+    expect(res.body.selectedModule).toBe('energy_delta');
+    expect(res.body.routingOutcome).toBe('selected');
+  });
+
+  it('does not route stale or insufficient derived summaries, nor cross another account boundary', async () => {
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'early_signal', direction: 'rising', value: 99,
+      calculatedAt: new Date().toISOString(),
+    });
+    seedDoc('users/another_member/derived/recovery_debt', {
+      status: 'available', direction: 'rising', value: 99,
+      calculatedAt: new Date().toISOString(),
+    });
+    const partial = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(partial.body.routingOutcome).toBe('none_needed');
+
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'available', direction: 'rising', value: 99,
+      calculatedAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+    });
+    const stale = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(stale.body.routingOutcome).toBe('none_needed');
+  });
+
+  it('keeps acute user-reported signals ahead of derived recovery debt', async () => {
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'available', direction: 'rising', value: 85,
+      calculatedAt: new Date().toISOString(),
+    });
+    seedDoc(`users/${USER}/stress_triggers/acute`, {
+      source: 'Meetings', severity: 'high', createdAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(res.body.selectedModule).toBe('guided_reset');
+    expect(res.body.selectedRoute).toBe('STABILISE');
+  });
+
   it('an explicit request for a known module is respected even with no other signal', async () => {
     const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitRequestModule: 'capacity_firewall' });
     expect(res.status).toBe(200);
