@@ -308,6 +308,7 @@ export const HomeSection = ({
   // identically to everyone regardless of what they'd actually done.
   const [recommendation, setRecommendation] = useState<{
     tool: string; tab: string; title: string; message: string; points: number;
+    type?: string;
   } | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(true);
 
@@ -1013,12 +1014,12 @@ export const HomeSection = ({
     daily: <DailyGoal key="daily" shipStage={shipStage} />,
     micro: <MicroInterventions key="micro" shipStage={shipStage} id="micro" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'left')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('micro')} isLast={isLastInCol('micro')} />,
     directive: (
-      <SmartCard id="directive" key="directive" title="Nova's Suggestion" energyDrain="high" onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('directive')} isLast={isLastInCol('directive')} className="rounded-xl border border-border p-6">
+      <SmartCard id="directive" key="directive" title={recommendation?.type === 'no_action' ? 'Recovery update' : "Nova's Suggestion"} energyDrain={recommendation?.type === 'no_action' ? 'low' : 'high'} onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={(e, id) => handleDrop(e, id, 'right')} onMoveUp={handleMoveUp} onMoveDown={handleMoveDown} isFirst={isFirstInCol('directive')} isLast={isLastInCol('directive')} className="rounded-xl border border-border p-6">
         <div className="relative z-10 space-y-6">
           <div className="flex items-center justify-between pb-5 border-b border-border">
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-primary"></div>
-              <h3 className="text-[11px] font-medium uppercase tracking-widest text-text-main">Today's focus</h3>
+              <h3 className="text-[11px] font-medium uppercase tracking-widest text-text-main">{recommendation?.type === 'no_action' ? 'Your recovery update' : "Today's focus"}</h3>
             </div>
             {recommendation && recommendation.points > 0 && <span className="text-[11px] font-mono text-text-muted">+{recommendation.points}</span>}
           </div>
@@ -1032,7 +1033,7 @@ export const HomeSection = ({
                 "{recommendation.title}"
               </p>
               <div className="mt-6 p-5 bg-surface rounded-lg border border-border">
-                <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">{recommendation.tool}</span>
+                {recommendation.tool && <span className="text-[11px] font-medium text-text-muted uppercase tracking-widest block mb-2">{recommendation.tool}</span>}
                 <p className="text-sm font-medium text-text-main">{recommendation.message}</p>
               </div>
             </div>
@@ -1046,7 +1047,7 @@ export const HomeSection = ({
               </div>
             </div>
           )}
-          <button
+          {recommendation?.type !== 'no_action' && <button
             onClick={() => {
               if (recommendation && recommendation.tab !== 'home') {
                 window.dispatchEvent(new CustomEvent('navigate_tab', { detail: recommendation.tab }));
@@ -1059,7 +1060,7 @@ export const HomeSection = ({
             <MessageSquare className="w-4 h-4" />
             <span>{recommendation && recommendation.tab !== 'home' ? `Open ${recommendation.tool}` : 'Connect with Nova'}</span>
             <ArrowRight className="w-4 h-4 opacity-70 group-hover:translate-x-1 transition-transform" />
-          </button>
+          </button>}
         </div>
       </SmartCard>
     ),

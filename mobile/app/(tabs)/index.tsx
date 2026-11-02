@@ -20,6 +20,7 @@ type Recommendation = {
   title: string;
   message: string;
   points: number;
+  type?: string;
 };
 
 type WeeklyRecap =
@@ -94,7 +95,7 @@ export default function PulseScreen() {
   };
 
   const handleRecommendationPress = () => {
-    if (!recommendation) return;
+    if (!recommendation || recommendation.type === 'no_action') return;
     if (recommendation.tab === 'home') {
       setCheckInVisible(true);
       return;
@@ -126,14 +127,14 @@ export default function PulseScreen() {
         )}
 
         <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>Nova&apos;s suggestion</Text>
+          <Text style={styles.cardEyebrow}>{recommendation?.type === 'no_action' ? 'Recovery update' : "Nova's suggestion"}</Text>
           {recommendationLoading ? (
             <ActivityIndicator style={styles.cardLoading} />
           ) : recommendation ? (
             <>
               <Text style={styles.cardTitle}>{recommendation.title}</Text>
               <Text style={styles.cardMessage}>{recommendation.message}</Text>
-              <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress} accessibilityRole="button">
+              {recommendation.type !== 'no_action' && <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress} accessibilityRole="button">
                 <Text style={styles.cardButtonText}>
                   {recommendation.tab === 'home'
                     ? 'Open quick check-in'
@@ -141,7 +142,7 @@ export default function PulseScreen() {
                       ? `Open ${recommendation.tool}`
                       : 'Talk it through with Nova'}
                 </Text>
-              </TouchableOpacity>
+              </TouchableOpacity>}
             </>
           ) : (
             <Text style={styles.cardMessage}>Nothing urgent right now - come back any time.</Text>

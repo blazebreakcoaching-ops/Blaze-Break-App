@@ -16257,7 +16257,28 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
 
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
-    if (routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
+    // A suppressed or empty shared decision is a *non-action*, not
+    // permission to revive the legacy recommendation chain. The budget
+    // must be respected even when bandwidth is unknown (the router would
+    // otherwise return needs_clarification before inspecting the budget).
+    // When capacity is genuinely unknown and the budget allows an offer,
+    // the existing legacy fallback remains available for compatibility.
+    const noActionOutcome = !routingDecision.budget.allowPrimary
+      ? 'suppressed_by_budget'
+      : routingDecision.routingOutcome === 'none_needed' ? 'none_needed' : null;
+    if (noActionOutcome) {
+      const copy = buildDecisionCopy({
+        routingOutcome: noActionOutcome,
+        selectedRoute: 'NONE',
+        selectedModule: null,
+        reasonCodes: ['no_intervention_needed'],
+        confidence: 'high',
+      });
+      recommendation = {
+        tool: '', tab: '', title: copy.headline, message: copy.whyThis,
+        points: 0, sourcesUsed: [], type: 'no_action',
+      };
+    } else if (routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
       // The shared engine had genuinely sufficient real data to decide -
       // its answer is the final recommendation, translated with the same
       // Decision Compression copy (recovery-decision-copy.ts) the Routing
@@ -16416,9 +16437,13 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       explanation: verificationExplanation,
       timestamp: new Date().toISOString(),
     };
-    db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
-      // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
-    });
+    // A deliberate non-action is not a recommendation offered and should
+    // not inflate the recommendation ledger or consume the shared budget.
+    if (recommendation.type !== 'no_action') {
+      db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
+        // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
+      });
+    }
 
     if (verificationStatus !== 'rejected' && routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
       // Same shared budget/cooldown bookkeeping /api/recovery/routing-decision
@@ -16426,9 +16451,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       // recovery_routing_decisions - Pulse's home card and the Hub's own
       // cards now count against one Recommendation Budget and one
       // per-module cooldown history, instead of two surfaces that never
-      // knew about each other. Never written for a rejected recommendation
-      // (it never reached the user) or for the rule-based fallback chain
-      // (unchanged, pre-existing behaviour, never budget-gated before).
+      // knew about each other. Never written for a rejected recommendation,
+      // deliberate non-action or legacy fallback.
       incrementSessionCounter(db, user.uid, 'recommendationsOffered').catch(() => {});
       db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
         createdAt: new Date().toISOString(),

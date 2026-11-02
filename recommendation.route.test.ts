@@ -344,13 +344,64 @@ describe('GET /api/user/recommendation - shared Recovery Routing arbitration (Re
     const today = new Date().toISOString().split('T')[0];
     seedDoc(`users/${USER}/recovery_routing/session_state`, { day: today, recommendationsOffered: 3 });
     const res = await request(app).get('/api/user/recommendation').set(auth(USER));
-    // Budget exhausted on the shared engine -> not "selected", so this
-    // falls through to the pre-existing rule-based chain exactly as before
-    // Report 25 - which still independently recommends Energy Budget from
-    // its own, already-approved recovery-debt branch. Never a fabricated
-    // workaround to force the shared engine's answer through anyway.
-    expect(res.body.tool).toBe('Energy Budget');
-    expect(res.body.sourcesUsed).toContain('derived.recovery_debt');
+    // A real exhausted budget suppresses *both* router and legacy nudges.
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('no_action');
+    expect(res.body.tool).toBe('');
+    expect(res.body.points).toBe(0);
+    expect(res.body.title).toBe("You've done enough here for now");
+    expect(res.body.shipStage).toBeTruthy();
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(3);
+    const ledger = await request(app).get('/api/user/recommendation-ledger').set(auth(USER));
+    expect(ledger.body.entries).toEqual([]);
+  });
+
+
+  it('honours an exhausted shared budget even without a current capacity check-in', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    seedDoc(`users/${USER}/recovery_routing/session_state`, { day: new Date().toISOString().slice(0, 10), recommendationsOffered: 3 });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('no_action');
+    expect(res.body.title).toBe("You've done enough here for now");
+    expect(res.body.points).toBe(0);
+  });
+
+  it('returns the shared none-needed outcome instead of a synthetic legacy nudge when bandwidth is known', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('no_action');
+    expect(res.body.title).toBe('Nothing here needs fixing right now');
+    expect(res.body.points).toBe(0);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)).toBeUndefined();
+  });
+
+  it('isolates shared budgets between accounts', async () => {
+    const other = 'user_other';
+    seedCheckIns(USER, 3);
+    seedCheckIns(other, 3);
+    for (const uid of [USER, other]) {
+      seedDoc(`users/${uid}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+      seedDoc(`users/${uid}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    }
+    seedDoc(`users/${USER}/recovery_routing/session_state`, { day: new Date().toISOString().slice(0, 10), recommendationsOffered: 3 });
+    const blocked = await request(app).get('/api/user/recommendation').set(auth(USER));
+    const available = await request(app).get('/api/user/recommendation').set(auth(other));
+    expect(blocked.body.type).toBe('no_action');
+    expect(available.body.tool).toBe('Energy & Capacity');
+  });
+
+  it('does not enforce yesterday\'s expired recommendation budget today', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    seedDoc(`users/${USER}/recovery_routing/session_state`, { day: '2026-01-01', recommendationsOffered: 3 });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.tool).toBe('Energy & Capacity');
   });
 
   it('respects an existing Hub-driven module cooldown instead of re-suggesting the same module', async () => {
@@ -364,7 +415,8 @@ describe('GET /api/user/recommendation - shared Recovery Routing arbitration (Re
     }
     const res = await request(app).get('/api/user/recommendation').set(auth(USER));
     expect(res.body.tool).not.toBe('Energy & Capacity');
-    expect(res.body.tool).toBe('Energy Budget'); // falls through to the rule-based chain's own recovery-debt branch
+    expect(res.body.type).toBe('no_action'); // cooldown cannot be sidestepped by the legacy chain
+    expect(res.body.points).toBe(0);
   });
 });
 
