@@ -16627,7 +16627,10 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       // The same bounded, server-owned trend Pulse already reads. Missing
       // or stale summaries are ignored by buildSignalCandidates; no extra
       // client records or private narrative are passed to the router.
-      db.collection("users").doc(user.uid).collection("derived").doc("recovery_debt").get(),
+      // Optional evidence must never break the normal routing journey
+      // during a transient derived-summary read failure: degrade to the
+      // existing signal-only candidates, rather than a 500 for the user.
+      db.collection("users").doc(user.uid).collection("derived").doc("recovery_debt").get().catch(() => null),
     ]);
 
     const capacityScore: number | null = latestCheckInSnap.empty ? null : (latestCheckInSnap.docs[0].data().score ?? null);
@@ -16678,7 +16681,7 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
 
     const candidates = buildSignalCandidates({
       capacityScore, deltaState, pendingWorkloadTasks, pendingMustWorkloadTasks, recentTriggers, recentMoodPulses, nowMs,
-      derivedRecoveryDebt: recoveryDebtSnap.exists ? recoveryDebtSnap.data() : null,
+      derivedRecoveryDebt: recoveryDebtSnap?.exists ? recoveryDebtSnap.data() : null,
       moduleHistory,
     });
     if (explicitRequestModule) {
