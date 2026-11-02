@@ -7,12 +7,15 @@ import { secureApiFetch } from './secure-api';
 // stale response from an older Firebase user always leaves this OFF.
 export function useNovaAgenticJourneyEnabled(): boolean {
   const { user } = useAuth();
-  const uid = user?.uid ?? null;
-  const [enabledFor, setEnabledFor] = useState<string | null>(null);
+  // Bind the enabled result to the actual Firebase User object, not
+  // just its uid: sign-out and re-entry as the same account must not
+  // silently reuse a previous session's successful flag response.
+  const [enabledFor, setEnabledFor] = useState<typeof user>(null);
 
   useEffect(() => {
     let cancelled = false;
-    if (!uid) return () => { cancelled = true; };
+    setEnabledFor(null);
+    if (!user) return () => { cancelled = true; };
 
     void (async () => {
       try {
@@ -21,7 +24,7 @@ export function useNovaAgenticJourneyEnabled(): boolean {
         const body: unknown = await response.json();
         if (!cancelled && body && typeof body === 'object' &&
             'agenticJourneyEnabled' in body && body.agenticJourneyEnabled === true) {
-          setEnabledFor(uid);
+          setEnabledFor(user);
         }
       } catch {
         // Fail closed. A new authenticated session can retry.
@@ -29,7 +32,7 @@ export function useNovaAgenticJourneyEnabled(): boolean {
     })();
 
     return () => { cancelled = true; };
-  }, [uid]);
+  }, [user]);
 
-  return uid !== null && enabledFor === uid;
+  return user !== null && enabledFor === user;
 }
