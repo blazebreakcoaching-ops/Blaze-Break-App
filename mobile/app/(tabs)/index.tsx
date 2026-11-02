@@ -32,6 +32,7 @@ type WeeklyRecap =
 const TAB_ROUTES: Record<string, string> = {
   diagnose: '/(tabs)/checkin',
   reset: '/(tabs)/reset',
+  nova: '/(tabs)/nova',
 };
 
 export default function PulseScreen() {
@@ -94,12 +95,15 @@ export default function PulseScreen() {
 
   const handleRecommendationPress = () => {
     if (!recommendation) return;
-    const route = TAB_ROUTES[recommendation.tab];
-    if (route) {
-      router.push(route as never);
-    } else if (recommendation.tab === 'home') {
+    if (recommendation.tab === 'home') {
       setCheckInVisible(true);
+      return;
     }
+    // Every other recommendation now has a real native destination:
+    // explicit Phase 1 tools, or Nova to talk through a feature that
+    // has not yet been ported. Never render a dead action.
+    const route = TAB_ROUTES[recommendation.tab] ?? '/(tabs)/nova';
+    router.push(route as never);
   };
 
   return (
@@ -129,17 +133,15 @@ export default function PulseScreen() {
             <>
               <Text style={styles.cardTitle}>{recommendation.title}</Text>
               <Text style={styles.cardMessage}>{recommendation.message}</Text>
-              {(TAB_ROUTES[recommendation.tab] || recommendation.tab === 'home') ? (
-                <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress} accessibilityRole="button">
-                  <Text style={styles.cardButtonText}>
-                    {TAB_ROUTES[recommendation.tab] ? `Open ${recommendation.tool}` : 'Open quick check-in'}
-                  </Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.cardSubtext}>
-                  This option is available in Blaze Break on the web. We're bringing it to the mobile app.
+              <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress} accessibilityRole="button">
+                <Text style={styles.cardButtonText}>
+                  {recommendation.tab === 'home'
+                    ? 'Open quick check-in'
+                    : recommendation.tab === 'diagnose' || recommendation.tab === 'reset'
+                      ? `Open ${recommendation.tool}`
+                      : 'Talk it through with Nova'}
                 </Text>
-              )}
+              </TouchableOpacity>
             </>
           ) : (
             <Text style={styles.cardMessage}>Nothing urgent right now - come back any time.</Text>
