@@ -2,6 +2,8 @@
 // Express /api/nova/chat route and the same role/parts history shape as
 // src/components/NovaChat.tsx. No model credentials, privileged prompts,
 // tokens or raw chat content are logged or stored by this module.
+import type { NovaTemporaryBeforeWordsContext } from '../../../nova-before-words-temporary-context';
+
 export type NovaMobileRole = 'user' | 'model';
 export interface NovaMobileMessage {
   role: NovaMobileRole;
@@ -17,7 +19,8 @@ export const NOVA_MOBILE_HISTORY_LIMIT = 20;
 export function buildNovaMobileChatBody(
   text: string,
   messages: readonly NovaMobileMessage[],
-): { message: string; history: NovaMobileMessage[] } {
+  beforeWordsContext: NovaTemporaryBeforeWordsContext | null = null,
+): { message: string; history: NovaMobileMessage[]; beforeWordsContext?: NovaTemporaryBeforeWordsContext } {
   const message = text.trim();
   if (!message || message.length > NOVA_MOBILE_MAX_MESSAGE_LENGTH) {
     throw new Error('Write a message of up to 2,000 characters.');
@@ -28,5 +31,9 @@ export function buildNovaMobileChatBody(
       role: m.role,
       parts: [{ text: m.parts[0].text.slice(0, NOVA_MOBILE_MAX_MESSAGE_LENGTH) }],
     })),
+    // Server quarantines this lower-trust user content in the ordinary
+    // message channel. Never include it in the client-side message
+    // history or elevate it to a system instruction.
+    ...(beforeWordsContext ? { beforeWordsContext } : {}),
   };
 }
