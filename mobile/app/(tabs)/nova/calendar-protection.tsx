@@ -118,6 +118,13 @@ export default function CalendarProtectionScreen() {
         method: 'POST', data: { approved, approvalFingerprint: proposal.approvalFingerprint },
       });
       const body = await res.json();
+      // 200 does not mean approved: the backend can return a
+      // not_awaiting_approval or superseded state without changing
+      // anything. Never advance the UI on those outcomes.
+      if (body.status !== (approved ? 'approved' : 'declined') || !body.proposal) {
+        setError('The server did not record this decision. Review the proposal status before trying again.');
+        return;
+      }
       if (!approved) {
         setResultText('Declined. Nothing was sent to your calendar.');
         setPhase('result');
