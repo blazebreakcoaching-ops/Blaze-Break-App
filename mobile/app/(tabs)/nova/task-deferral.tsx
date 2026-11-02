@@ -15,11 +15,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { secureApiFetch, SecureApiError } from '../../../src/lib/secure-api';
 import { newIdempotencyKey } from '../../../src/lib/idempotency-key';
 
-interface TaskProposal {
-  proposalId: string;
-  state: string;
-  approvalFingerprint: string;
-}
+import type { NovaTaskDeferralProposal as TaskProposal } from '../../../../nova-task-deferral-types';
 
 type ControlAnswer = 'yes' | 'no' | 'unsure';
 type Phase = 'describe' | 'clarify' | 'blocked' | 'prepare' | 'prepared' | 'awaiting_approval' | 'approved' | 'result';
@@ -129,6 +125,12 @@ export default function TaskDeferralScreen() {
         method: 'POST', data: { approved, approvalFingerprint: proposal.approvalFingerprint },
       });
       const body = await res.json();
+      // The route may return HTTP 200 with a state conflict. Do not
+      // show "Approved" when the server did not approve this fingerprint.
+      if (body.status !== (approved ? 'approved' : 'declined') || !body.proposal) {
+        setError('This proposal was not approved or declined. Review its current state before trying again.');
+        return;
+      }
       if (!approved) {
         setResultText('Declined. No real task was touched.');
         setPhase('result');
@@ -216,6 +218,24 @@ export default function TaskDeferralScreen() {
                 multiline
               />
               <PrimaryButton label="Prepare this proposal" onPress={prepare} disabled={!canPrepare || busy} />
+            </View>
+          )}
+
+          {proposal && proposal.proposedChange &&
+            ['prepared', 'awaiting_approval', 'approved'].includes(phase) && (
+            <View style={styles.proposalSummary} accessible accessibilityLabel="Task deferral proposal details for review">
+              <Text style={styles.proposalSummaryTitle}>Review the exact task proposal</Text>
+              <Text style={styles.proposalSummaryText}>Task: {proposal.identification.taskDescription}</Text>
+              <Text style={styles.proposalSummaryText}>
+                Proposed due date: {proposal.proposedChange.proposedNewDueDescription ?? 'No due date change'}
+              </Text>
+              <Text style={styles.proposalSummaryText}>
+                Reason: {proposal.postponementConsideration?.reasoning ?? 'Not stated'}
+              </Text>
+              <Text style={styles.proposalSummaryNote}>
+                These details came from the server. Your approval applies only to this proposal.
+                The task change remains a simulation and no external task will be modified.
+              </Text>
             </View>
           )}
 
@@ -319,6 +339,10 @@ const styles = StyleSheet.create({
   content: { padding: 18, gap: 16, paddingBottom: 40 },
   description: { fontSize: 13, lineHeight: 19, color: '#4b5563' },
   section: { gap: 12 },
+  proposalSummary: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 14, gap: 8, backgroundColor: '#f9fafb' },
+  proposalSummaryTitle: { fontSize: 15, color: '#111827', fontWeight: '700' },
+  proposalSummaryText: { fontSize: 14, color: '#111827', lineHeight: 21 },
+  proposalSummaryNote: { fontSize: 12, color: '#4b5563', lineHeight: 18 },
   statusText: { fontSize: 15, color: '#111827', lineHeight: 21 },
   input: { minHeight: 46, borderRadius: 12, backgroundColor: '#f3f4f6', color: '#111827', paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
   answerRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
