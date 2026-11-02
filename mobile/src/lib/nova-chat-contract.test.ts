@@ -20,6 +20,25 @@ describe('native Nova chat request', () => {
     expect(buildNovaMobileChatBody('x'.repeat(NOVA_MOBILE_MAX_MESSAGE_LENGTH), []).message).toHaveLength(NOVA_MOBILE_MAX_MESSAGE_LENGTH);
   });
 
+  it('carries Before Words only as an explicit one-turn field, never inside chat history', () => {
+    const context = {
+      kind: 'temporary_before_words_context' as const,
+      freeExpressionText: 'I have a lot happening',
+      promptResponses: [],
+      corrections: [],
+      hasUncertainty: false,
+      persisted: false as const,
+    };
+    const existing = [user('Earlier message')];
+    const request = buildNovaMobileChatBody('Can we talk about that?', existing, context);
+    expect(request.beforeWordsContext).toEqual(context);
+    expect(request.history).toEqual(existing);
+    expect(JSON.stringify(request.history)).not.toContain('I have a lot happening');
+    const next = buildNovaMobileChatBody('Next turn', [user('Can we talk about that?'), model('Yes')]);
+    expect(next).not.toHaveProperty('beforeWordsContext');
+    expect(JSON.stringify(next)).not.toContain('I have a lot happening');
+  });
+
   it('does not mutate the displayed messages while bounding history', () => {
     const long = user('x'.repeat(2400));
     const msgs = [long];
