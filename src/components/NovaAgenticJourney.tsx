@@ -246,6 +246,15 @@ export const NovaAgenticJourney = ({
 
       {step === 'chat' && (
         <div className="space-y-2.5">
+          {/* Optional entry in the real Nova tab. App.tsx intentionally
+              starts with chat; without this control Before Words was
+              available only in the dev preview. It remains skippable. */}
+          <button
+            onClick={() => goTo('before_words')}
+            className="min-h-11 w-full rounded-lg border border-border text-xs font-semibold text-text-main hover:bg-surface flex items-center justify-center gap-2"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-primary" /> Start with Before Words (optional)
+          </button>
           <NovaChat
             systemInstruction={systemInstruction}
             initialMessage={initialMessage}
