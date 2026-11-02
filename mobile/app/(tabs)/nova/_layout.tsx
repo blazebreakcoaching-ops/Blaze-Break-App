@@ -2,6 +2,7 @@ import React from 'react';
 import { Stack } from 'expo-router';
 import { useAuth } from '../../../src/lib/auth-context';
 import { NovaInvisibleLoadProvider } from '../../../src/lib/nova-invisible-load-context';
+import { NovaBeforeWordsProvider } from '../../../src/lib/nova-before-words-context';
 
 // Wraps Nova's chat screen and its Invisible Load sub-screen in one
 // shared NovaInvisibleLoadProvider, so navigating between them (a plain
@@ -14,7 +15,13 @@ export default function NovaLayout() {
   const { user } = useAuth();
   return (
     <NovaInvisibleLoadProvider key={user?.uid ?? 'signed-out'}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <NovaBeforeWordsProvider key={user?.uid ?? 'signed-out'}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="invisible-load" />
+          <Stack.Screen name="before-words" />
+        </Stack>
+      </NovaBeforeWordsProvider>
     </NovaInvisibleLoadProvider>
   );
 }
