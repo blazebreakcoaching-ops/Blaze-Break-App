@@ -308,9 +308,37 @@ export const HomeSection = ({
   // identically to everyone regardless of what they'd actually done.
   const [recommendation, setRecommendation] = useState<{
     tool: string; tab: string; title: string; message: string; points: number;
-    type?: string;
+    type?: string; decisionId?: string | null;
   } | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(true);
+  const [outcomeSaving, setOutcomeSaving] = useState(false);
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+
+  // The shared Hub owns the outcome record, session counters and cooldown.
+  // No second analytics store or recommendation counter is written here.
+  const recordRecommendationOutcome = async (action: 'started' | 'declined'): Promise<boolean> => {
+    if (!recommendation?.decisionId || outcomeSaving) return false;
+    setOutcomeSaving(true);
+    setOutcomeError(null);
+    try {
+      await secureApiFetch('/api/recovery/routing-outcome', {
+        method: 'POST', data: { decisionId: recommendation.decisionId, action },
+      });
+      if (action === 'declined') {
+        setRecommendation(prev => prev ? {
+          ...prev, decisionId: null, type: 'no_action', tool: '', tab: '', points: 0,
+          title: 'No pressure to do more right now',
+          message: 'Not now is a valid choice. You can return to your recovery tools whenever you want.',
+        } : prev);
+      }
+      return true;
+    } catch {
+      setOutcomeError('Could not save your choice. Please try again.');
+      return false;
+    } finally {
+      setOutcomeSaving(false);
+    }
+  };
 
   useEffect(() => {
     const loadRecommendation = async () => {
@@ -1048,7 +1076,9 @@ export const HomeSection = ({
             </div>
           )}
           {recommendation?.type !== 'no_action' && <button
-            onClick={() => {
+            disabled={outcomeSaving}
+            onClick={async () => {
+              if (recommendation?.decisionId && !(await recordRecommendationOutcome('started'))) return;
               if (recommendation && recommendation.tab !== 'home') {
                 window.dispatchEvent(new CustomEvent('navigate_tab', { detail: recommendation.tab }));
               } else {
@@ -1058,9 +1088,17 @@ export const HomeSection = ({
             className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 group transition-all"
           >
             <MessageSquare className="w-4 h-4" />
-            <span>{recommendation && recommendation.tab !== 'home' ? `Open ${recommendation.tool}` : 'Connect with Nova'}</span>
+            <span>{recommendation?.decisionId ? `Start ${recommendation.tool}` : recommendation && recommendation.tab !== 'home' ? `Open ${recommendation.tool}` : 'Connect with Nova'}</span>
             <ArrowRight className="w-4 h-4 opacity-70 group-hover:translate-x-1 transition-transform" />
           </button>}
+          {recommendation?.decisionId && recommendation.type !== 'no_action' && (
+            <button type="button" disabled={outcomeSaving}
+              onClick={() => { void recordRecommendationOutcome('declined'); }}
+              className="w-full text-sm font-medium text-text-muted py-2 disabled:opacity-50">
+              Not now
+            </button>
+          )}
+          {outcomeError && <p role="alert" className="text-xs text-text-muted">{outcomeError}</p>}
         </div>
       </SmartCard>
     ),

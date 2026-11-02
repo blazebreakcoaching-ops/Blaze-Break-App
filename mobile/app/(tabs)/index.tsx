@@ -21,6 +21,7 @@ type Recommendation = {
   message: string;
   points: number;
   type?: string;
+  decisionId?: string | null;
 };
 
 type WeeklyRecap =
@@ -43,8 +44,35 @@ export default function PulseScreen() {
   const [weeklyRecap, setWeeklyRecap] = useState<WeeklyRecap | null>(null);
   const [checkInVisible, setCheckInVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [outcomeSaving, setOutcomeSaving] = useState(false);
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+
+  const recordRecommendationOutcome = async (action: 'started' | 'declined'): Promise<boolean> => {
+    if (!recommendation?.decisionId || outcomeSaving) return false;
+    setOutcomeSaving(true);
+    setOutcomeError(null);
+    try {
+      await secureApiFetch('/api/recovery/routing-outcome', {
+        method: 'POST', data: { decisionId: recommendation.decisionId, action },
+      });
+      if (action === 'declined') {
+        setRecommendation(prev => prev ? {
+          ...prev, decisionId: null, type: 'no_action', tool: '', tab: '', points: 0,
+          title: 'No pressure to do more right now',
+          message: 'Not now is a valid choice. You can return to your recovery tools whenever you want.',
+        } : prev);
+      }
+      return true;
+    } catch {
+      setOutcomeError('Could not save your choice. Please try again.');
+      return false;
+    } finally {
+      setOutcomeSaving(false);
+    }
+  };
 
   const load = useCallback(async () => {
+    setOutcomeError(null);
     setRecommendationLoading(true);
     try {
       const resumeRes = await secureApiFetch('/api/user/resume-prompt');
@@ -94,8 +122,9 @@ export default function PulseScreen() {
     setRefreshing(false);
   };
 
-  const handleRecommendationPress = () => {
-    if (!recommendation || recommendation.type === 'no_action') return;
+  const handleRecommendationPress = async () => {
+    if (!recommendation || recommendation.type === 'no_action' || outcomeSaving) return;
+    if (recommendation.decisionId && !(await recordRecommendationOutcome('started'))) return;
     if (recommendation.tab === 'home') {
       setCheckInVisible(true);
       return;
@@ -134,15 +163,26 @@ export default function PulseScreen() {
             <>
               <Text style={styles.cardTitle}>{recommendation.title}</Text>
               <Text style={styles.cardMessage}>{recommendation.message}</Text>
-              {recommendation.type !== 'no_action' && <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress} accessibilityRole="button">
+              {recommendation.type !== 'no_action' && <TouchableOpacity style={styles.cardButton} disabled={outcomeSaving} onPress={handleRecommendationPress} accessibilityRole="button">
                 <Text style={styles.cardButtonText}>
-                  {recommendation.tab === 'home'
-                    ? 'Open quick check-in'
-                    : recommendation.tab === 'diagnose' || recommendation.tab === 'reset'
-                      ? `Open ${recommendation.tool}`
-                      : 'Talk it through with Nova'}
+                  {recommendation.decisionId
+                    ? `Start ${recommendation.tool}`
+                    : recommendation.tab === 'home'
+                      ? 'Open quick check-in'
+                      : recommendation.tab === 'diagnose' || recommendation.tab === 'reset'
+                        ? `Open ${recommendation.tool}`
+                        : 'Talk it through with Nova'}
                 </Text>
               </TouchableOpacity>}
+              {recommendation.decisionId && recommendation.type !== 'no_action' && (
+                <TouchableOpacity disabled={outcomeSaving}
+                  onPress={() => { void recordRecommendationOutcome('declined'); }}
+                  accessibilityRole="button" accessibilityLabel="Not now"
+                  style={styles.declineButton}>
+                  <Text style={styles.declineButtonText}>Not now</Text>
+                </TouchableOpacity>
+              )}
+              {outcomeError && <Text accessibilityRole="alert" style={styles.outcomeError}>{outcomeError}</Text>}
             </>
           ) : (
             <Text style={styles.cardMessage}>Nothing urgent right now - come back any time.</Text>
@@ -215,6 +255,9 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   cardButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  declineButton: { alignItems: 'center', paddingVertical: 12 },
+  declineButtonText: { color: '#666', fontWeight: '600', fontSize: 14 },
+  outcomeError: { color: '#9a3412', fontSize: 12, marginTop: 6 },
   claimButton: {
     borderWidth: 2,
     borderColor: '#ea580c',

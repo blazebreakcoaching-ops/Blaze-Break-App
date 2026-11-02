@@ -16445,6 +16445,7 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       });
     }
 
+    let decisionId: string | null = null;
     if (verificationStatus !== 'rejected' && routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
       // Same shared budget/cooldown bookkeeping /api/recovery/routing-decision
       // already writes to recovery_routing/session_state and
@@ -16453,20 +16454,27 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       // per-module cooldown history, instead of two surfaces that never
       // knew about each other. Never written for a rejected recommendation,
       // deliberate non-action or legacy fallback.
-      incrementSessionCounter(db, user.uid, 'recommendationsOffered').catch(() => {});
-      db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
-        createdAt: new Date().toISOString(),
-        selectedRoute: routingDecision.selectedRoute,
-        selectedModule: routingDecision.selectedCandidate.sourceModule,
-        routingOutcome: routingDecision.routingOutcome,
-        reasonCodes: routingDecision.reasonCodes,
-        confidence: routingDecision.confidence,
-        consideredModules: routingCandidates.map((c) => c.sourceModule),
-        bandwidthBand: routingBandwidth.band,
-        sourceSurface: 'pulse_home_recommendation',
-      }).catch(() => {
-        // Non-fatal - the recommendation still reaches the user even if this audit write fails.
-      });
+      await incrementSessionCounter(db, user.uid, 'recommendationsOffered').catch(() => {});
+      // The outcome API requires the *persisted* decision ID. Await the
+      // audit write rather than returning a guessed identifier or racing
+      // the Start/Not now buttons against a fire-and-forget write.
+      try {
+        const decisionRef = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
+          createdAt: new Date().toISOString(),
+          selectedRoute: routingDecision.selectedRoute,
+          selectedModule: routingDecision.selectedCandidate.sourceModule,
+          routingOutcome: routingDecision.routingOutcome,
+          reasonCodes: routingDecision.reasonCodes,
+          confidence: routingDecision.confidence,
+          consideredModules: routingCandidates.map((c) => c.sourceModule),
+          bandwidthBand: routingBandwidth.band,
+          sourceSurface: 'pulse_home_recommendation',
+        });
+        decisionId = decisionRef.id;
+      } catch {
+        // Non-fatal - recommendation remains visible, but the client must
+        // not render feedback controls without an actual saved decision.
+      }
     }
 
     if (verificationStatus === 'rejected') {
@@ -16482,7 +16490,7 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       });
     }
 
-    res.json({ ...recommendation, shipStage });
+    res.json({ ...recommendation, decisionId, shipStage });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });

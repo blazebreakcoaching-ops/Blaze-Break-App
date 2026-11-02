@@ -326,6 +326,39 @@ describe('GET /api/user/recommendation - shared Recovery Routing arbitration (Re
     expect(sessionState?.recommendationsOffered).toBe(1);
   });
 
+
+  it('returns the persisted decision ID so Pulse can report Start through the existing outcome API', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    const recommendation = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(recommendation.status).toBe(200);
+    expect(recommendation.body.decisionId).toEqual(expect.any(String));
+    const path = `users/${USER}/recovery_routing_decisions/${recommendation.body.decisionId}`;
+    expect(getDocRaw(path)?.selectedModule).toBe('energy_delta');
+    expect(getDocRaw(path)?.sourceSurface).toBe('pulse_home_recommendation');
+
+    const outcome = await request(app).post('/api/recovery/routing-outcome').set(auth(USER))
+      .send({ decisionId: recommendation.body.decisionId, action: 'started' });
+    expect(outcome.status).toBe(200);
+    expect(getDocRaw(path)?.startedAt).toEqual(expect.any(String));
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.interventionsStarted).toBe(1);
+  });
+
+  it('records Not now against the same real recommendation decision and its shared session counters', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    const recommendation = await request(app).get('/api/user/recommendation').set(auth(USER));
+    const id = recommendation.body.decisionId;
+    expect(id).toEqual(expect.any(String));
+    const outcome = await request(app).post('/api/recovery/routing-outcome').set(auth(USER))
+      .send({ decisionId: id, action: 'declined' });
+    expect(outcome.status).toBe(200);
+    expect(getDocRaw(`users/${USER}/recovery_routing_decisions/${id}`)?.outcome).toBe('declined');
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsDeclined).toBe(1);
+  });
+
   it('falls through unchanged to the rule-based chain when no real capacity check-in exists, even with a strong shared signal', async () => {
     seedCheckIns(USER, 3);
     seedDoc(`users/${USER}/derived/stats`, { lastNervousSystemReset: recentIso() });
@@ -347,6 +380,7 @@ describe('GET /api/user/recommendation - shared Recovery Routing arbitration (Re
     // A real exhausted budget suppresses *both* router and legacy nudges.
     expect(res.status).toBe(200);
     expect(res.body.type).toBe('no_action');
+    expect(res.body.decisionId).toBeNull();
     expect(res.body.tool).toBe('');
     expect(res.body.points).toBe(0);
     expect(res.body.title).toBe("You've done enough here for now");
