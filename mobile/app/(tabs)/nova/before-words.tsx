@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 20, fontWeight: '800', color: '#111827' },
   content: { padding: 18, paddingBottom: 40 },
-  section: { gap: 16 }, heading: { fontSize: 21, fontWeight: '750', color: '#111827' },
+  section: { gap: 16 }, heading: { fontSize: 21, fontWeight: '700', color: '#111827' },
   description: { fontSize: 14, lineHeight: 22, color: '#4b5563' },
   button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
     alignItems: 'center', justifyContent: 'center', backgroundColor: '#c2410c' },
