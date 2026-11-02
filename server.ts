@@ -6439,9 +6439,16 @@ app.post("/api/nova/calendar-protection/propose", verifyAppCheck, authenticateFi
   try {
     const uid = requireAuth(req).uid;
     const db = getDb();
-    if ((await getCalendarConnectionState(db, uid)) === 'not_connected') {
-      return res.status(403).json({ error: "Calendar signals are not enabled for this account - connect and enable calendar signals first." });
-    }
+    // A *proposal* is an inert, user-reviewed draft, not a calendar
+    // provider write and not a read of meeting-load analytics. Requiring
+    // the separate live_signals/calendar analytics document here made
+    // proposal preparation impossible for every ordinary account.
+    // Keep explicit, separately revocable allowCalendarActions consent
+    // at proposal time. Real execution remains blocked by the hardcoded
+    // CALENDAR_PROTECTION_EXECUTION_ENABLED=false gate; if enabled in a
+    // separately reviewed future release, execution must still verify
+    // a real connector, pilot eligibility, current authorisation and the
+    // exact fingerprint-bound approval.
     if (!(await getCalendarActionPermission(db, uid)).granted) {
       return res.status(403).json({ error: "Calendar action permission has not been granted - grant it before proposing a calendar change.", code: "calendar_action_permission_required" });
     }
