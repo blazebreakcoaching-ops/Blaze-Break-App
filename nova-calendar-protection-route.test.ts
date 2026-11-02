@@ -1,7 +1,7 @@
 // NHEI/Nova PHASE 5C (directive §5) - calendar protection routes, at the
 // actual route boundary. Same supertest + mocked firebase-admin pattern
-// as nhei-consent-route.test.ts. Covers: permission gating on
-// allowCalendarSignals, the full prepare->present->approve->execute
+// as nhei-consent-route.test.ts. Covers: the independent
+// allowCalendarActions grant, the full prepare->present->approve->execute
 // flow, the fingerprint-mismatch rejection, and that execution is
 // ALWAYS disabled through this route regardless of approval state.
 
@@ -85,17 +85,38 @@ async function connectCalendar() {
 }
 
 describe('POST /api/nova/calendar-protection/propose', () => {
-  it('is refused when calendar signals are not enabled for this account', async () => {
+  it('refuses a proposal when action permission is not granted, even without calendar signals', async () => {
     const res = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
     expect(res.status).toBe(403);
+    expect(res.body.code).toBe('calendar_action_permission_required');
   });
 
-  it('prepares a real proposal once calendar signals are enabled, including a real fingerprint', async () => {
-    await connectCalendar();
+  it('prepares a proposal with explicit action permission, without analytics signals or provider connection', async () => {
+    const grant = await request(app).post('/api/nova/calendar-protection/action-permission')
+      .set(auth('user_a')).send({ granted: true });
+    expect(grant.status).toBe(200);
     const res = await request(app).post('/api/nova/calendar-protection/propose').set(auth('user_a')).send(CHANGE);
     expect(res.status).toBe(200);
     expect(res.body.proposal.state).toBe('prepared');
     expect(res.body.proposal.approvalFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(getDocRaw('users/user_a/live_signals/calendar')).toBeUndefined();
+  });
+
+  it('remains simulation-only after preparing, presenting and approving without calendar signals', async () => {
+    await request(app).post('/api/nova/calendar-protection/action-permission')
+      .set(auth('user_a')).send({ granted: true });
+    const prepared = await request(app).post('/api/nova/calendar-protection/propose')
+      .set(auth('user_a')).send(CHANGE);
+    expect(prepared.status).toBe(200);
+    const p = prepared.body.proposal;
+    await request(app).post(`/api/nova/calendar-protection/${p.proposalId}/present`).set(auth('user_a'));
+    const approved = await request(app).post(`/api/nova/calendar-protection/${p.proposalId}/approve`)
+      .set(auth('user_a')).send({ approved: true, approvalFingerprint: p.approvalFingerprint });
+    expect(approved.body.status).toBe('approved');
+    const executed = await request(app).post(`/api/nova/calendar-protection/${p.proposalId}/execute`).set(auth('user_a'));
+    expect(executed.body.status).toBe('execution_disabled');
+    expect(buildGoogleCalendarConnectorSpy).not.toHaveBeenCalled();
+    expect(createRealGoogleCalendarHttpTransportSpy).not.toHaveBeenCalled();
   });
 
   it('rejects an unauthenticated request', async () => {
