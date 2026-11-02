@@ -295,6 +295,79 @@ describe('GET /api/user/recommendation - stage-aware tiebreaking (Phase C)', () 
   });
 });
 
+// Report 25 - Pulse now defers to the same deterministic Recovery Routing
+// engine /api/recovery/routing-decision uses, instead of two parallel
+// decision chains. It only ever takes over when real, legitimate bandwidth
+// evidence exists (a genuine capacity check-in on file - never fabricated,
+// since this GET route has no way to ask the one bandwidth question); the
+// common case (no check-in today, covered exhaustively above) must keep
+// falling through to the pre-existing rule-based chain byte-identically.
+describe('GET /api/user/recommendation - shared Recovery Routing arbitration (Report 25)', () => {
+  const recentIso = () => new Date().toISOString();
+
+  it('defers to the shared routing engine once a real capacity check-in makes bandwidth known', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.tool).toBe('Energy & Capacity');
+    expect(res.body.tab).toBe('recover');
+    expect(res.body.type).toBe('recovery_reminder');
+    expect(res.body.sourcesUsed).toContain('derived.recovery_debt');
+  });
+
+  it('writes the same shared session budget and routing-decision audit record the Hub itself writes', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    await request(app).get('/api/user/recommendation').set(auth(USER));
+    const sessionState = getDocRaw(`users/${USER}/recovery_routing/session_state`);
+    expect(sessionState?.recommendationsOffered).toBe(1);
+  });
+
+  it('falls through unchanged to the rule-based chain when no real capacity check-in exists, even with a strong shared signal', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/derived/stats`, { lastNervousSystemReset: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    // Identical to the pre-Report-25 "fires the recovery-debt branch" case -
+    // the rule-based chain's own tool choice, not the router's module name.
+    expect(res.body.tool).toBe('Energy Budget');
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)).toBeUndefined();
+  });
+
+  it('respects the shared daily recommendation budget instead of fabricating a way around it', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    const today = new Date().toISOString().split('T')[0];
+    seedDoc(`users/${USER}/recovery_routing/session_state`, { day: today, recommendationsOffered: 3 });
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    // Budget exhausted on the shared engine -> not "selected", so this
+    // falls through to the pre-existing rule-based chain exactly as before
+    // Report 25 - which still independently recommends Energy Budget from
+    // its own, already-approved recovery-debt branch. Never a fabricated
+    // workaround to force the shared engine's answer through anyway.
+    expect(res.body.tool).toBe('Energy Budget');
+    expect(res.body.sourcesUsed).toContain('derived.recovery_debt');
+  });
+
+  it('respects an existing Hub-driven module cooldown instead of re-suggesting the same module', async () => {
+    seedCheckIns(USER, 3);
+    seedDoc(`users/${USER}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${USER}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+    for (let i = 0; i < 3; i++) {
+      seedDoc(`users/${USER}/recovery_routing_decisions/d${i}`, {
+        createdAt: recentIso(), selectedModule: 'energy_delta', outcome: 'declined',
+      });
+    }
+    const res = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(res.body.tool).not.toBe('Energy & Capacity');
+    expect(res.body.tool).toBe('Energy Budget'); // falls through to the rule-based chain's own recovery-debt branch
+  });
+});
+
 // GET /api/user/recommendation-ledger - previously zero coverage. Returns
 // the caller's own history of past recommendations, newest first.
 describe('GET /api/user/recommendation-ledger', () => {

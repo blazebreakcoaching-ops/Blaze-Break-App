@@ -109,6 +109,7 @@ import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { isUsableRecoveryDerivedSummary, isHighRisingRecoveryDebt } from './recovery-derived-signals';
+import { buildDecisionCopy, MODULE_TARGET_TAB, moduleDisplayName } from './recovery-decision-copy';
 import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -16146,6 +16147,73 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     const recoveryVelocityUsable = isUsableDerivedSummary(recoveryVelocity);
     const energyTrendUsable = isUsableDerivedSummary(energyTrend);
     const moodTrendUsable = isUsableDerivedSummary(moodTrend);
+
+    // Shared Recovery Routing arbitration (recovery-routing-engine.ts) -
+    // the same deterministic engine /api/recovery/routing-decision already
+    // uses. Reads the same real signal sources that route reads (never a
+    // fabricated capacity score or self-report - this is a GET with no
+    // body, so the only legitimate bandwidth evidence available is a real
+    // capacity check-in already on file, exactly like routing-decision's
+    // own capacityScore read). When the router has a confident answer, it
+    // becomes the final recommendation below instead of a second, parallel
+    // decision chain; when it doesn't (the common case today, since Pulse's
+    // passive home card can never answer the one bandwidth question a
+    // missing check-in would otherwise require), the pre-existing
+    // rule-based chain beneath it runs completely unchanged.
+    const fourteenDaysAgoForRouting = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const [
+      latestCapacityCheckInSnap, activeStressorsSnap, workloadStateSnap,
+      routingTriggersSnap, routingMoodSnap,
+    ] = await Promise.all([
+      db.collection("users").doc(user.uid).collection("capacity_checkins").orderBy("createdAt", "desc").limit(1).get(),
+      db.collection("users").doc(user.uid).collection("energy_stressors").where("status", "==", "active").get(),
+      db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get(),
+      db.collection("users").doc(user.uid).collection("stress_triggers").where("createdAt", ">=", fourteenDaysAgoForRouting).orderBy("createdAt", "desc").get(),
+      db.collection("users").doc(user.uid).collection("mood_pulses").orderBy("createdAt", "desc").limit(5).get(),
+    ]);
+    const routingCapacityScore: number | null = latestCapacityCheckInSnap.empty ? null : (latestCapacityCheckInSnap.docs[0].data().score ?? null);
+    const routingStressors: Pick<Stressor, 'severity' | 'persistence' | 'reduction' | 'status'>[] = activeStressorsSnap.docs.map((d) => {
+      const data = d.data();
+      return { severity: data.severity, persistence: data.persistence, reduction: data.reduction, status: data.status };
+    });
+    const routingDeltaState = routingCapacityScore === null ? null : getDeltaState(computeEnergyDelta(routingCapacityScore, routingStressors).energyDelta).key;
+    const routingWorkloadData = workloadStateSnap.exists ? workloadStateSnap.data()! : {};
+    const routingWorkloadTasks: { completed?: boolean; category?: string }[] = Array.isArray(routingWorkloadData.tasks) ? routingWorkloadData.tasks : [];
+    const routingPendingWorkloadTasks = routingWorkloadTasks.filter((t) => !t.completed).length;
+    const routingPendingMustWorkloadTasks = routingWorkloadTasks.filter((t) => !t.completed && t.category === 'must').length;
+    const routingRecentTriggers: RoutingSignalInput['recentTriggers'] = routingTriggersSnap.docs.map((d) => {
+      const data = d.data();
+      return { source: String(data.source || ''), severity: classifyTriggerSeverity(data.severity), createdAtMs: new Date(data.createdAt).getTime() };
+    });
+    const routingRecentMoodPulses: RoutingSignalInput['recentMoodPulses'] = routingMoodSnap.docs.map((d) => {
+      const data = d.data();
+      return { moodLabel: String(data.moodLabel || ''), intensity: Number(data.intensity) || 0, createdAtMs: new Date(data.createdAt).getTime() };
+    });
+    const { moduleHistory: routingModuleHistory } = await loadRoutingHistory(db, user.uid, now);
+    const routingCandidates = buildSignalCandidates({
+      capacityScore: routingCapacityScore,
+      deltaState: routingDeltaState,
+      pendingWorkloadTasks: routingPendingWorkloadTasks,
+      pendingMustWorkloadTasks: routingPendingMustWorkloadTasks,
+      recentTriggers: routingRecentTriggers,
+      recentMoodPulses: routingRecentMoodPulses,
+      derivedRecoveryDebt: recoveryDebt,
+      nowMs: now,
+      moduleHistory: routingModuleHistory,
+    });
+    const routingBandwidth = determineBandwidth({ capacityScore: routingCapacityScore, deltaState: routingDeltaState });
+    const routingSessionState = await loadRoutingSessionState(db, user.uid);
+    const routingDecision = selectRoute(routingCandidates, routingBandwidth, routingSessionState);
+    const ROUTING_URGENCY_POINTS: Record<string, number> = { high: 25, medium: 20, low: 15 };
+    const ROUTING_SOURCES_BY_MODULE: Record<string, string[]> = {
+      guided_reset: ['capacity_checkins', 'energy_stressors'],
+      one_less_thing: ['capacity_checkins', 'workload_reality_check'],
+      capacity_firewall: ['stress_triggers'],
+      recovery_fuel: ['mood_pulses'],
+      energy_delta: ['derived.recovery_debt'],
+      my_patterns: ['stress_triggers'],
+    };
+
     // Tie-breaker only - never a new branch condition on its own. When a
     // falling energy/mood trend is genuinely known, it breaks the
     // otherwise-fixed priority between "stale check-in" and "heavy active
@@ -16189,7 +16257,31 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
 
     let recommendation: { tool: string; tab: string; title: string; message: string; points: number; sourcesUsed: string[]; type: string };
 
-    if (recentHighSeverity) {
+    if (routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
+      // The shared engine had genuinely sufficient real data to decide -
+      // its answer is the final recommendation, translated with the same
+      // Decision Compression copy (recovery-decision-copy.ts) the Routing
+      // Hub itself shows, never a second, independently-worded engine.
+      const routingCandidate = routingDecision.selectedCandidate;
+      const routingCopy = buildDecisionCopy({
+        routingOutcome: routingDecision.routingOutcome,
+        selectedRoute: routingDecision.selectedRoute,
+        selectedModule: routingCandidate.sourceModule,
+        reasonCodes: routingDecision.reasonCodes,
+        confidence: routingDecision.confidence,
+        evidenceDetail: routingCandidate.evidence.detail ?? null,
+        evidenceSource: routingCandidate.evidence.source ?? null,
+      });
+      recommendation = {
+        tool: moduleDisplayName(routingCandidate.sourceModule),
+        tab: MODULE_TARGET_TAB[routingCandidate.sourceModule] || 'nova',
+        title: routingCopy.headline,
+        message: routingCopy.whyThis,
+        points: ROUTING_URGENCY_POINTS[routingCandidate.urgency] ?? 15,
+        sourcesUsed: ROUTING_SOURCES_BY_MODULE[routingCandidate.sourceModule] || [routingCandidate.sourceModule],
+        type: routingDecision.selectedRoute === 'STABILISE' ? 'overload_warning' : 'recovery_reminder',
+      };
+    } else if (recentHighSeverity) {
       const snippet = String(recentHighSeverity.text || '').slice(0, 90);
       recommendation = {
         tool: 'Nervous System Reset',
@@ -16327,6 +16419,31 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
       // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
     });
+
+    if (verificationStatus !== 'rejected' && routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
+      // Same shared budget/cooldown bookkeeping /api/recovery/routing-decision
+      // already writes to recovery_routing/session_state and
+      // recovery_routing_decisions - Pulse's home card and the Hub's own
+      // cards now count against one Recommendation Budget and one
+      // per-module cooldown history, instead of two surfaces that never
+      // knew about each other. Never written for a rejected recommendation
+      // (it never reached the user) or for the rule-based fallback chain
+      // (unchanged, pre-existing behaviour, never budget-gated before).
+      incrementSessionCounter(db, user.uid, 'recommendationsOffered').catch(() => {});
+      db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
+        createdAt: new Date().toISOString(),
+        selectedRoute: routingDecision.selectedRoute,
+        selectedModule: routingDecision.selectedCandidate.sourceModule,
+        routingOutcome: routingDecision.routingOutcome,
+        reasonCodes: routingDecision.reasonCodes,
+        confidence: routingDecision.confidence,
+        consideredModules: routingCandidates.map((c) => c.sourceModule),
+        bandwidthBand: routingBandwidth.band,
+        sourceSurface: 'pulse_home_recommendation',
+      }).catch(() => {
+        // Non-fatal - the recommendation still reaches the user even if this audit write fails.
+      });
+    }
 
     if (verificationStatus === 'rejected') {
       // A genuinely rejected recommendation doesn't reach the user - fall
@@ -16481,6 +16598,20 @@ const COOLDOWN_DECLINE_THRESHOLD = 3;
 const PENDING_OUTCOME_STALE_MS = 24 * 60 * 60 * 1000;
 
 const todayUtcDateKey = (): string => new Date().toISOString().split('T')[0]!;
+
+// Trigger Journal (RecoveryIntelligenceLayer.tsx's saveTriggers) stores
+// severity as a number (3/6/9), not the 'low'/'medium'/'high' string the
+// picker itself shows - the same <=4/<=7/else bands that file's own
+// read-back already uses, so this stays consistent with it rather than
+// inventing a second threshold convention. Shared by both
+// /api/recovery/routing-decision and /api/user/recommendation now that
+// the latter also builds routing candidates from the same real signals.
+const classifyTriggerSeverity = (raw: unknown): 'low' | 'medium' | 'high' => {
+  if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
+  const n = Number(raw);
+  if (Number.isFinite(n)) return n <= 4 ? 'low' : n <= 7 ? 'medium' : 'high';
+  return 'medium';
+};
 
 const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: string): Promise<SessionRecommendationState> => {
   const ref = db.collection("users").doc(uid).collection("recovery_routing").doc("session_state");
@@ -16645,17 +16776,6 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
     const pendingWorkloadTasks = workloadTasks.filter((t) => !t.completed).length;
     const pendingMustWorkloadTasks = workloadTasks.filter((t) => !t.completed && t.category === 'must').length;
 
-    // Trigger Journal (RecoveryIntelligenceLayer.tsx's saveTriggers) stores
-    // severity as a number (3/6/9), not the 'low'/'medium'/'high' string the
-    // picker itself shows - the same <=4/<=7/else bands that file's own
-    // read-back already uses, so this stays consistent with it rather than
-    // inventing a second threshold convention.
-    const classifyTriggerSeverity = (raw: unknown): 'low' | 'medium' | 'high' => {
-      if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
-      const n = Number(raw);
-      if (Number.isFinite(n)) return n <= 4 ? 'low' : n <= 7 ? 'medium' : 'high';
-      return 'medium';
-    };
     const recentTriggers: RoutingSignalInput['recentTriggers'] = triggersSnap.docs.map((d) => {
       const data = d.data();
       return {
