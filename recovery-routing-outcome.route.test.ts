@@ -25,7 +25,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceTransactionError } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -145,7 +145,11 @@ describe('POST /api/recovery/routing-outcome', () => {
   it('500s if the decision read throws', async () => {
     seedDoc(`users/${USER}/recovery_routing_decisions/d1`, { createdAt: new Date().toISOString(), selectedModule: 'guided_reset' });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const restore = forceDocError(`users/${USER}/recovery_routing_decisions/d1`, 'get', new Error('simulated Firestore outage'));
+    // The read-and-write now happens inside one transaction (idempotency
+    // fix, Report 26) rather than a plain decisionRef.get(), so the
+    // transaction itself - not an individual doc's get - is what a real
+    // Firestore outage would reject.
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
     const res = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'started' });
     expect(res.status).toBe(500);
     expect(errorSpy).toHaveBeenCalled();

@@ -106,7 +106,7 @@ import { validateRolloutPlanCreate, canTransitionRolloutStatus, isRolloutPlanSta
 import { isEvolutionFrozen, validateFreezeToggleInput } from './evolution-freeze';
 import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engine';
 import { determineBandwidth } from './recovery-capacity-gate';
-import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
+import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState, SESSION_RECOMMENDATION_OFFER_LIMIT } from './recovery-routing-engine';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { isUsableRecoveryDerivedSummary, isHighRisingRecoveryDebt } from './recovery-derived-signals';
 import { buildDecisionCopy, MODULE_TARGET_TAB, moduleDisplayName } from './recovery-decision-copy';
@@ -16428,6 +16428,97 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       verificationExplanation = 'Rejected: Recommendation breached non-medical coaching boundary.';
     }
 
+    let decisionId: string | null = null;
+    // Whether this response represents a genuinely new offer being logged
+    // for the first time, vs. the exact same open decision (or the legacy
+    // fallback, which has no decision-dedup concept at all) being shown
+    // again - gates the recommendation_ledger write below the same way it
+    // gates the decision/counter write, so a repeated GET never inflates
+    // either audit trail for one real event.
+    let isNewOffer = true;
+    if (verificationStatus !== 'rejected' && routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
+      const candidate = routingDecision.selectedCandidate;
+      const decisionsCol = db.collection("users").doc(user.uid).collection("recovery_routing_decisions");
+      const sessionRef = db.collection("users").doc(user.uid).collection("recovery_routing").doc("session_state");
+
+      // Idempotent re-offer: a repeated GET (page refresh, a re-render, two
+      // near-simultaneous loads) for the *same* module, while an earlier
+      // offer of it is still open (no terminal outcome recorded yet,
+      // within the same recency window the router's own cooldown uses),
+      // is the one genuine offer being viewed again - not a second one.
+      // Reuse its real, persisted id rather than minting a new decision
+      // and incrementing the shared budget for one event twice.
+      const recentWindowStart = new Date(now - RECENTLY_USED_WINDOW_MS).toISOString();
+      const existingOpenSnap = await decisionsCol
+        .where('selectedModule', '==', candidate.sourceModule)
+        .where('createdAt', '>=', recentWindowStart)
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .get();
+      const existingOpen = existingOpenSnap.docs[0];
+
+      if (existingOpen && !existingOpen.data().outcome) {
+        decisionId = existingOpen.id;
+        isNewOffer = false;
+      } else {
+        // A genuinely new offer - re-verify the shared budget *inside* the
+        // same transaction that increments it and creates the decision
+        // doc, immediately before committing. The optimistic candidate
+        // choice above (computed from a plain, non-transactional read)
+        // must never be shown as "selected" if a concurrent request's
+        // transaction already exhausted today's budget first - the last
+        // one to actually commit is the authoritative answer, not the
+        // first one to merely compute a candidate.
+        const newDecisionRef = decisionsCol.doc();
+        let budgetStillAllows = true;
+        try {
+          await db.runTransaction(async (tx) => {
+            const sessionSnap = await tx.get(sessionRef);
+            const today = todayUtcDateKey();
+            const current = sessionSnap.exists && sessionSnap.data()?.day === today ? sessionSnap.data()! : { ...EMPTY_SESSION_STATE };
+            if ((current.recommendationsOffered || 0) >= SESSION_RECOMMENDATION_OFFER_LIMIT) {
+              budgetStillAllows = false;
+              return;
+            }
+            tx.set(sessionRef, nextSessionCounterState(current, today, 'recommendationsOffered'), { merge: true });
+            tx.set(newDecisionRef, {
+              createdAt: new Date().toISOString(),
+              selectedRoute: routingDecision.selectedRoute,
+              selectedModule: candidate.sourceModule,
+              routingOutcome: routingDecision.routingOutcome,
+              reasonCodes: routingDecision.reasonCodes,
+              confidence: routingDecision.confidence,
+              consideredModules: routingCandidates.map((c) => c.sourceModule),
+              bandwidthBand: routingBandwidth.band,
+              sourceSurface: 'pulse_home_recommendation',
+            });
+          });
+        } catch {
+          // Non-fatal - recommendation remains visible, but the client
+          // must not render feedback controls without an actual saved
+          // decision.
+          budgetStillAllows = false;
+        }
+        if (budgetStillAllows) {
+          decisionId = newDecisionRef.id;
+        } else {
+          // Lost the race (or the write itself failed) - never fabricate a
+          // countable offer. Downgrade to the same honest no_action
+          // payload the router's own suppressed_by_budget case uses,
+          // *before* the ledger write below, so a recommendation that was
+          // never actually accepted is never logged as one either.
+          const budgetCopy = buildDecisionCopy({
+            routingOutcome: 'suppressed_by_budget', selectedRoute: 'NONE', selectedModule: null,
+            reasonCodes: ['no_intervention_needed'], confidence: 'high',
+          });
+          recommendation = {
+            tool: '', tab: '', title: budgetCopy.headline, message: budgetCopy.whyThis,
+            points: 0, sourcesUsed: [], type: 'no_action',
+          };
+        }
+      }
+    }
+
     const ledgerEntry = {
       type: recommendation.type,
       content: recommendation.message,
@@ -16438,43 +16529,13 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
       timestamp: new Date().toISOString(),
     };
     // A deliberate non-action is not a recommendation offered and should
-    // not inflate the recommendation ledger or consume the shared budget.
-    if (recommendation.type !== 'no_action') {
+    // not inflate the recommendation ledger; nor should viewing the exact
+    // same still-open decision again (a refresh, a re-render) - only a
+    // genuinely new offer is logged.
+    if (recommendation.type !== 'no_action' && isNewOffer) {
       db.collection("users").doc(user.uid).collection("recommendation_ledger").add(ledgerEntry).catch(() => {
         // Non-fatal - the recommendation still reaches the user even if the ledger write fails.
       });
-    }
-
-    let decisionId: string | null = null;
-    if (verificationStatus !== 'rejected' && routingDecision.routingOutcome === 'selected' && routingDecision.selectedCandidate) {
-      // Same shared budget/cooldown bookkeeping /api/recovery/routing-decision
-      // already writes to recovery_routing/session_state and
-      // recovery_routing_decisions - Pulse's home card and the Hub's own
-      // cards now count against one Recommendation Budget and one
-      // per-module cooldown history, instead of two surfaces that never
-      // knew about each other. Never written for a rejected recommendation,
-      // deliberate non-action or legacy fallback.
-      await incrementSessionCounter(db, user.uid, 'recommendationsOffered').catch(() => {});
-      // The outcome API requires the *persisted* decision ID. Await the
-      // audit write rather than returning a guessed identifier or racing
-      // the Start/Not now buttons against a fire-and-forget write.
-      try {
-        const decisionRef = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
-          createdAt: new Date().toISOString(),
-          selectedRoute: routingDecision.selectedRoute,
-          selectedModule: routingDecision.selectedCandidate.sourceModule,
-          routingOutcome: routingDecision.routingOutcome,
-          reasonCodes: routingDecision.reasonCodes,
-          confidence: routingDecision.confidence,
-          consideredModules: routingCandidates.map((c) => c.sourceModule),
-          bandwidthBand: routingBandwidth.band,
-          sourceSurface: 'pulse_home_recommendation',
-        });
-        decisionId = decisionRef.id;
-      } catch {
-        // Non-fatal - recommendation remains visible, but the client must
-        // not render feedback controls without an actual saved decision.
-      }
     }
 
     if (verificationStatus === 'rejected') {
@@ -16633,15 +16694,27 @@ const todayUtcDateKey = (): string => new Date().toISOString().split('T')[0]!;
 
 // Trigger Journal (RecoveryIntelligenceLayer.tsx's saveTriggers) stores
 // severity as a number (3/6/9), not the 'low'/'medium'/'high' string the
-// picker itself shows - the same <=4/<=7/else bands that file's own
-// read-back already uses, so this stays consistent with it rather than
-// inventing a second threshold convention. Shared by both
-// /api/recovery/routing-decision and /api/user/recommendation now that
-// the latter also builds routing candidates from the same real signals.
+// picker itself shows - the same <=4/<7 bands that file's own read-back
+// uses, so this stays consistent with it rather than inventing a second
+// threshold convention. Shared by both /api/recovery/routing-decision and
+// /api/user/recommendation now that the latter also builds routing
+// candidates from the same real signals.
+//
+// The "high" boundary is deliberately >=7, not >7: the legacy
+// recommendation chain's own acute-trigger check (recentHighSeverity,
+// `severity >= 7` within 3 hours) has always treated exactly 7 as acute.
+// Before this fix, this classifier's own ">7" boundary put a severity-7
+// trigger in "medium", so the shared router's acute STABILISE check
+// (hasAcuteHighSeverityTrigger, which reads this classified band) would
+// silently stay quiet on exactly the trigger the legacy chain already,
+// correctly, treats as acute - a real detection gap for the router
+// specifically, never a loosening of the legacy chain's own established
+// threshold. Fixed the newer value to match the older, already-approved
+// one, not the other way round.
 const classifyTriggerSeverity = (raw: unknown): 'low' | 'medium' | 'high' => {
   if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
   const n = Number(raw);
-  if (Number.isFinite(n)) return n <= 4 ? 'low' : n <= 7 ? 'medium' : 'high';
+  if (Number.isFinite(n)) return n <= 4 ? 'low' : n < 7 ? 'medium' : 'high';
   return 'medium';
 };
 
@@ -16673,22 +16746,37 @@ const loadRoutingSessionState = async (db: FirebaseFirestore.Firestore, uid: str
 // original - can't both read the same pre-increment count and each write
 // current+1, silently dropping one of the increments.
 type SessionCounterField = 'recommendationsOffered' | 'recommendationsDeclined' | 'interventionsStarted' | 'interventionsCompleted' | 'interventionsAbandoned';
+
+// Pure: the next day-aware session_state document given whatever is
+// currently stored (or nothing/a stale previous day, which resets to
+// EMPTY_SESSION_STATE first) and the one field to increment. Shared by
+// incrementSessionCounter below and by the routing-outcome route's own
+// transaction, so both ever only ever compute "the next state" the same
+// one way - never two divergent copies of this reset-then-increment logic.
+const nextSessionCounterState = (currentData: Record<string, any> | undefined, today: string, field: SessionCounterField) => {
+  const current = currentData && currentData.day === today ? currentData : { ...EMPTY_SESSION_STATE };
+  return {
+    day: today,
+    recommendationsOffered: current.recommendationsOffered || 0,
+    recommendationsDeclined: current.recommendationsDeclined || 0,
+    interventionsStarted: current.interventionsStarted || 0,
+    interventionsCompleted: current.interventionsCompleted || 0,
+    interventionsAbandoned: current.interventionsAbandoned || 0,
+    [field]: (current[field] || 0) + 1,
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+// Runs inside a transaction (not a plain read-then-write) so two concurrent
+// routing requests for the same user - e.g. a retried network call racing
+// the original - can't both read the same pre-increment count and each
+// write current+1, silently dropping one of the increments.
 const incrementSessionCounter = async (db: FirebaseFirestore.Firestore, uid: string, field: SessionCounterField): Promise<void> => {
   const ref = db.collection("users").doc(uid).collection("recovery_routing").doc("session_state");
   const today = todayUtcDateKey();
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    const current = snap.exists && snap.data()?.day === today ? snap.data()! : { ...EMPTY_SESSION_STATE };
-    tx.set(ref, {
-      day: today,
-      recommendationsOffered: current.recommendationsOffered || 0,
-      recommendationsDeclined: current.recommendationsDeclined || 0,
-      interventionsStarted: current.interventionsStarted || 0,
-      interventionsCompleted: current.interventionsCompleted || 0,
-      interventionsAbandoned: current.interventionsAbandoned || 0,
-      [field]: (current[field] || 0) + 1,
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
+    tx.set(ref, nextSessionCounterState(snap.exists ? snap.data() : undefined, today, field), { merge: true });
   });
 };
 
@@ -16705,6 +16793,13 @@ const loadRoutingHistory = async (
 
   const recentlyUsedModules = new Set<string>();
   const declineCounts = new Map<string, number>();
+  // A module declined moments ago must not be immediately re-offered by a
+  // page refresh or the legacy fallback chain, even on its very first
+  // decline - distinct from (and in addition to) the long-standing
+  // 3-decline repeated-pattern cooldown below, which is about a module
+  // that keeps reappearing over the full 14-day lookback, not about an
+  // instant repeat of the one just turned down.
+  const justDeclinedModules = new Set<string>();
   let pendingOutcomeCheck: { decisionId: string; selectedModule: string | null } | null = null;
   let staleUnresolvedDoc: { id: string } | null = null;
 
@@ -16718,6 +16813,10 @@ const loadRoutingHistory = async (
     }
     if (selectedModule && data.outcome === 'declined') {
       declineCounts.set(selectedModule, (declineCounts.get(selectedModule) ?? 0) + 1);
+      const outcomeAtMs = data.outcomeAt ? new Date(data.outcomeAt).getTime() : createdAtMs;
+      if (nowMs - outcomeAtMs <= RECENTLY_USED_WINDOW_MS) {
+        justDeclinedModules.add(selectedModule);
+      }
     }
     if (!pendingOutcomeCheck && !staleUnresolvedDoc && data.startedAt && !data.outcome) {
       const startedAtMs = new Date(data.startedAt).getTime();
@@ -16740,7 +16839,7 @@ const loadRoutingHistory = async (
   for (const moduleId of new Set([...recentlyUsedModules, ...declineCounts.keys()])) {
     moduleHistory[moduleId] = {
       recentlyUsed: recentlyUsedModules.has(moduleId),
-      cooldownActive: (declineCounts.get(moduleId) ?? 0) >= COOLDOWN_DECLINE_THRESHOLD,
+      cooldownActive: (declineCounts.get(moduleId) ?? 0) >= COOLDOWN_DECLINE_THRESHOLD || justDeclinedModules.has(moduleId),
     };
   }
 
@@ -16923,29 +17022,62 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
       ROUTING_OUTCOME_HELPFULNESS.includes(helpfulness) ? helpfulness : null;
 
     const decisionRef = db.collection('users').doc(user.uid).collection('recovery_routing_decisions').doc(decisionId);
-    const decisionSnap = await decisionRef.get();
-    if (!decisionSnap.exists) {
-      return res.status(404).json({ error: 'decision not found' });
-    }
-
+    const sessionRef = db.collection("users").doc(user.uid).collection("recovery_routing").doc("session_state");
     const nowIso = new Date().toISOString();
     const typedAction = action as RoutingOutcomeAction;
 
-    if (typedAction === 'started') {
-      await decisionRef.set({ startedAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'interventionsStarted');
-    } else if (typedAction === 'declined') {
-      await decisionRef.set({ outcome: 'declined', outcomeAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'recommendationsDeclined');
-    } else if (typedAction === 'completed') {
-      await decisionRef.set({ outcome: 'completed', helpfulness: validHelpfulness, outcomeAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'interventionsCompleted');
-    } else {
-      await decisionRef.set({ outcome: 'abandoned', outcomeAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'interventionsAbandoned');
-    }
+    // Idempotent and concurrency-safe: a decision's lifecycle moves through
+    // at most one "started" and then at most one terminal outcome
+    // (declined/completed/abandoned - mutually exclusive, first-wins). A
+    // double tap, a retried request, or two tabs racing the same button
+    // must land on exactly the same persisted state and must never
+    // increment a session counter more than once for the one real event
+    // it represents - the read-then-write happens inside a single
+    // transaction (both the decision doc and the shared session counter)
+    // so two concurrent requests can't both observe "not yet recorded"
+    // before either commits.
+    type OutcomeResult = 'applied' | 'already_recorded' | 'not_found';
+    let outcomeResult = 'applied' as OutcomeResult;
+    await db.runTransaction(async (tx) => {
+      const decisionSnap = await tx.get(decisionRef);
+      if (!decisionSnap.exists) {
+        outcomeResult = 'not_found';
+        return;
+      }
+      const data = decisionSnap.data()!;
 
-    res.json({ ok: true });
+      let decisionPatch: Record<string, any>;
+      let counterField: SessionCounterField;
+      if (typedAction === 'started') {
+        // Starting a decision that's already resolved (e.g. a stale card
+        // re-rendered after a decline) is not a real start; starting one
+        // already started is the user re-opening the same thing, not a
+        // second start.
+        if (data.outcome || data.startedAt) { outcomeResult = 'already_recorded'; return; }
+        decisionPatch = { startedAt: nowIso };
+        counterField = 'interventionsStarted';
+      } else {
+        // Once any terminal outcome is recorded, the decision is resolved
+        // - a later call (any action) for the same decisionId is a no-op,
+        // never a second counter increment or an overwritten outcome.
+        if (data.outcome) { outcomeResult = 'already_recorded'; return; }
+        decisionPatch = { outcome: typedAction, outcomeAt: nowIso };
+        if (typedAction === 'completed') decisionPatch.helpfulness = validHelpfulness;
+        counterField = typedAction === 'declined' ? 'recommendationsDeclined'
+          : typedAction === 'completed' ? 'interventionsCompleted' : 'interventionsAbandoned';
+      }
+
+      // All reads before any writes, per Firestore transaction rules.
+      const sessionSnap = await tx.get(sessionRef);
+
+      tx.set(decisionRef, decisionPatch, { merge: true });
+      tx.set(sessionRef, nextSessionCounterState(sessionSnap.exists ? sessionSnap.data() : undefined, todayUtcDateKey(), counterField), { merge: true });
+    });
+
+    if (outcomeResult === 'not_found') {
+      return res.status(404).json({ error: 'decision not found' });
+    }
+    res.json({ ok: true, alreadyRecorded: outcomeResult === 'already_recorded' });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });

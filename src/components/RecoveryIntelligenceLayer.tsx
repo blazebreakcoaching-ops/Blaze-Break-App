@@ -123,7 +123,10 @@ export const RecoveryIntelligenceLayer = ({ fingerprint, isDemoSession }: Recove
 
         setTriggers(triggerSnap.docs.map(d => {
           const data = d.data();
-          const severityLabel: 'low' | 'medium' | 'high' = data.severity <= 4 ? 'low' : data.severity <= 7 ? 'medium' : 'high';
+          // >= 7 counts as "high" - matches server.ts's classifyTriggerSeverity
+          // and the legacy recommendation chain's own acute-trigger threshold,
+          // so a severity-7 entry reads the same way here as it routes there.
+          const severityLabel: 'low' | 'medium' | 'high' = data.severity <= 4 ? 'low' : data.severity < 7 ? 'medium' : 'high';
           // data.source is only present on entries logged after the write-side
           // fix above - older entries never had it, so this history list still
           // falls back to a plain label for those rather than showing "undefined".

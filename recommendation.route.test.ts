@@ -23,7 +23,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 import { vi } from 'vitest';
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError, forceTransactionError } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -451,6 +451,141 @@ describe('GET /api/user/recommendation - shared Recovery Routing arbitration (Re
     expect(res.body.tool).not.toBe('Energy & Capacity');
     expect(res.body.type).toBe('no_action'); // cooldown cannot be sidestepped by the legacy chain
     expect(res.body.points).toBe(0);
+  });
+});
+
+// Report 26 - closing the idempotency gaps: a repeated GET, a page refresh,
+// or two near-simultaneous requests must never be counted as more than the
+// one genuine offer the user actually received, and a decline must not be
+// immediately reversed by a refresh or the legacy fallback.
+describe('GET /api/user/recommendation - idempotent offers (Report 26)', () => {
+  const recentIso = () => new Date().toISOString();
+  const seedSelectable = (uid: string) => {
+    seedCheckIns(uid, 3);
+    seedDoc(`users/${uid}/capacity_checkins/today`, { score: 70, createdAt: recentIso() });
+    seedDoc(`users/${uid}/derived/recovery_debt`, { status: 'available', direction: 'rising', value: 80, calculatedAt: recentIso() });
+  };
+
+  it('reuses the same open decision id and does not double-count a repeated GET', async () => {
+    seedSelectable(USER);
+    const first = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(first.body.tool).toBe('Energy & Capacity');
+    expect(first.body.decisionId).toBeTruthy();
+
+    const second = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(second.body.decisionId).toBe(first.body.decisionId);
+    expect(second.body.tool).toBe('Energy & Capacity');
+
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+    const decisions = Object.keys(
+      Object.fromEntries(
+        (await request(app).get('/api/user/recommendation-ledger').set(auth(USER))).body.entries.map((e: any) => [e.id, true])
+      )
+    );
+    // Exactly one ledger entry for the one genuine offer, not two.
+    expect(decisions.length).toBe(1);
+  });
+
+  it('creates a genuinely new decision once the open one is resolved (completed)', async () => {
+    seedSelectable(USER);
+    const first = await request(app).get('/api/user/recommendation').set(auth(USER));
+    const firstId = first.body.decisionId;
+    await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: firstId, action: 'completed' });
+
+    const second = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(second.body.decisionId).toBeTruthy();
+    expect(second.body.decisionId).not.toBe(firstId);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(2);
+  });
+
+  it('does not immediately re-offer a module the user just declined, even via a page refresh', async () => {
+    seedSelectable(USER);
+    const first = await request(app).get('/api/user/recommendation').set(auth(USER));
+    await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: first.body.decisionId, action: 'declined' });
+
+    const refreshed = await request(app).get('/api/user/recommendation').set(auth(USER));
+    expect(refreshed.body.type).toBe('no_action');
+    expect(refreshed.body.tool).not.toBe('Energy & Capacity');
+  });
+
+  it('never lets two near-simultaneous requests push the shared budget past its daily limit', async () => {
+    seedSelectable(USER);
+    const today = new Date().toISOString().slice(0, 10);
+    seedDoc(`users/${USER}/recovery_routing/session_state`, { day: today, recommendationsOffered: 2 }); // exactly one slot left
+    const [a, b] = await Promise.all([
+      request(app).get('/api/user/recommendation').set(auth(USER)),
+      request(app).get('/api/user/recommendation').set(auth(USER)),
+    ]);
+    const types = [a.body.type, b.body.type];
+    // Exactly one of the two requests gets the real, countable offer; the
+    // other is honestly told no - never both, which would silently push
+    // the budget to 4.
+    expect(types.filter((t) => t === 'no_action')).toHaveLength(1);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(3);
+  });
+});
+
+// Report 26 - /api/recovery/routing-outcome must be idempotent: a double
+// tap, a retried request, or a stale/foreign decisionId must never double
+// count a counter, resurrect a resolved decision, or leak across accounts.
+describe('POST /api/recovery/routing-outcome - idempotency and isolation (Report 26)', () => {
+  const recentIso = () => new Date().toISOString();
+
+  it('does not increment the decline counter twice for a double-tapped Not now', async () => {
+    seedDoc(`users/${USER}/recovery_routing_decisions/d1`, { createdAt: recentIso(), selectedModule: 'guided_reset' });
+    const first = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'declined' });
+    expect(first.status).toBe(200);
+    expect(first.body.alreadyRecorded).toBeFalsy();
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsDeclined).toBe(1);
+
+    const second = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'declined' });
+    expect(second.status).toBe(200);
+    expect(second.body.alreadyRecorded).toBe(true);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsDeclined).toBe(1);
+  });
+
+  it('does not let a stale Start fire after the same decision was already declined', async () => {
+    seedDoc(`users/${USER}/recovery_routing_decisions/d1`, { createdAt: recentIso(), selectedModule: 'guided_reset' });
+    await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'declined' });
+    const res = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'started' });
+    expect(res.status).toBe(200);
+    expect(res.body.alreadyRecorded).toBe(true);
+    // The prior 'declined' call already wrote the full day-aware counter
+    // document (every field defaulted to 0 except the one incremented) -
+    // this 'started' call must not add a *second* increment on top of it.
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.interventionsStarted).toBe(0);
+  });
+
+  it('does not double-count a double-tapped Start', async () => {
+    seedDoc(`users/${USER}/recovery_routing_decisions/d1`, { createdAt: recentIso(), selectedModule: 'guided_reset' });
+    await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'started' });
+    const second = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'started' });
+    expect(second.body.alreadyRecorded).toBe(true);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.interventionsStarted).toBe(1);
+  });
+
+  it('404s on an unknown decisionId and never touches the session counter', async () => {
+    const res = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'does-not-exist', action: 'declined' });
+    expect(res.status).toBe(404);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)).toBeUndefined();
+  });
+
+  it('never resolves another account\'s decision id', async () => {
+    const other = 'user_other';
+    seedDoc(`users/${other}/recovery_routing_decisions/d1`, { createdAt: recentIso(), selectedModule: 'guided_reset' });
+    const res = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'declined' });
+    expect(res.status).toBe(404);
+    expect(getDocRaw(`users/${other}/recovery_routing/session_state`)).toBeUndefined();
+  });
+
+  it('never reports success when the underlying transaction fails', async () => {
+    seedDoc(`users/${USER}/recovery_routing_decisions/d1`, { createdAt: recentIso(), selectedModule: 'guided_reset' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
+    const res = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'declined' });
+    expect(res.status).toBe(500);
+    restore();
+    errorSpy.mockRestore();
   });
 });
 
