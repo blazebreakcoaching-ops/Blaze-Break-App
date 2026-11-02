@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   helpNoticeText: { fontSize: 13, color: '#4b5563', lineHeight: 18 },
   helpNoticeLink: { fontSize: 13, color: '#c2410c', fontWeight: '700' },
   composer: { padding: 12, gap: 10, borderTopWidth: 1, borderColor: '#e5e7eb' },
-  categoryRow: { flexDirection: 'row', gap: 8 },
+  categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: '#e5e7eb' },
   categoryChipActive: { backgroundColor: '#c2410c', borderColor: '#c2410c' },
   categoryChipText: { fontSize: 12, color: '#4b5563', fontWeight: '600' },
