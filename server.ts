@@ -108,6 +108,7 @@ import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engi
 import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
+import { isUsableRecoveryDerivedSummary, isHighRisingRecoveryDebt } from './recovery-derived-signals';
 import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
 import { getEffectiveDataPolicy, validateDataPolicyUpdate } from './org-data-policy';
@@ -16129,12 +16130,8 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
     // recalculation is manual-only today - a tight window would make this
     // data almost never usable). Anything else means this contributes
     // nothing and the chain runs exactly as it always has.
-    const isUsableDerivedSummary = (doc: any): boolean => {
-      if (!doc || doc.status !== 'available') return false;
-      const calculatedAtMs = doc.calculatedAt ? new Date(doc.calculatedAt).getTime() : NaN;
-      if (Number.isNaN(calculatedAtMs)) return false;
-      return (now - calculatedAtMs) / (1000 * 60 * 60 * 24) <= 14;
-    };
+    const isUsableDerivedSummary = (doc: unknown): boolean =>
+      isUsableRecoveryDerivedSummary(doc, now);
     const [recoveryDebtDoc, recoveryVelocityDoc, energyTrendDoc, moodTrendDoc] = await Promise.all([
       db.collection("users").doc(user.uid).collection("derived").doc("recovery_debt").get(),
       db.collection("users").doc(user.uid).collection("derived").doc("recovery_velocity").get(),
@@ -16205,7 +16202,7 @@ app.get("/api/user/recommendation", verifyAppCheck, authenticateFirebaseUser, as
         sourcesUsed: ['stress_triggers'],
         type: 'overload_warning',
       };
-    } else if (recoveryDebtUsable && recoveryDebt!.direction === 'rising' && (recoveryDebt!.value || 0) >= 65) {
+    } else if (recoveryDebtUsable && isHighRisingRecoveryDebt(recoveryDebt, now)) {
       // Recovery debt has been genuinely climbing - point at whichever of
       // Energy Budget / Nervous System Reset is the staler of the two,
       // rather than always defaulting to one.
@@ -16621,12 +16618,16 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       return res.status(400).json({ error: `Unrecognised module: ${explicitRequestModule}` });
     }
 
-    const [latestCheckInSnap, stressorsSnap, workloadSnap, triggersSnap, moodSnap] = await Promise.all([
+    const [latestCheckInSnap, stressorsSnap, workloadSnap, triggersSnap, moodSnap, recoveryDebtSnap] = await Promise.all([
       db.collection("users").doc(user.uid).collection("capacity_checkins").orderBy("createdAt", "desc").limit(1).get(),
       db.collection("users").doc(user.uid).collection("energy_stressors").where("status", "==", "active").get(),
       db.collection("users").doc(user.uid).collection("workload_reality_check").doc("state").get(),
       db.collection("users").doc(user.uid).collection("stress_triggers").where("createdAt", ">=", fourteenDaysAgo).orderBy("createdAt", "desc").get(),
       db.collection("users").doc(user.uid).collection("mood_pulses").orderBy("createdAt", "desc").limit(5).get(),
+      // The same bounded, server-owned trend Pulse already reads. Missing
+      // or stale summaries are ignored by buildSignalCandidates; no extra
+      // client records or private narrative are passed to the router.
+      db.collection("users").doc(user.uid).collection("derived").doc("recovery_debt").get(),
     ]);
 
     const capacityScore: number | null = latestCheckInSnap.empty ? null : (latestCheckInSnap.docs[0].data().score ?? null);
@@ -16677,6 +16678,7 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
 
     const candidates = buildSignalCandidates({
       capacityScore, deltaState, pendingWorkloadTasks, pendingMustWorkloadTasks, recentTriggers, recentMoodPulses, nowMs,
+      derivedRecoveryDebt: recoveryDebtSnap.exists ? recoveryDebtSnap.data() : null,
       moduleHistory,
     });
     if (explicitRequestModule) {
