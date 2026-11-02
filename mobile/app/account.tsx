@@ -19,13 +19,27 @@ export default function AccountScreen() {
   // means a previous account's value is never shown as if it were this
   // one's, even for the moment before that fetch resolves.
   const [loadedConsent, setLoadedConsent] = useState<{ uid: string; value: boolean } | null>(null);
-  const memoryConsent = loadedConsent !== null && user !== null && loadedConsent.uid === user.uid
+  const [consentReadError, setConsentReadError] = useState<{ uid: string; message: string } | null>(null);
+  const uid = user?.uid ?? null;
+  const memoryConsent = loadedConsent !== null && uid !== null && loadedConsent.uid === uid
     ? loadedConsent.value : null;
 
   useEffect(() => {
-    if (!user) return;
-    void getNovaMemoryConsent(user.uid).then((value) => setLoadedConsent({ uid: user.uid, value }));
-  }, [user]);
+    if (!uid) return;
+    let active = true;
+    void getNovaMemoryConsent(uid)
+      .then((value) => {
+        if (!active) return;
+        setLoadedConsent({ uid, value });
+        setConsentReadError(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setLoadedConsent(null);
+        setConsentReadError({ uid, message: 'Could not verify your preference. Reopen Account when connected to retry.' });
+      });
+    return () => { active = false; };
+  }, [uid]);
 
   const toggleMemoryConsent = async () => {
     if (!user || memoryConsent === null) return;
@@ -87,16 +101,19 @@ export default function AccountScreen() {
           <View style={styles.consentTextGroup}>
             <Text style={styles.consentLabel}>Behavioural learning</Text>
             <Text style={styles.consentDescription}>Allow Nova to learn from your check-ins and recovery actions.</Text>
+            {consentReadError?.uid === uid && (
+              <Text accessibilityRole="alert" style={styles.consentError}>{consentReadError.message}</Text>
+            )}
           </View>
           <TouchableOpacity
             onPress={toggleMemoryConsent}
             disabled={memoryConsent === null}
             accessibilityRole="switch"
             accessibilityLabel="Behavioural learning"
-            accessibilityState={{ checked: memoryConsent ?? true }}
-            style={[styles.toggle, memoryConsent !== false && styles.toggleOn]}
+            accessibilityState={{ checked: memoryConsent === true, disabled: memoryConsent === null }}
+            style={[styles.toggle, memoryConsent === true && styles.toggleOn]}
           >
-            <View style={[styles.toggleDot, memoryConsent !== false && styles.toggleDotOn]} />
+            <View style={[styles.toggleDot, memoryConsent === true && styles.toggleDotOn]} />
           </TouchableOpacity>
         </View>
       )}
@@ -117,6 +134,7 @@ const styles = StyleSheet.create({
   consentTextGroup: { flex: 1, gap: 2 },
   consentLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
   consentDescription: { fontSize: 12, color: '#6b7280', lineHeight: 16 },
+  consentError: { fontSize: 12, color: '#b91c1c', lineHeight: 17, marginTop: 4 },
   toggle: { width: 44, height: 28, borderRadius: 999, backgroundColor: '#e5e7eb', padding: 3, justifyContent: 'center' },
   toggleOn: { backgroundColor: '#16a34a' },
   toggleDot: { width: 22, height: 22, borderRadius: 999, backgroundColor: '#fff', alignSelf: 'flex-start' },
