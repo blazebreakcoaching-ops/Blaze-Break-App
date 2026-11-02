@@ -2,14 +2,42 @@
 // somewhere to see your sign-in state and actually sign out. Reachable
 // from Pulse's header. Full settings (notifications, plan/billing, etc.)
 // is out of scope this phase - this is deliberately just identity.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../src/lib/auth-context';
+import { getNovaMemoryConsent, setNovaMemoryConsent } from '../src/lib/nova-memory-consent';
 
 export default function AccountScreen() {
   const { user, logOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  // Paired with the uid it was loaded for, rather than reset eagerly on
+  // every user change: a stale value is only ever overwritten by the
+  // CURRENT user's own resolved fetch (the .then() below), never by a
+  // synchronous call in the effect body itself
+  // (react-hooks/set-state-in-effect) - and the uid comparison below
+  // means a previous account's value is never shown as if it were this
+  // one's, even for the moment before that fetch resolves.
+  const [loadedConsent, setLoadedConsent] = useState<{ uid: string; value: boolean } | null>(null);
+  const memoryConsent = loadedConsent !== null && user !== null && loadedConsent.uid === user.uid
+    ? loadedConsent.value : null;
+
+  useEffect(() => {
+    if (!user) return;
+    void getNovaMemoryConsent(user.uid).then((value) => setLoadedConsent({ uid: user.uid, value }));
+  }, [user]);
+
+  const toggleMemoryConsent = async () => {
+    if (!user || memoryConsent === null) return;
+    const next = !memoryConsent;
+    setLoadedConsent({ uid: user.uid, value: next });
+    try {
+      await setNovaMemoryConsent(user.uid, next);
+    } catch (e: unknown) {
+      setLoadedConsent({ uid: user.uid, value: !next });
+      Alert.alert('Could not update this', e instanceof Error ? e.message : 'Something went wrong.');
+    }
+  };
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -53,6 +81,25 @@ export default function AccountScreen() {
           </TouchableOpacity>
         </>
       )}
+
+      {user && (
+        <View style={styles.consentRow}>
+          <View style={styles.consentTextGroup}>
+            <Text style={styles.consentLabel}>Behavioural learning</Text>
+            <Text style={styles.consentDescription}>Allow Nova to learn from your check-ins and recovery actions.</Text>
+          </View>
+          <TouchableOpacity
+            onPress={toggleMemoryConsent}
+            disabled={memoryConsent === null}
+            accessibilityRole="switch"
+            accessibilityLabel="Behavioural learning"
+            accessibilityState={{ checked: memoryConsent ?? true }}
+            style={[styles.toggle, memoryConsent !== false && styles.toggleOn]}
+          >
+            <View style={[styles.toggleDot, memoryConsent !== false && styles.toggleDotOn]} />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -66,4 +113,12 @@ const styles = StyleSheet.create({
   link: { textAlign: 'center', marginTop: 16, color: '#ea580c', fontWeight: '600' },
   signOutButton: { borderWidth: 1.5, borderColor: '#dc2626', borderRadius: 12, padding: 16, alignItems: 'center' },
   signOutButtonText: { color: '#dc2626', fontWeight: '700', fontSize: 16 },
+  consentRow: { marginTop: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 14, gap: 12 },
+  consentTextGroup: { flex: 1, gap: 2 },
+  consentLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  consentDescription: { fontSize: 12, color: '#6b7280', lineHeight: 16 },
+  toggle: { width: 44, height: 28, borderRadius: 999, backgroundColor: '#e5e7eb', padding: 3, justifyContent: 'center' },
+  toggleOn: { backgroundColor: '#16a34a' },
+  toggleDot: { width: 22, height: 22, borderRadius: 999, backgroundColor: '#fff', alignSelf: 'flex-start' },
+  toggleDotOn: { alignSelf: 'flex-end' },
 });

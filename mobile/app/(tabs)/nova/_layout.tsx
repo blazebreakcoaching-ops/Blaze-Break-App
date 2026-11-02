@@ -20,6 +20,9 @@ export default function NovaLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="invisible-load" />
           <Stack.Screen name="before-words" />
+          <Stack.Screen name="proactive-suggestions" />
+          <Stack.Screen name="calendar-protection" />
+          <Stack.Screen name="task-deferral" />
         </Stack>
       </NovaBeforeWordsProvider>
     </NovaInvisibleLoadProvider>

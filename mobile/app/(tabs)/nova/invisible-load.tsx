@@ -4,14 +4,11 @@
 // has zero imports and is framework-agnostic, so there is nothing
 // web-specific to port here).
 //
-// NOT YET PORTED from the web version: Calendar Protection and Task
-// Deferral ("Get help with this" there branches into either). Neither
-// has a native screen yet, so each item's own help action here is an
-// honest "not available here yet, ask Nova" - routing back to chat,
-// never a dead button and never claiming a capability that does not
-// exist on this platform yet. Breakdown steps/corrections/defer are also
-// deferred - this covers the add/review/remove core the practical-
-// assistance offer promises.
+// "Get help with this" now branches into the real native Calendar
+// Protection/Task Deferral screens, same two choices the web version
+// offers. Breakdown steps/corrections/defer are still deferred - this
+// covers the add/review/remove core plus the two real hand-off
+// destinations the practical-assistance offer promises.
 import React, { useState } from 'react';
 import {
   KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput,
@@ -76,11 +73,20 @@ export default function InvisibleLoadScreen() {
               <Text style={styles.cardText}>{item.description}</Text>
               {helpItemId === item.id ? (
                 <View style={styles.helpNotice}>
-                  <Text style={styles.helpNoticeText}>
-                    Calendar Protection and Task Deferral aren't available on mobile yet - ask Nova directly in chat and it can talk it through with you.
-                  </Text>
-                  <TouchableOpacity onPress={() => router.push('/(tabs)/nova')}>
-                    <Text style={styles.helpNoticeLink}>Go to Nova chat</Text>
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: '/(tabs)/nova/calendar-protection', params: { title: item.description } })}
+                    accessibilityRole="button" accessibilityLabel="Protect time for it" style={styles.helpChoice}
+                  >
+                    <Text style={styles.helpNoticeLink}>Protect time for it</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: '/(tabs)/nova/task-deferral', params: { description: item.description } })}
+                    accessibilityRole="button" accessibilityLabel="Defer or reprioritise it" style={styles.helpChoice}
+                  >
+                    <Text style={styles.helpNoticeLink}>Defer or reprioritise it</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setHelpItemId(null)} accessibilityRole="button" accessibilityLabel="Cancel">
+                    <Text style={styles.helpNoticeText}>Never mind</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -91,6 +97,14 @@ export default function InvisibleLoadScreen() {
             </View>
           ))}
         </ScrollView>
+
+        <TouchableOpacity
+          onPress={() => router.push({ pathname: '/(tabs)/nova/proactive-suggestions', params: { obligation: state.items[0]?.description ?? '' } })}
+          accessibilityRole="button" accessibilityLabel="See what Nova might proactively suggest" style={styles.suggestButton}
+        >
+          <Ionicons name="bulb-outline" size={16} color="#4b5563" />
+          <Text style={styles.suggestButtonText}>See what Nova might proactively suggest</Text>
+        </TouchableOpacity>
 
         <View style={styles.composer}>
           <View style={styles.categoryRow}>
@@ -148,9 +162,12 @@ const styles = StyleSheet.create({
   cardText: { fontSize: 15, color: '#111827', lineHeight: 21 },
   helpButton: { alignSelf: 'flex-start' },
   helpButtonText: { fontSize: 13, color: '#c2410c', fontWeight: '600' },
-  helpNotice: { backgroundColor: '#f3f4f6', borderRadius: 10, padding: 10, gap: 6 },
-  helpNoticeText: { fontSize: 13, color: '#4b5563', lineHeight: 18 },
+  helpNotice: { backgroundColor: '#f3f4f6', borderRadius: 10, padding: 10, gap: 8 },
+  helpChoice: { minHeight: 36, justifyContent: 'center' },
+  helpNoticeText: { fontSize: 13, color: '#6b7280', lineHeight: 18 },
   helpNoticeLink: { fontSize: 13, color: '#c2410c', fontWeight: '700' },
+  suggestButton: { flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', minHeight: 40, marginHorizontal: 16, marginBottom: 8 },
+  suggestButtonText: { fontSize: 12, color: '#4b5563', fontWeight: '600' },
   composer: { padding: 12, gap: 10, borderTopWidth: 1, borderColor: '#e5e7eb' },
   categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: '#e5e7eb' },
