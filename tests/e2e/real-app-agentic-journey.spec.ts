@@ -91,6 +91,19 @@ async function openInvisibleLoadViaPracticalAssistance(page: Page, userText: str
 }
 
 test.describe('Real app (flag ON): advanced journey against real routes and emulators', () => {
+  test('Before Words is accessible from the normal Nova tab and remains skippable', async ({ page }) => {
+    await gotoFlagOnApp(page);
+    await openNovaTab(page);
+    await clickRobustly(page, page.getByRole('button', { name: /start with before words \(optional\)/i }));
+    await expect(page.getByRole('heading', { name: /before words/i })).toBeVisible();
+    await clickRobustly(page, page.getByRole('button', { name: /start whenever you're ready/i }));
+    await clickRobustly(page, page.getByRole('button', { name: /i'd rather not write anything right now/i }));
+    // The skip ending should return to ordinary Nova chat without
+    // requiring the person to enter or retain any personal text.
+    await expect(page.getByRole('button', { name: /start with before words \(optional\)/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send message' })).toBeVisible();
+  });
+
   test('Invisible Load -> Calendar Protection: granted action permission prepares and approves without analytics signals, never writes externally', async ({ page }) => {
     // Proposal preparation is not dependent on the unrelated calendar
     // analytics signal. Consent for external actions is still explicit;
