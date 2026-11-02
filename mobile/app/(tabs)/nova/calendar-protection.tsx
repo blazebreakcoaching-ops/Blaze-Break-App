@@ -38,15 +38,20 @@ export default function CalendarProtectionScreen() {
   const [resultText, setResultText] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       try {
         const res = await secureApiFetch('/api/nova/calendar-protection/action-permission');
         const body = await res.json();
-        setGranted(body?.permission?.granted === true);
+        if (!cancelled) setGranted(body?.permission?.granted === true);
       } catch {
-        setGranted(false);
+        if (!cancelled) setGranted(false);
       }
     })();
+    // Guards against setting state after navigating back while this
+    // request is still in flight (an interrupted request, not just a
+    // slow one).
+    return () => { cancelled = true; };
   }, []);
 
   const togglePermission = async () => {
