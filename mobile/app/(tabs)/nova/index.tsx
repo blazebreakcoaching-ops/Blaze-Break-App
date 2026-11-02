@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '../../../src/lib/auth-context';
 import { secureApiFetch } from '../../../src/lib/secure-api';
+import { useNovaBeforeWords } from '../../../src/lib/nova-before-words-context';
+import { useNovaAgenticJourneyEnabled } from '../../../src/lib/use-nova-agentic-journey';
 import {
   buildNovaMobileChatBody, NOVA_MOBILE_MAX_MESSAGE_LENGTH,
   type NovaMobileMessage,
@@ -42,6 +44,8 @@ function findPracticalAssistanceOffer(planTrace: unknown): PracticalAssistanceOf
 }
 
 function NovaConversation() {
+  const { pending: beforeWordsContext, clear: clearBeforeWords } = useNovaBeforeWords();
+  const advancedJourneyEnabled = useNovaAgenticJourneyEnabled();
   const [messages, setMessages] = useState<NovaMobileMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -55,7 +59,12 @@ function NovaConversation() {
   const send = async () => {
     if (!canSend) return;
     const text = draft.trim();
-    const body = buildNovaMobileChatBody(text, messages);
+    // A user can return from Before Words with one temporary context.
+    // Never include it in displayed/persisted history or a system
+    // instruction; the server quarantines it as lower-trust message data.
+    const body = buildNovaMobileChatBody(text, messages,
+      advancedJourneyEnabled ? beforeWordsContext : null);
+    clearBeforeWords();
     setMessages((current) => [...current, { role: 'user', parts: [{ text }] }]);
     setDraft('');
     setBusy(true);
@@ -120,6 +129,32 @@ function NovaConversation() {
             <Ionicons name="trash-outline" size={20} color="#6b7280" />
           </TouchableOpacity>
         </View>
+
+        {advancedJourneyEnabled && (
+          <View style={styles.beforeWordsPanel}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Start with Before Words"
+              disabled={busy}
+              onPress={() => router.push('/(tabs)/nova/before-words')}
+              style={styles.beforeWordsButton}
+            >
+              <Ionicons name="create-outline" size={18} color="#9a3412" />
+              <Text style={styles.beforeWordsLabel}>Start with Before Words (optional)</Text>
+            </TouchableOpacity>
+            {beforeWordsContext && (
+              <View style={styles.beforeWordsPending}>
+                <Text style={styles.pendingText}>
+                  Your words can help with your next Nova reply. They're not saved as a reflection.
+                </Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Discard Before Words"
+                  onPress={clearBeforeWords} style={styles.discardButton}>
+                  <Text style={styles.discardLabel}>Discard</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
 
         <ScrollView
           ref={scrollRef}
@@ -211,6 +246,13 @@ const styles = StyleSheet.create({
   topBar: { minHeight: 62, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#e5e7eb' },
   titleGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  beforeWordsPanel: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderColor: '#e5e7eb', gap: 8 },
+  beforeWordsButton: { minHeight: 44, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center' },
+  beforeWordsLabel: { color: '#9a3412', fontSize: 13, fontWeight: '700' },
+  beforeWordsPending: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  pendingText: { flex: 1, fontSize: 12, lineHeight: 17, color: '#4b5563' },
+  discardButton: { minHeight: 40, justifyContent: 'center' },
+  discardLabel: { fontSize: 12, color: '#9a3412', fontWeight: '700' },
   subtitle: { fontSize: 12, color: '#6b7280' },
   clearButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   conversation: { flex: 1 },
