@@ -91,26 +91,10 @@ async function openInvisibleLoadViaPracticalAssistance(page: Page, userText: str
 }
 
 test.describe('Real app (flag ON): advanced journey against real routes and emulators', () => {
-  test('Invisible Load -> Calendar Protection: the real propose route honestly refuses an account with no connected calendar signal', async ({ page }) => {
-    // GENUINE FINDING from this phase's own real-app testing, not a
-    // scripted assumption: POST /api/nova/calendar-protection/propose
-    // (server.ts ~6438) checks getCalendarConnectionState(db, uid) BEFORE
-    // it checks calendar action permission, and returns 403 "Calendar
-    // signals are not enabled for this account" whenever it is
-    // 'not_connected' - which every fresh account is, since nothing in
-    // this codebase's real UI ever writes the live_signals/calendar doc
-    // that function reads (it is populated only by a real, separate
-    // Google Calendar OAuth-based meeting-load signal, unrelated to
-    // Calendar Protection, that this environment has no way to connect).
-    // The dev-preview suite (calendar-protection.spec.ts,
-    // nhei-phase5-journey.spec.ts) never discovered this because it
-    // mocks the propose ROUTE directly via page.route(), bypassing this
-    // real server-side precondition entirely. Concretely: today, NO
-    // account - synthetic or real - can get a Calendar Protection
-    // proposal past this first check in the real app, which is a
-    // stronger, earlier block than the (also real) hardcoded-off
-    // execution gate, and is recorded as a staging-readiness blocker in
-    // this phase's own report rather than worked around here.
+  test('Invisible Load -> Calendar Protection: granted action permission prepares and approves without analytics signals, never writes externally', async ({ page }) => {
+    // Proposal preparation is not dependent on the unrelated calendar
+    // analytics signal. Consent for external actions is still explicit;
+    // actual connector execution is hard-disabled.
     await gotoFlagOnApp(page);
     await openNovaTab(page);
     await openInvisibleLoadViaPracticalAssistance(page, 'I am so behind on the quarterly board deck.');
@@ -121,13 +105,19 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     await clickRobustly(page, page.getByRole('button', { name: /^protect time for it$/i }));
 
     await expect(page.getByPlaceholder('What should this protected time be called?')).toHaveValue(/Finish the quarterly board deck/);
+    const grant = page.getByRole('button', { name: /^grant$/i });
+    await expect(grant).toBeVisible();
+    await clickRobustly(page, grant);
+    await expect(page.getByText('Granted', { exact: true })).toBeVisible();
     await page.getByLabel(/start time/i).fill('2026-03-02T14:00');
     await page.getByLabel(/end time/i).fill('2026-03-02T14:30');
     await clickRobustly(page, page.getByRole('button', { name: /prepare this proposal/i }));
 
-    // Real server response - an honest, specific refusal, never a crash
-    // or a silently-ignored click.
-    await expect(page.getByText(/calendar signals are not enabled for this account/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /show for approval/i })).toBeVisible();
+    await clickRobustly(page, page.getByRole('button', { name: /show for approval/i }));
+    await clickRobustly(page, page.getByRole('button', { name: /approve exactly this/i }));
+    await clickRobustly(page, page.getByRole('button', { name: /try to apply this/i }));
+    await expect(page.getByText(/nothing was actually sent to your calendar/i)).toBeVisible();
   });
 
   test('Proactive Suggestions: the real server honestly withholds a Calendar Protection suggestion until calendar action permission is actually granted', async ({ page }) => {
