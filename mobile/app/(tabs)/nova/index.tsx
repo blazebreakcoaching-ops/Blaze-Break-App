@@ -102,6 +102,7 @@ function NovaConversation() {
           setError(null);
           setDraft('');
           setPracticalAssistanceOffer(null);
+          clearBeforeWords();
           practicalAssistanceOfferShownRef.current = false;
         },
       },
