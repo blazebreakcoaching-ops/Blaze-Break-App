@@ -19,6 +19,7 @@
 
 import type { DeltaStateKey } from './energy-delta-engine';
 import type { InterventionCandidate, RouteType } from './recovery-routing-engine';
+import { isHighRisingRecoveryDebt } from './recovery-derived-signals';
 
 export const MODULE_ROUTE_MAP: Record<string, RouteType> = {
   guided_reset: 'STABILISE',
@@ -106,6 +107,9 @@ export interface RoutingSignalInput {
   // it never decides the window.
   recentTriggers: RecentTriggerSignal[];
   recentMoodPulses: RecentMoodSignal[];
+  // Same server-owned, 30-day non-clinical recovery summary Pulse already
+  // consults. Absent or stale summaries contribute no candidate.
+  derivedRecoveryDebt?: unknown;
   nowMs: number;
   // Real per-module recency/decline history, keyed by sourceModule -
   // optional (defaults to "no history" for every module) so this stays
@@ -290,6 +294,36 @@ const buildUnderstandCandidate = (input: RoutingSignalInput): InterventionCandid
   };
 };
 
+// A shared Recovery Intelligence signal can contribute an ordinary
+// RECOVER candidate; the existing router still owns ALL arbitration,
+// bandwidth checks, session budgets and cooldowns. No separate decision
+// chain and no intervention from an unavailable or stale summary.
+const buildDerivedRecoveryCandidate = (input: RoutingSignalInput): InterventionCandidate | null => {
+  if (!isHighRisingRecoveryDebt(input.derivedRecoveryDebt, input.nowMs)) return null;
+  return {
+    candidateId: 'energy_delta_rising_recovery_debt',
+    sourceModule: 'energy_delta',
+    routeType: 'RECOVER',
+    reasonCode: 'recovery_foundation_low',
+    evidence: {
+      source: 'deterministic_calculation',
+      confidence: 'medium',
+      detail: 'Recent self-reported recovery indicators suggest that recovery load has increased.',
+    },
+    userEffort: 'low_bandwidth',
+    estimatedDurationMinutes: 3,
+    urgency: 'medium',
+    requiresReflection: false,
+    requiresExternalAction: false,
+    requiresConnector: false,
+    requiresHumanContact: false,
+    structuralProblem: false,
+    prerequisitesMet: true,
+    ...historyFor(input.moduleHistory, 'energy_delta'),
+    eligibleForPrivacyZone: true,
+  };
+};
+
 // The single entry point: every rule above is independently evaluated and
 // independently either does or doesn't contribute a candidate - the actual
 // choice between them is recovery-routing-engine.ts's job, not this one's.
@@ -299,6 +333,7 @@ export const buildSignalCandidates = (input: RoutingSignalInput): InterventionCa
     buildReduceCandidate(input),
     buildProtectCandidate(input),
     buildRecoverCandidate(input),
+    buildDerivedRecoveryCandidate(input),
     buildUnderstandCandidate(input),
   ].filter((c): c is InterventionCandidate => c !== null);
 
