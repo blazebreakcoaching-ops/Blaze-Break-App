@@ -50,14 +50,14 @@ describe('POST /api/recovery/recalculate', () => {
       { stressLoad: 7, energyLevel: 4 },
       { stressLoad: 5, energyLevel: 6 },
     ].entries()) {
-      seedDoc(`users/${USER}/checkins/c${i}`, entry);
+      seedDoc(`users/${USER}/checkins/c${i}`, { ...entry, createdAt: new Date(Date.now() - (2 - i) * 86400000).toISOString() });
     }
     for (const [i, entry] of [
       { moodLabel: 'calm', intensity: 5 },
       { moodLabel: 'tired', intensity: 4 },
       { moodLabel: 'frustrated', intensity: 6 },
     ].entries()) {
-      seedDoc(`users/${USER}/mood_pulses/m${i}`, entry);
+      seedDoc(`users/${USER}/mood_pulses/m${i}`, { ...entry, createdAt: new Date(Date.now() - (2 - i) * 86400000).toISOString() });
     }
     const res = await request(app)
       .post('/api/recovery/recalculate')
@@ -90,10 +90,10 @@ describe('POST /api/recovery/recalculate', () => {
   });
 
   it('ignores fabricated client data and uses only the authenticated user\'s saved records', async () => {
-    seedDoc(`users/${USER}/checkins/genuine`, { stressLoad: 4, energyLevel: 6 });
+    seedDoc(`users/${USER}/checkins/genuine`, { stressLoad: 4, energyLevel: 6, createdAt: new Date().toISOString() });
     // Another account's records must never be consulted.
     for (let i = 0; i < 5; i++) {
-      seedDoc(`users/other_user/checkins/other_${i}`, { stressLoad: 10, energyLevel: 1 });
+      seedDoc(`users/other_user/checkins/other_${i}`, { stressLoad: 10, energyLevel: 1, createdAt: new Date().toISOString() });
     }
     const response = await request(app)
       .post('/api/recovery/recalculate')
@@ -115,6 +115,7 @@ describe('POST /api/recovery/recalculate', () => {
     for (let i = 0; i < 150; i++) {
       seedDoc(`users/${USER}/checkins/checkin_${String(i).padStart(3, '0')}`, {
         stressLoad: 6, energyLevel: 4,
+        createdAt: new Date(Date.now() - i * 60000).toISOString(),
       });
     }
     const response = await request(app).post('/api/recovery/recalculate')
@@ -122,6 +123,41 @@ describe('POST /api/recovery/recalculate', () => {
     expect(response.status).toBe(200);
     expect(response.body.summaries.recovery_debt.sourceCount).toBe(100);
     expect(response.body.summaries.energy_trend.sourceCount).toBe(100);
+  });
+
+  it('uses only dated records within the declared 30-day reporting window', async () => {
+    seedDoc(`users/${USER}/checkins/old`, {
+      stressLoad: 10, energyLevel: 1,
+      createdAt: new Date(Date.now() - 46 * 86400000).toISOString(),
+    });
+    seedDoc(`users/${USER}/checkins/recent`, {
+      stressLoad: 4, energyLevel: 7,
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+    });
+    seedDoc(`users/${USER}/checkins/undated`, { stressLoad: 10, energyLevel: 1 });
+    const response = await request(app).post('/api/recovery/recalculate')
+      .set(auth(USER)).send({});
+    expect(response.status).toBe(200);
+    expect(response.body.summaries.recovery_debt.sourceCount).toBe(1);
+    expect(response.body.summaries.recovery_debt.status).toBe('not_enough_data');
+  });
+
+  it('computes a rising energy direction from oldest-to-newest observations', async () => {
+    // Reverse alphabetical IDs make accidental document-ID ordering a
+    // misleading signal: the calculation must follow createdAt.
+    for (const [id, daysAgo, energyLevel] of [
+      ['z_old', 3, 1], ['m_middle', 2, 3], ['a_recent', 1, 8],
+    ] as const) {
+      seedDoc(`users/${USER}/checkins/${id}`, {
+        stressLoad: 5, energyLevel,
+        createdAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+      });
+    }
+    const response = await request(app).post('/api/recovery/recalculate')
+      .set(auth(USER)).send({});
+    expect(response.status).toBe(200);
+    expect(response.body.summaries.energy_trend.status).toBe('available');
+    expect(response.body.summaries.energy_trend.direction).toBe('rising');
   });
 
   it('500s if persisting a derived summary throws', async () => {
