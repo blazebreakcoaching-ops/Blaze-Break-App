@@ -210,29 +210,13 @@ export const RecoveryIntelligenceLayer = ({ fingerprint, isDemoSession }: Recove
     setRecalculateError(null);
     setRecalculateSuccess(false);
     try {
-      // 1. Fetch data from firestore first
-      const { getDocs, collection } = await import('firebase/firestore');
-      const checkinsSnap = await getDocs(collection(db, 'users', user.uid, 'checkins'));
-      const budgetsSnap = await getDocs(collection(db, 'users', user.uid, 'energy_budgets'));
-      const moodPulsesSnap = await getDocs(collection(db, 'users', user.uid, 'mood_pulses'));
-      const bodyCheckinsSnap = await getDocs(collection(db, 'users', user.uid, 'body_checkins'));
-      const winsSnap = await getDocs(collection(db, 'users', user.uid, 'wins'));
-      const weeklyReviewsSnap = await getDocs(collection(db, 'users', user.uid, 'weekly_reviews'));
-      const goalsSnap = await getDocs(collection(db, 'users', user.uid, 'goals'));
-
-      const payload = {
-        checkins: checkinsSnap.docs.map(d => ({id: d.id, ...d.data()})),
-        energy_budgets: budgetsSnap.docs.map(d => ({id: d.id, ...d.data()})),
-        mood_pulses: moodPulsesSnap.docs.map(d => ({id: d.id, ...d.data()})),
-        body_checkins: bodyCheckinsSnap.docs.map(d => ({id: d.id, ...d.data()})),
-        wins: winsSnap.docs.map(d => ({id: d.id, ...d.data()})),
-        weekly_reviews: weeklyReviewsSnap.docs.map(d => ({id: d.id, ...d.data()})),
-        goals: goalsSnap.docs.map(d => ({id: d.id, ...d.data()}))
-      };
-
+      // The authenticated backend reads the member's persisted
+      // check-ins, budgets, mood, body signals, wins, reviews and goals
+      // directly from their own Firestore collections. Never send
+      // caller-assembled records or duplicate seven full collection reads.
       const res = await secureApiFetch('/api/recovery/recalculate', {
         method: 'POST',
-        body: JSON.stringify(payload)
+        data: {},
       });
       const data = await res.json();
       if (data.success && data.summaries) {
