@@ -124,7 +124,11 @@ export default function PulseScreen() {
 
   const handleRecommendationPress = async () => {
     if (!recommendation || recommendation.type === 'no_action' || outcomeSaving) return;
-    if (recommendation.decisionId && !(await recordRecommendationOutcome('started'))) return;
+    // A fallback route to Nova is not the user starting the recommended
+    // intervention. Report "started" only for an actual native destination.
+    const actualNativeTool = recommendation.tab === 'home'
+      || recommendation.tab === 'diagnose' || recommendation.tab === 'reset';
+    if (recommendation.decisionId && actualNativeTool && !(await recordRecommendationOutcome('started'))) return;
     if (recommendation.tab === 'home') {
       setCheckInVisible(true);
       return;
@@ -165,7 +169,7 @@ export default function PulseScreen() {
               <Text style={styles.cardMessage}>{recommendation.message}</Text>
               {recommendation.type !== 'no_action' && <TouchableOpacity style={styles.cardButton} disabled={outcomeSaving} onPress={handleRecommendationPress} accessibilityRole="button">
                 <Text style={styles.cardButtonText}>
-                  {recommendation.decisionId
+                  {recommendation.decisionId && (recommendation.tab === 'home' || recommendation.tab === 'diagnose' || recommendation.tab === 'reset')
                     ? `Start ${recommendation.tool}`
                     : recommendation.tab === 'home'
                       ? 'Open quick check-in'
