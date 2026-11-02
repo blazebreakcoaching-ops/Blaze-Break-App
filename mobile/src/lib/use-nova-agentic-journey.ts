@@ -14,7 +14,13 @@ export function useNovaAgenticJourneyEnabled(): boolean {
 
   useEffect(() => {
     let cancelled = false;
-    setEnabledFor(null);
+    // No explicit reset here: the return value below already requires
+    // `enabledFor === user` by reference, so it is automatically false
+    // for any new sign-in or sign-out (a fresh User object, or null)
+    // until this effect's own fetch for THAT user succeeds. Calling
+    // setState synchronously at the top of an effect to force that same
+    // reset would just be redundant render-churn (and is exactly what
+    // react-hooks/set-state-in-effect flags).
     if (!user) return () => { cancelled = true; };
 
     void (async () => {

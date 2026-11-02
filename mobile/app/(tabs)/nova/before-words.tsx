@@ -23,6 +23,23 @@ const MAX_FREE_TEXT = 2000;
 const MAX_PROMPT_TEXT = 1000;
 const MAX_CORRECTION = 1000;
 
+// Declared outside the screen component (not re-created on every render
+// of NativeBeforeWords) - react-hooks/static-components flags a
+// component defined inside another component's body as an error, since
+// it would lose its own identity/state on every parent re-render.
+function Button({ label, onPress, outline = false }: {
+  label: string; onPress: () => void; outline?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
+      style={[styles.button, outline && styles.buttonOutline]}
+    >
+      <Text style={[styles.buttonText, outline && styles.buttonOutlineText]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function NativeBeforeWords() {
   const [state, setState] = useState(initNheiBeforeWordsState);
   const [correctionDraft, setCorrectionDraft] = useState('');
@@ -35,17 +52,6 @@ export default function NativeBeforeWords() {
     setPending(discardAll ? null : buildTemporaryNovaContextFromBeforeWords(final));
     router.back();
   };
-
-  const Button = ({ label, onPress, outline = false }: {
-    label: string; onPress: () => void; outline?: boolean;
-  }) => (
-    <TouchableOpacity
-      onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
-      style={[styles.button, outline && styles.buttonOutline]}
-    >
-      <Text style={[styles.buttonText, outline && styles.buttonOutlineText]}>{label}</Text>
-    </TouchableOpacity>
-  );
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
