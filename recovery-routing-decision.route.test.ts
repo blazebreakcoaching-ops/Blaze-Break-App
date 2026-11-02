@@ -26,7 +26,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -138,6 +138,20 @@ describe('POST /api/recovery/routing-decision', () => {
       .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
     expect(res.body.selectedModule).toBe('guided_reset');
     expect(res.body.selectedRoute).toBe('STABILISE');
+  });
+
+  it('degrades gracefully if the optional derived-summary read fails', async () => {
+    const restore = forceDocError(`users/${USER}/derived/recovery_debt`, 'get',
+      new Error('simulated optional trend read failure'));
+    try {
+      const response = await request(app).post('/api/recovery/routing-decision')
+        .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+      expect(response.status).toBe(200);
+      expect(response.body.selectedModule).toBeNull();
+      expect(response.body.routingOutcome).toBe('none_needed');
+    } finally {
+      restore();
+    }
   });
 
   it('an explicit request for a known module is respected even with no other signal', async () => {
