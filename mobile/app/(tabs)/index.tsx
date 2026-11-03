@@ -6,7 +6,10 @@
 // localStorage tools not in Phase 1 - see the mobile plan). Widget grid,
 // gamification, streaks etc. are out of scope this phase.
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { Text } from '../../src/lib/native-ui';
+import { useNativeTheme } from '../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../src/lib/native-theme-palette';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,6 +41,7 @@ const TAB_ROUTES: Record<string, string> = {
 };
 
 export default function PulseScreen() {
+  const styles = useThemedStyles();
   const { user } = useAuth();
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(true);
@@ -149,7 +153,7 @@ export default function PulseScreen() {
         <View style={styles.headerRow}>
           <Text style={styles.header}>Pulse</Text>
           <TouchableOpacity onPress={() => router.push('/account')} accessibilityLabel="Account" hitSlop={12}>
-            <Ionicons name="person-circle-outline" size={28} color="#9a3412" />
+            <Ionicons name="person-circle-outline" size={28} color={styles.colors.accent} />
           </TouchableOpacity>
         </View>
 
@@ -224,51 +228,56 @@ export default function PulseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   container: { padding: 20, paddingBottom: 40 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   header: { fontSize: 28, fontWeight: '800' },
   signUpBanner: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.accentSoft,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#fed7aa',
+    borderColor: colors.accentBorder,
   },
-  signUpBannerText: { color: '#9a3412', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  signUpBannerText: { color: colors.accent, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   card: {
-    backgroundColor: '#fafafa',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     padding: 18,
     marginBottom: 16,
   },
-  cardEyebrow: { fontSize: 11, fontWeight: '800', color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  cardEyebrow: { fontSize: 11, fontWeight: '800', color: colors.subtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   cardTitle: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
-  cardMessage: { fontSize: 14, color: '#444', lineHeight: 20 },
-  cardSubtext: { fontSize: 13, color: '#777', marginTop: 6 },
+  cardMessage: { fontSize: 14, color: colors.muted, lineHeight: 20 },
+  cardSubtext: { fontSize: 13, color: colors.muted, marginTop: 6 },
   cardLoading: { marginVertical: 8 },
   cardButton: {
-    backgroundColor: '#ea580c',
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
     marginTop: 14,
   },
-  cardButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  cardButtonText: { color: colors.onAccent, fontWeight: '700', fontSize: 14 },
   declineButton: { alignItems: 'center', paddingVertical: 12 },
-  declineButtonText: { color: '#666', fontWeight: '600', fontSize: 14 },
-  outcomeError: { color: '#9a3412', fontSize: 12, marginTop: 6 },
+  declineButtonText: { color: colors.muted, fontWeight: '600', fontSize: 14 },
+  outcomeError: { color: colors.accent, fontSize: 12, marginTop: 6 },
   claimButton: {
     borderWidth: 2,
-    borderColor: '#ea580c',
+    borderColor: colors.accent,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
   },
-  claimButtonText: { color: '#ea580c', fontWeight: '800', fontSize: 16 },
+  claimButtonText: { color: colors.accent, fontWeight: '800', fontSize: 16 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

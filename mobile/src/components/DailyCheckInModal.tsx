@@ -5,7 +5,10 @@
 // from. Deliberately just the 4-slider submit flow, not history/edit/
 // delete - those aren't part of Pulse's "one clear next step" loop.
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from 'react-native';
+import { Text } from '../lib/native-ui';
+import { useNativeTheme } from '../lib/native-theme';
+import type { NativeThemeColors } from '../lib/native-theme-palette';
 import Slider from '@react-native-community/slider';
 import { doc, setDoc } from 'firebase/firestore';
 import { getDb, auth } from '../lib/firebase';
@@ -25,6 +28,7 @@ const SLIDERS: { key: 'energyLevel' | 'focusLevel' | 'detachmentLevel' | 'stress
 ];
 
 export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckInModalProps) {
+  const styles = useThemedStyles();
   const [values, setValues] = useState({ energyLevel: 5, focusLevel: 5, detachmentLevel: 5, stressLoad: 5 });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +76,7 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
               step={1}
               value={values[s.key]}
               onValueChange={(v) => setValues((prev) => ({ ...prev, [s.key]: v }))}
-              minimumTrackTintColor="#ea580c"
+              minimumTrackTintColor={styles.colors.accent}
             />
             <View style={styles.sliderCaptions}>
               <Text style={styles.caption}>{s.low}</Text>
@@ -82,7 +86,7 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
         ))}
         {error && <Text style={styles.error}>{error}</Text>}
         <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={saving}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Pulse</Text>}
+          {saving ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>Save Pulse</Text>}
         </TouchableOpacity>
         <TouchableOpacity onPress={onClose} disabled={saving}>
           <Text style={styles.cancel}>Not now</Text>
@@ -92,19 +96,24 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  scroll: { flex: 1, backgroundColor: colors.background },
   container: { padding: 24, paddingTop: 32, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
-  subtitle: { fontSize: 13, color: '#666', textAlign: 'center', marginTop: 4, marginBottom: 24 },
+  subtitle: { fontSize: 13, color: colors.muted, textAlign: 'center', marginTop: 4, marginBottom: 24 },
   sliderRow: { marginBottom: 20 },
   sliderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   sliderLabel: { fontSize: 15, fontWeight: '600' },
-  sliderValue: { fontSize: 13, color: '#ea580c', fontWeight: '700' },
+  sliderValue: { fontSize: 13, color: colors.accent, fontWeight: '700' },
   sliderCaptions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
-  caption: { fontSize: 11, color: '#999' },
-  error: { color: '#dc2626', textAlign: 'center', marginBottom: 12, fontSize: 13 },
-  button: { backgroundColor: '#ea580c', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  cancel: { textAlign: 'center', marginTop: 16, color: '#999' },
+  caption: { fontSize: 11, color: colors.subtle },
+  error: { color: colors.danger, textAlign: 'center', marginBottom: 12, fontSize: 13 },
+  button: { backgroundColor: colors.accent, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
+  buttonText: { color: colors.onAccent, fontWeight: '700', fontSize: 16 },
+  cancel: { textAlign: 'center', marginTop: 16, color: colors.subtle },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

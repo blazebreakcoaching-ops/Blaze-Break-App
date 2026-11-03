@@ -7,7 +7,10 @@
 // ported (see reset-techniques.ts's own note) - a simple pulsing circle
 // stands in for the pacer.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import { Text } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { secureApiFetch } from '../../../src/lib/secure-api';
 import { usePoints } from '../../../src/lib/use-points';
@@ -16,6 +19,7 @@ import { BREATHING_MODES, GROUNDING_MODES, BreathingModeKey, GroundingModeKey } 
 type Section = 'breathwork' | 'grounding';
 
 export default function NervousSystemResetScreen() {
+  const styles = useThemedStyles();
   const { awardPoints } = usePoints();
   const [section, setSection] = useState<Section>('breathwork');
   const [activeMode, setActiveMode] = useState<BreathingModeKey | null>(null);
@@ -178,32 +182,37 @@ export default function NervousSystemResetScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   container: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 28, fontWeight: '800', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#666', lineHeight: 20, marginBottom: 20 },
-  tabRow: { flexDirection: 'row', backgroundColor: '#f5f5f5', borderRadius: 12, padding: 4, marginBottom: 20 },
+  subtitle: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: 20 },
+  tabRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 12, padding: 4, marginBottom: 20 },
   tab: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
-  tabActive: { backgroundColor: '#fff' },
-  tabText: { fontSize: 13, fontWeight: '700', color: '#999' },
-  tabTextActive: { color: '#ea580c' },
+  tabActive: { backgroundColor: colors.card },
+  tabText: { fontSize: 13, fontWeight: '700', color: colors.subtle },
+  tabTextActive: { color: colors.accent },
   list: { gap: 12 },
-  techniqueCard: { backgroundColor: '#fafafa', borderRadius: 14, borderWidth: 1, borderColor: '#eee', padding: 16 },
+  techniqueCard: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16 },
   techniqueName: { fontSize: 15, fontWeight: '700' },
-  techniqueDescription: { fontSize: 12, color: '#777', marginTop: 3 },
+  techniqueDescription: { fontSize: 12, color: colors.muted, marginTop: 3 },
   playerContainer: { alignItems: 'center', paddingTop: 8 },
-  backLink: { fontSize: 13, color: '#ea580c', fontWeight: '600', alignSelf: 'flex-start', marginBottom: 20 },
+  backLink: { fontSize: 13, color: colors.accent, fontWeight: '600', alignSelf: 'flex-start', marginBottom: 20 },
   playerTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  playerInstruction: { fontSize: 13, color: '#666', textAlign: 'center', marginTop: 6, marginBottom: 32 },
-  pacerCircle: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#fed7aa', marginBottom: 32 },
-  playButton: { backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
-  playButtonText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  playerInstruction: { fontSize: 13, color: colors.muted, textAlign: 'center', marginTop: 6, marginBottom: 32 },
+  pacerCircle: { width: 120, height: 120, borderRadius: 60, backgroundColor: colors.accentSoft, marginBottom: 32 },
+  playButton: { backgroundColor: colors.accent, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
+  playButtonText: { color: colors.onAccent, fontWeight: '800', fontSize: 14 },
   checklist: { width: '100%', gap: 12 },
   checklistItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#ddd', alignItems: 'center', justifyContent: 'center' },
-  checkboxChecked: { backgroundColor: '#ea580c', borderColor: '#ea580c' },
-  checkmark: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  checklistText: { fontSize: 15, color: '#333', flex: 1 },
-  checklistTextDone: { color: '#999', textDecorationLine: 'line-through' },
+  checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { backgroundColor: colors.accent, borderColor: colors.accent },
+  checkmark: { color: colors.onAccent, fontSize: 13, fontWeight: '800' },
+  checklistText: { fontSize: 15, color: colors.text, flex: 1 },
+  checklistTextDone: { color: colors.subtle, textDecorationLine: 'line-through' },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

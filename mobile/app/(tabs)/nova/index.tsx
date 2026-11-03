@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
-import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
-} from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -44,6 +44,7 @@ function findPracticalAssistanceOffer(planTrace: unknown): PracticalAssistanceOf
 }
 
 function NovaConversation() {
+  const styles = useThemedStyles();
   const { pending: beforeWordsContext, clear: clearBeforeWords } = useNovaBeforeWords();
   const advancedJourneyEnabled = useNovaAgenticJourneyEnabled();
   const [messages, setMessages] = useState<NovaMobileMessage[]>([]);
@@ -129,7 +130,7 @@ function NovaConversation() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.topBar}>
           <View style={styles.titleGroup}>
-            <Ionicons name="sparkles-outline" size={23} color="#c2410c" />
+            <Ionicons name="sparkles-outline" size={23} color={styles.colors.accent} />
             <View>
               <Text style={styles.title}>Nova</Text>
               <Text style={styles.subtitle}>Your Blaze Break conversation</Text>
@@ -142,7 +143,7 @@ function NovaConversation() {
             accessibilityLabel="Clear Nova conversation"
             style={styles.clearButton}
           >
-            <Ionicons name="trash-outline" size={20} color="#6b7280" />
+            <Ionicons name="trash-outline" size={20} color={styles.colors.muted} />
           </TouchableOpacity>
         </View>
 
@@ -155,7 +156,7 @@ function NovaConversation() {
               onPress={() => router.push('/(tabs)/nova/before-words')}
               style={styles.beforeWordsButton}
             >
-              <Ionicons name="create-outline" size={18} color="#9a3412" />
+              <Ionicons name="create-outline" size={18} color={styles.colors.accent} />
               <Text style={styles.beforeWordsLabel}>Start with Before Words (optional)</Text>
             </TouchableOpacity>
             {beforeWordsContext && (
@@ -182,7 +183,7 @@ function NovaConversation() {
         >
           {messages.length === 0 && (
             <View style={styles.emptyState}>
-              <Ionicons name="chatbubbles-outline" size={40} color="#9a3412" />
+              <Ionicons name="chatbubbles-outline" size={40} color={styles.colors.accent} />
               <Text style={styles.emptyTitle}>What's on your mind?</Text>
               <Text style={styles.emptyText}>
                 Talk through a challenge or something on your plate. You can start wherever feels useful.
@@ -216,7 +217,7 @@ function NovaConversation() {
               </TouchableOpacity>
             </View>
           )}
-          {busy && <ActivityIndicator accessibilityLabel="Nova is responding" style={styles.spinner} color="#9a3412" />}
+          {busy && <ActivityIndicator accessibilityLabel="Nova is responding" style={styles.spinner} color={styles.colors.accent} />}
         </ScrollView>
 
         {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
@@ -226,7 +227,7 @@ function NovaConversation() {
             value={draft}
             onChangeText={setDraft}
             placeholder="Message Nova..."
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={styles.colors.muted}
             style={styles.input}
             multiline
             maxLength={NOVA_MOBILE_MAX_MESSAGE_LENGTH}
@@ -241,7 +242,7 @@ function NovaConversation() {
             accessibilityLabel="Send message"
             style={[styles.sendButton, !canSend && styles.sendDisabled]}
           >
-            <Ionicons name="arrow-up" size={23} color="#fff" />
+            <Ionicons name="arrow-up" size={23} color={styles.colors.onAccent} />
           </TouchableOpacity>
         </View>
         <Text style={styles.footnote}>Messages in this screen are not saved across app restarts yet.</Text>
@@ -256,41 +257,46 @@ export default function NovaTab() {
   return <NovaConversation key={user?.uid ?? 'signed-out'} />;
 }
 
-const styles = StyleSheet.create({
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
   flex: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: '#fff' },
-  topBar: { minHeight: 62, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#e5e7eb' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  topBar: { minHeight: 62, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: colors.border },
   titleGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  title: { fontSize: 20, fontWeight: '800', color: '#111827' },
-  beforeWordsPanel: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderColor: '#e5e7eb', gap: 8 },
+  title: { fontSize: 20, fontWeight: '800', color: colors.text },
+  beforeWordsPanel: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderColor: colors.border, gap: 8 },
   beforeWordsButton: { minHeight: 44, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center' },
-  beforeWordsLabel: { color: '#9a3412', fontSize: 13, fontWeight: '700' },
+  beforeWordsLabel: { color: colors.accent, fontSize: 13, fontWeight: '700' },
   beforeWordsPending: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-  pendingText: { flex: 1, fontSize: 12, lineHeight: 17, color: '#4b5563' },
+  pendingText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.muted },
   discardButton: { minHeight: 40, justifyContent: 'center' },
-  discardLabel: { fontSize: 12, color: '#9a3412', fontWeight: '700' },
-  subtitle: { fontSize: 12, color: '#6b7280' },
+  discardLabel: { fontSize: 12, color: colors.accent, fontWeight: '700' },
+  subtitle: { fontSize: 12, color: colors.muted },
   clearButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   conversation: { flex: 1 },
   messageContainer: { paddingHorizontal: 16, paddingVertical: 20, gap: 12, flexGrow: 1 },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, gap: 12 },
-  emptyTitle: { fontSize: 21, fontWeight: '700', color: '#111827', textAlign: 'center' },
-  emptyText: { color: '#4b5563', fontSize: 15, lineHeight: 22, textAlign: 'center' },
+  emptyTitle: { fontSize: 21, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  emptyText: { color: colors.muted, fontSize: 15, lineHeight: 22, textAlign: 'center' },
   bubble: { maxWidth: '88%', padding: 13, borderRadius: 16, minHeight: 44 },
-  userBubble: { alignSelf: 'flex-end', backgroundColor: '#9a3412', borderBottomRightRadius: 4 },
-  novaBubble: { alignSelf: 'flex-start', backgroundColor: '#f3f4f6', borderBottomLeftRadius: 4 },
-  messageText: { color: '#111827', fontSize: 16, lineHeight: 23 },
-  userText: { color: '#fff' },
+  userBubble: { alignSelf: 'flex-end', backgroundColor: colors.accent, borderBottomRightRadius: 4 },
+  novaBubble: { alignSelf: 'flex-start', backgroundColor: colors.surface, borderBottomLeftRadius: 4 },
+  messageText: { color: colors.text, fontSize: 16, lineHeight: 23 },
+  userText: { color: colors.onAccent },
   spinner: { alignSelf: 'flex-start', padding: 12 },
-  offerCard: { alignSelf: 'flex-start', maxWidth: '92%', backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 16, padding: 14, gap: 10 },
-  offerReason: { color: '#111827', fontSize: 14, lineHeight: 20 },
-  offerButton: { backgroundColor: '#c2410c', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
-  offerButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  offerDismiss: { color: '#6b7280', fontSize: 12, textAlign: 'center' },
-  error: { paddingHorizontal: 16, paddingVertical: 6, color: '#b91c1c', fontSize: 13 },
-  composer: { paddingHorizontal: 12, paddingTop: 10, flexDirection: 'row', gap: 8, alignItems: 'flex-end', borderTopWidth: 1, borderColor: '#e5e7eb' },
-  input: { flex: 1, maxHeight: 126, minHeight: 46, paddingHorizontal: 14, paddingVertical: 12, color: '#111827', fontSize: 16, backgroundColor: '#f3f4f6', borderRadius: 16 },
-  sendButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: '#c2410c', alignItems: 'center', justifyContent: 'center' },
+  offerCard: { alignSelf: 'flex-start', maxWidth: '92%', backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentBorder, borderRadius: 16, padding: 14, gap: 10 },
+  offerReason: { color: colors.text, fontSize: 14, lineHeight: 20 },
+  offerButton: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  offerButtonText: { color: colors.onAccent, fontWeight: '700', fontSize: 13 },
+  offerDismiss: { color: colors.muted, fontSize: 12, textAlign: 'center' },
+  error: { paddingHorizontal: 16, paddingVertical: 6, color: colors.danger, fontSize: 13 },
+  composer: { paddingHorizontal: 12, paddingTop: 10, flexDirection: 'row', gap: 8, alignItems: 'flex-end', borderTopWidth: 1, borderColor: colors.border },
+  input: { flex: 1, maxHeight: 126, minHeight: 46, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: 16, backgroundColor: colors.surface, borderRadius: 16 },
+  sendButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   sendDisabled: { opacity: 0.45 },
-  footnote: { fontSize: 10, color: '#6b7280', textAlign: 'center', paddingVertical: 6 },
+  footnote: { fontSize: 10, color: colors.muted, textAlign: 'center', paddingVertical: 6 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}
