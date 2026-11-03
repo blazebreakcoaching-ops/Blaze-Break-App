@@ -26,3 +26,17 @@ export function assertPublicLegalRoute(path: string, origin: string): string {
   }
   return path;
 }
+
+
+export type PublicPasswordRoute =
+  | '/api/auth/password-reset/request'
+  | '/api/auth/password-reset/confirm-notify';
+
+export function assertPublicPasswordRoute(path: string, origin: string): PublicPasswordRoute {
+  assertWebApiRoute(path, origin);
+  if (path !== '/api/auth/password-reset/request' &&
+      path !== '/api/auth/password-reset/confirm-notify') {
+    throw new Error('Public password API only permits fixed reset endpoints');
+  }
+  return path;
+}

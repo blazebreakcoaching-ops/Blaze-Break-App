@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider, getAdditionalUserInfo, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, authPersistenceReady, getDb } from './firebase';
-import { secureApiFetch } from './secure-api';
+import { secureApiFetch, publicPasswordApiFetch } from './secure-api';
 import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken } from './mfa-session';
 import { AuthRole } from '../types';
 
@@ -500,7 +500,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // The server generates the actual reset link and does the sending;
   // this always resolves (never reveals whether the email has an account).
   const sendPasswordReset = async (email: string) => {
-    await secureApiFetch('/api/auth/password-reset/request', { method: 'POST', data: { email } });
+    await publicPasswordApiFetch('/api/auth/password-reset/request', { email });
   };
 
   // Called from MfaChallenge.tsx once someone enters a correct code or

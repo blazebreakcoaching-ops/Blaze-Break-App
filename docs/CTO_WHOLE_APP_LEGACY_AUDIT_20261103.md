@@ -78,3 +78,6 @@ These are GitHub commits, NOT test passes, Firebase operations, production deplo
 5. Obtain independent staging, legal, native-device and operational acceptance. Then present a controlled website rollout, a separate native-release plan and rollback for owner approval.
 
 **Accuracy note:** This is a broad source-level and architecture gap audit with specific fixes and risk classification, NOT a claim that every line across the thousand-file repository is verified, that all route tests are green, or that production is ready.
+
+## Legacy password-recovery correction (appended after the main audit)
+The login form's Forgot password action called secureApiFetch, which required auth.currentUser, while the server's password-reset request route is specifically unauthenticated. An explicitly signed-out person therefore could not recover access. AuthActionPage also attempted a post-reset notification through the authenticated helper. Both now call a fixed-route publicPasswordApiFetch helper which sends only App Check (not Firebase bearer credentials) to the two server-permitted password routes. Route allowlist regression tests were added. Password-reset e2e tests against signed-out browsers and Brevo/IAM remain required; no production delivery has been verified.

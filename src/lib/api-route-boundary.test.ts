@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertWebApiRoute, assertPublicLegalRoute } from './api-route-boundary';
+import { assertWebApiRoute, assertPublicLegalRoute, assertPublicPasswordRoute } from './api-route-boundary';
 
 const origin = 'https://www.blazebreak.app';
 describe('shared legacy web API token destination boundary', () => {
@@ -13,6 +13,16 @@ describe('shared legacy web API token destination boundary', () => {
   ('rejects unsafe or foreign paths: %s', path => {
     expect(() => assertWebApiRoute(path, origin)).toThrow();
   });
+  it('limits signed-out password recovery to the two approved POST destinations', () => {
+    expect(assertPublicPasswordRoute('/api/auth/password-reset/request', origin)).toBe('/api/auth/password-reset/request');
+    expect(assertPublicPasswordRoute('/api/auth/password-reset/confirm-notify', origin)).toBe('/api/auth/password-reset/confirm-notify');
+    for (const path of ['/api/auth/mfa/status', '/api/user/delete-account',
+      '//outside.example/api/auth/password-reset/request',
+      'https://outside.example/api/auth/password-reset/request']) {
+      expect(() => assertPublicPasswordRoute(path, origin)).toThrow();
+    }
+  });
+
   it('limits unauthenticated reads to the legal API', () => {
     expect(assertPublicLegalRoute('/api/legal/documents', origin)).toBe('/api/legal/documents');
     expect(assertPublicLegalRoute('/api/legal/documents/privacy', origin)).toBe('/api/legal/documents/privacy');

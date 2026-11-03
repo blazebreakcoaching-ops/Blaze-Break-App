@@ -1,6 +1,6 @@
 import { auth, getAppCheckToken } from './firebase';
 import { getMfaSessionToken, clearMfaSessionToken } from './mfa-session';
-import { assertWebApiRoute, assertPublicLegalRoute } from './api-route-boundary';
+import { assertWebApiRoute, assertPublicLegalRoute, assertPublicPasswordRoute, type PublicPasswordRoute } from './api-route-boundary';
 
 export class SecureApiError extends Error {
   public status: number;
@@ -180,4 +180,40 @@ export async function publicApiFetch(path: string): Promise<Response> {
     // A non-JSON error response is not safe to display verbatim.
   }
   throw new SecureApiError(errorMessage, status);
+}
+
+
+/**
+ * Forgot-password and password-changed notification are intentionally
+ * unauthenticated endpoints. The person may be explicitly signed out, so
+ * never require a Firebase Auth ID token for these flows. Keep the routes
+ * fixed and allow only App Check, matching the server's anti-enumeration
+ * rate-limited POST handlers.
+ */
+export async function publicPasswordApiFetch(
+  path: PublicPasswordRoute,
+  data: { email: string },
+): Promise<Response> {
+  assertPublicPasswordRoute(path, window.location.origin);
+  const token = await getAppCheckToken();
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (token) headers.set('X-Firebase-AppCheck', token);
+  else if ((import.meta as any).env.DEV) headers.set('X-Firebase-AppCheck', 'dev-bypass');
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: 'POST', headers, body: JSON.stringify({ email: data.email }), redirect: 'error',
+    });
+  } catch {
+    throw new SecureApiError('Network error. Check your connection and try again.', 0);
+  }
+  if (response.ok) return response;
+  let message = 'Password recovery is unavailable right now. Please try again.';
+  try {
+    const details = JSON.parse(await response.text());
+    if (typeof details?.error === 'string') message = details.error;
+  } catch {
+    // Never display proxy/internal response text.
+  }
+  throw new SecureApiError(message, response.status);
 }
