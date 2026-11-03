@@ -152,6 +152,7 @@ import { buildExecutiveNarrative } from './executive-narrative';
 import { formatDataProvenance } from './data-provenance';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 import { logger, errorFields } from './logger';
+import { resolveServerFirebaseTarget } from './firebase-runtime-target';
 
 dotenv.config();
 
@@ -199,19 +200,28 @@ try {
   firebaseConfigProject = firebaseConfigFile.projectId;
   firebaseConfigDatabaseId = firebaseConfigFile.firestoreDatabaseId;
   
-  // Force the Google Cloud Project to the one in the config so Firebase Auth accepts the tokens
-  process.env.GOOGLE_CLOUD_PROJECT = firebaseConfigProject;
-  process.env.GCLOUD_PROJECT = firebaseConfigProject;
+  // Do NOT overwrite the Cloud Run project's GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT.
+  // Doing so made an isolated staging service silently use production Firebase.
+  // Runtime and bundled client config are checked below before initialization.
 } catch (e) {
   // firebase-applet-config.json is optional - if it's missing or invalid,
   // firebaseConfigProject/firebaseConfigDatabaseId just stay undefined and
   // initializeApp() below falls back to Application Default Credentials.
 }
 
+const serverFirebaseTarget = resolveServerFirebaseTarget({
+  bundledProjectId: firebaseConfigProject,
+  bundledDatabaseId: firebaseConfigDatabaseId,
+  runtimeProjectId: process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT,
+  production: process.env.NODE_ENV === 'production',
+});
+// This project embeds its web Firebase config at build time. A staging
+// Cloud Run deployment MUST build with staging's Firebase web config;
+// a runtime environment variable alone cannot alter the browser bundle.
+firebaseConfigProject = serverFirebaseTarget.projectId;
+firebaseConfigDatabaseId = serverFirebaseTarget.databaseId;
 if (!getApps().length) {
-  initializeApp({
-    projectId: firebaseConfigProject || undefined
-  });
+  initializeApp({ projectId: firebaseConfigProject || undefined });
 }
 
 const app = express();

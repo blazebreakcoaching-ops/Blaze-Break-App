@@ -425,6 +425,32 @@ gcloud run deploy blaze-break-staging \
   --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest,...  # every secret from step 7
 ```
 
+### Critical staging Firebase project isolation (CTO audit 2026-11-03)
+
+The web app embeds `firebase-applet-config.json` into the Vite build, and the
+legacy `server.ts` previously overwrote `GOOGLE_CLOUD_PROJECT` and
+`GCLOUD_PROJECT` with that JSON's production project ID. Merely deploying
+the same source to a different Cloud Run project did **not** provide genuine
+Firebase separation. This is a confirmed legacy mismatch, not a theoretical
+risk. The server now fails closed in production if its runtime project is
+missing or differs from the project's bundled client configuration.
+
+**Before a staging build:** generate the staging project-specific Firebase web
+configuration with the registered staging Firebase web app, including the
+staging project ID, API key, authDomain, app ID and named Firestore DB. Supply
+that config in an isolated staging build process. Do **not** commit it over
+the tracked production config or deploy the production-built bundle to
+staging. Set `FIREBASE_PROJECT_ID=blaze-break-staging` on the staging
+Cloud Run service (and the production project ID on production) and confirm
+the generated browser bundle matches the corresponding runtime. Keep
+`FIRESTORE_DATABASE_ID` consistent for Auth Blocking Functions. Run a
+negative test: a staging service must refuse to boot with the production
+client config. A valid production deploy also requires its runtime project
+ID to match its bundled config.
+
+This is a safety guard, not an automated staging configuration generator.
+A complete, authenticated staging build and verification remain release gates.
+
 ### Using it day to day
 
 - `firebase use staging` before any rules/indexes work you want to test
