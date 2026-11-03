@@ -45,14 +45,14 @@ export const ResetStudio = ({ fingerprint, onAwardPoints, onNavigate, onOpenCris
 
   return (
     <div id="reset-studio-section" className="ember-midnight space-y-8 rounded-2xl">
-      <div className="max-w-4xl">
+      <div className="ember-reset-showcase max-w-4xl p-5 sm:p-9">
         <div className="flex items-center gap-4 mb-4">
           <div className="tag">Stabilise · Core Pillar: Rebuild</div>
           <div className="h-px flex-1 bg-border/40" />
         </div>
         <div className="space-y-4">
-          <h3 className="text-5xl font-display font-bold text-text-main tracking-tight">Reset Studio</h3>
-          <p className="text-xl text-text-muted font-medium max-w-2xl">
+          <h3 className="text-3xl sm:text-5xl font-serif font-bold text-text-main tracking-tight">Reset Studio</h3>
+          <p className="text-base sm:text-xl text-text-muted font-medium max-w-2xl">
             Too much going on upstairs? Start with what it feels like right now.
           </p>
         </div>
@@ -69,7 +69,7 @@ export const ResetStudio = ({ fingerprint, onAwardPoints, onNavigate, onOpenCris
                   <button
                     key={id}
                     onClick={() => setSelected(id)}
-                    className="card ember-feature ember-orbit p-6 text-left space-y-2 transition-colors"
+                    className="card ember-feature ember-orbit p-4 sm:p-6 text-left space-y-2 transition-colors"
                   >
                     <span className="block text-2xl font-display font-bold text-text-main">{state.label}</span>
                     <span className="block text-sm text-text-muted">{state.description}</span>
