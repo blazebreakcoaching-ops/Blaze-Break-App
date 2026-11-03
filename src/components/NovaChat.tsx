@@ -1523,7 +1523,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
                 aria-label="Send message"
-                className="ember-orbit absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
+                className="ember-nova-send absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
               >
                 <Send className="w-4.5 h-4.5" />
               </button>
