@@ -31,8 +31,21 @@ export function currentNovaIdentity(): string {
   return auth.currentUser?.uid ?? PENDING_IDENTITY;
 }
 
-export function novaStorageKey(baseKey: string): string {
-  return `${baseKey}::${currentNovaIdentity()}`;
+// identityOverride lets a caller that has already captured "the identity
+// this component currently believes is active" (e.g. NovaChat.tsx's own
+// currentUid React state, updated from its onAuthStateChanged listener)
+// use that exact value instead of a fresh live read of auth.currentUser.
+// This closes a real TOCTOU gap: linkWithCredential (anonymous -> real
+// account, same uid) can still cause intermediate onAuthStateChanged
+// deliveries before settling, and a load/save pair that each independently
+// re-read the live uid can disagree with each other mid-transition - an
+// identity-triggered reload, followed by the plain [messages]-dependent
+// autosave effect, could end up writing an empty/stale array to whichever
+// identity's key is live *at save time*, not the one the reload actually
+// read from. Passing the same captured identity to both calls keeps them
+// consistent with each other even if the live value has already moved on.
+export function novaStorageKey(baseKey: string, identityOverride?: string): string {
+  return `${baseKey}::${identityOverride ?? currentNovaIdentity()}`;
 }
 
 // The literal prefix every scoped Nova storage key starts with, for a

@@ -229,8 +229,8 @@ export const NovaChat = ({
       }
     }
   }, [profile?.questioningStyle]);
-  const loadMessages = (): Message[] => {
-    const saved = localStorage.getItem(novaStorageKey("nova_chat_history"));
+  const loadMessages = (identityOverride?: string): Message[] => {
+    const saved = localStorage.getItem(novaStorageKey("nova_chat_history", identityOverride));
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -262,9 +262,9 @@ export const NovaChat = ({
 
   const voiceFeatureEnabled = flags.enable_nova_voice;
 
-  const loadRatings = (): { [key: number]: "up" | "down" | null } => {
+  const loadRatings = (identityOverride?: string): { [key: number]: "up" | "down" | null } => {
     try {
-      const saved = localStorage.getItem(novaStorageKey("nova_chat_ratings"));
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_ratings", identityOverride));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -276,9 +276,9 @@ export const NovaChat = ({
   const [activeFeedbackForm, setActiveFeedbackForm] = useState<number | null>(
     null,
   );
-  const loadFeedbackNotes = (): { [key: number]: string } => {
+  const loadFeedbackNotes = (identityOverride?: string): { [key: number]: string } => {
     try {
-      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_notes"));
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_notes", identityOverride));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -287,9 +287,9 @@ export const NovaChat = ({
   const [feedbackNotes, setFeedbackNotes] = useState<{ [key: number]: string }>(
     loadFeedbackNotes,
   );
-  const loadFeedbackTag = (): { [key: number]: string } => {
+  const loadFeedbackTag = (identityOverride?: string): { [key: number]: string } => {
     try {
-      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_tags"));
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_tags", identityOverride));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -298,9 +298,9 @@ export const NovaChat = ({
   const [feedbackTag, setFeedbackTag] = useState<{ [key: number]: string }>(
     loadFeedbackTag,
   );
-  const loadIsFeedbackSubmitted = (): { [key: number]: boolean } => {
+  const loadIsFeedbackSubmitted = (identityOverride?: string): { [key: number]: boolean } => {
     try {
-      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_submitted"));
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_submitted", identityOverride));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -331,18 +331,18 @@ export const NovaChat = ({
     const newSubmitted = { ...isFeedbackSubmitted, [index]: true };
     setIsFeedbackSubmitted(newSubmitted);
     localStorage.setItem(
-      novaStorageKey("nova_chat_feedback_submitted"),
+      novaStorageKey("nova_chat_feedback_submitted", currentUid),
       JSON.stringify(newSubmitted),
     );
 
     // Persist all other states
-    localStorage.setItem(novaStorageKey("nova_chat_ratings"), JSON.stringify(ratings));
+    localStorage.setItem(novaStorageKey("nova_chat_ratings", currentUid), JSON.stringify(ratings));
     localStorage.setItem(
-      novaStorageKey("nova_chat_feedback_notes"),
+      novaStorageKey("nova_chat_feedback_notes", currentUid),
       JSON.stringify({ ...feedbackNotes, [index]: notes }),
     );
     localStorage.setItem(
-      novaStorageKey("nova_chat_feedback_tags"),
+      novaStorageKey("nova_chat_feedback_tags", currentUid),
       JSON.stringify({ ...feedbackTag, [index]: selectedTag }),
     );
 
@@ -355,8 +355,8 @@ export const NovaChat = ({
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const loadIsVoiceEnabled = (): boolean => {
-    const saved = localStorage.getItem(novaStorageKey("nova_voice_enabled"));
+  const loadIsVoiceEnabled = (identityOverride?: string): boolean => {
+    const saved = localStorage.getItem(novaStorageKey("nova_voice_enabled", identityOverride));
     return saved !== null ? saved === "true" : true;
   };
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(loadIsVoiceEnabled);
@@ -391,12 +391,22 @@ export const NovaChat = ({
       didMountRef.current = true;
       return;
     }
-    setMessages(loadMessages());
-    setRatings(loadRatings());
-    setFeedbackNotes(loadFeedbackNotes());
-    setFeedbackTag(loadFeedbackTag());
-    setIsFeedbackSubmitted(loadIsFeedbackSubmitted());
-    setIsVoiceEnabled(loadIsVoiceEnabled());
+    // Pass the uid this effect actually fired for explicitly, rather than
+    // letting loadX() re-read the live auth.currentUser - a real,
+    // demonstrated race otherwise: linkWithCredential (anonymous -> real
+    // account, same uid) can still deliver more than one onAuthStateChanged
+    // notification before settling, and the plain [messages]-dependent
+    // autosave effect below re-reads the live uid too, so a load triggered
+    // by an intermediate notification could be followed by a save that
+    // targets whatever identity is live *by then* - not the one this
+    // reload actually read from - overwriting that identity's real saved
+    // history with the stale/empty state this reload produced.
+    setMessages(loadMessages(currentUid));
+    setRatings(loadRatings(currentUid));
+    setFeedbackNotes(loadFeedbackNotes(currentUid));
+    setFeedbackTag(loadFeedbackTag(currentUid));
+    setIsFeedbackSubmitted(loadIsFeedbackSubmitted(currentUid));
+    setIsVoiceEnabled(loadIsVoiceEnabled(currentUid));
   }, [currentUid]);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
@@ -558,12 +568,17 @@ export const NovaChat = ({
   };
 
   useEffect(() => {
-    localStorage.setItem(novaStorageKey("nova_chat_history"), JSON.stringify(messages));
-  }, [messages]);
+    // currentUid (the identity this component currently believes is
+    // active, updated by the onAuthStateChanged listener above), not a
+    // fresh live read - see novaStorageKey's own comment on why a plain
+    // live read here can race the identity-reload effect above and
+    // overwrite a different identity's saved history.
+    localStorage.setItem(novaStorageKey("nova_chat_history", currentUid), JSON.stringify(messages));
+  }, [messages, currentUid]);
 
   useEffect(() => {
-    localStorage.setItem(novaStorageKey("nova_voice_enabled"), String(isVoiceEnabled));
-  }, [isVoiceEnabled]);
+    localStorage.setItem(novaStorageKey("nova_voice_enabled", currentUid), String(isVoiceEnabled));
+  }, [isVoiceEnabled, currentUid]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -1142,7 +1157,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                 const newR = { ...ratings, [i]: "up" as const };
                                 setRatings(newR);
                                 localStorage.setItem(
-                                  novaStorageKey("nova_chat_ratings"),
+                                  novaStorageKey("nova_chat_ratings", currentUid),
                                   JSON.stringify(newR),
                                 );
                                 setActiveFeedbackForm(
@@ -1169,7 +1184,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                 };
                                 setRatings(newR);
                                 localStorage.setItem(
-                                  novaStorageKey("nova_chat_ratings"),
+                                  novaStorageKey("nova_chat_ratings", currentUid),
                                   JSON.stringify(newR),
                                 );
                                 setActiveFeedbackForm(
@@ -1548,7 +1563,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         confirmLabel="Clear"
         onConfirm={() => {
           setMessages([]);
-          localStorage.removeItem(novaStorageKey("nova_chat_history"));
+          localStorage.removeItem(novaStorageKey("nova_chat_history", currentUid));
           setConfirmingClear(false);
         }}
         onCancel={() => setConfirmingClear(false)}
