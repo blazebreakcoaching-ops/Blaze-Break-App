@@ -27,6 +27,16 @@ check('Production and staging remain separate',
   target !== 'staging' || releaseProject !== JSON.parse(get('.firebaserc')).projects.production,
   'Never test against the production project');
 check('Native identifiers', !!expo.ios?.bundleIdentifier && !!expo.android?.package, 'Bundle/package identifiers set');
+check('Native automatic appearance configuration',
+  expo.userInterfaceStyle === 'automatic',
+  'Light, Dark and System need userInterfaceStyle: automatic');
+check('Android system appearance dependency',
+  !!sdk.dependencies?.['expo-system-ui'],
+  'Install expo-system-ui matching Expo SDK 57 using expo install and update package-lock before native release');
+check('Native appearance provider present',
+  existsSync(resolve(root, 'mobile/src/lib/native-theme.tsx')) &&
+  existsSync(resolve(root, 'mobile/src/lib/native-theme-palette.ts')),
+  'Native theme provider and palette must be present');
 check('Android Firebase config', existsSync(resolve(root, 'mobile/google-services.json')), 'Native Firebase Android app config required');
 check('iOS Firebase config', existsSync(resolve(root, 'mobile/GoogleService-Info.plist')), 'Native Firebase iOS app config required');
 

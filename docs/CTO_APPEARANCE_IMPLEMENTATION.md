@@ -26,3 +26,6 @@ No production merge/deployment authorisation is implied.
 4. Confirm native Account selection, sign-in, Pulse, Check-in, Nova (all subflows), Reset (all subflows), overlay modals in both modes; test font scaling, keyboard, relaunch, system toggles.
 5. Install matching Expo SDK 57 `expo-system-ui` and update package + lockfile before real Android appearance acceptance. The native package lock has NOT been changed by this feature batch.
 6. Native physical iOS/Android builds and screenshots remain release gates. No GitHub Actions/deployment approval.
+
+## Release truth as of this branch
+Native theme UI and route styles have been implemented in source. Android system-mode support is **pending `expo-system-ui` installation and device verification**, and the appearance changes have not run the full test suite in this GitHub-only environment. Do not describe this as a verified native release.
