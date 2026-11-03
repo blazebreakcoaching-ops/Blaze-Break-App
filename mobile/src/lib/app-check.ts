@@ -27,8 +27,14 @@
 import type { AppCheck } from '@react-native-firebase/app-check';
 
 let appCheckPromise: Promise<AppCheck | null> | null = null;
+let retryInitialisationAfterMs = 0;
+const INITIALISATION_RETRY_DELAY_MS = 30_000;
 
 async function getAppCheckInstance(): Promise<AppCheck | null> {
+  // A transient missing native configuration / early initialization race
+  // must not permanently poison this session with a memoized null.
+  // Limit retries so Expo Go does not repeatedly load missing native modules.
+  if (!appCheckPromise && Date.now() < retryInitialisationAfterMs) return null;
   if (!appCheckPromise) {
     appCheckPromise = (async () => {
       try {
@@ -55,7 +61,13 @@ async function getAppCheckInstance(): Promise<AppCheck | null> {
       }
     })();
   }
-  return appCheckPromise;
+  const attempt = appCheckPromise;
+  const instance = await attempt;
+  if (instance === null && appCheckPromise === attempt) {
+    appCheckPromise = null;
+    retryInitialisationAfterMs = Date.now() + INITIALISATION_RETRY_DELAY_MS;
+  }
+  return instance;
 }
 
 export async function getAppCheckToken(forceRefresh = false): Promise<string> {

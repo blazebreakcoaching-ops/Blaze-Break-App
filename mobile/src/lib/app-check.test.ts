@@ -11,7 +11,7 @@ describe('native App Check graceful degradation', () => {
     await expect(getAppCheckToken()).resolves.toBe('');
   });
 
-  it('never rejects, even when called repeatedly (the failed init is memoized)', async () => {
+  it('never rejects on repeated calls, with a bounded retry delay for missing native modules', async () => {
     await expect(getAppCheckToken()).resolves.toBe('');
     await expect(getAppCheckToken(true)).resolves.toBe('');
   });
