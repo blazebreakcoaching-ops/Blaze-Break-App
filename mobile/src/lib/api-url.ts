@@ -15,7 +15,10 @@ export function buildNativeApiUrl(baseUrl: string, path: string): string {
       (base.pathname !== '/' && base.pathname !== '')) {
     throw new Error('API base must be an HTTPS origin (HTTP only for local emulators)');
   }
+  // Deliberately rejecting control characters (CRLF injection, etc.) in
+  // the route, not a mistake.
   if (!path.startsWith('/api/') || path.includes('\\') ||
+      // eslint-disable-next-line no-control-regex
       /[\u0000-\u001f\u007f]/.test(path)) {
     throw new Error('Only relative /api/ routes are permitted');
   }

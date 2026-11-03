@@ -26,8 +26,7 @@ describe('native authenticated API URL boundaries', () => {
   });
 
   it.each(['http://outside.example', 'javascript:alert(1)', 'https://someone:secret@example.com',
-    'https://example.com/extra', 'https://example.com?key=value'])
-  ('rejects an unsafe base origin: %s', (base) => {
+    'https://example.com/extra', 'https://example.com?key=value'])('rejects an unsafe base origin: %s', (base) => {
     expect(() => buildNativeApiUrl(base, '/api/nova/chat')).toThrow();
   });
 

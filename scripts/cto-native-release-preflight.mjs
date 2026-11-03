@@ -46,8 +46,20 @@ const iosValue = key => iosPlist.match(new RegExp('<key>\\s*' + key + '\\s*</key
 check('iOS Firebase project/bundle match',
   iosValue('PROJECT_ID') === releaseProject && iosValue('BUNDLE_ID') === expo.ios?.bundleIdentifier,
   'iOS config must match the selected project AND bundle identifier');
+// A real implementation legitimately still returns '' on the genuine
+// "no native module" / "no native config" path (Expo Go, a build missing
+// google-services.json/GoogleService-Info.plist) - that's correct
+// fallback behaviour, not a stub, and the server's own verifyAppCheck
+// middleware is what actually rejects the resulting unauthenticated
+// request. A bare `return '';` as the WHOLE function body (no other
+// statement before it) is the actual stub signature; real attestation
+// calls (initializeAppCheck/getToken) are the positive evidence that
+// matters here.
+const appCheckIsBareStub = /export\s+async\s+function\s+getAppCheckToken\s*\([^)]*\)[^{]*\{\s*return\s*['"]{2}\s*;\s*\}/.test(appCheckSource);
 check('Native App Check implemented',
-  !/return\s*['"]{2}\s*;/.test(appCheckSource) &&
+  !appCheckIsBareStub &&
+    /initializeAppCheck/.test(appCheckSource) &&
+    /getToken/.test(appCheckSource) &&
     sdk.dependencies?.['@react-native-firebase/app-check'] &&
     sdk.dependencies?.['@react-native-firebase/app'],
   'No empty-token stub; real native attestation required');

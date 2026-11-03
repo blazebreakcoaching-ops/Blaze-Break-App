@@ -17,10 +17,9 @@ describe('native Firebase environment isolation', () => {
     expect(result.apiKey).toBe('public-client-key');
   });
 
-  it.each(['apiKey', 'authDomain', 'projectId', 'appId', 'firestoreDatabaseId'] as const)
-    ('refuses a missing required build variable: %s', (key) => {
-      expect(() => buildNativeFirebaseConfig({ ...staging, [key]: '' })).toThrow(/EXPO_PUBLIC_FIREBASE_/);
-    });
+  it.each(['apiKey', 'authDomain', 'projectId', 'appId', 'firestoreDatabaseId'] as const)('refuses a missing required build variable: %s', (key) => {
+    expect(() => buildNativeFirebaseConfig({ ...staging, [key]: '' })).toThrow(/EXPO_PUBLIC_FIREBASE_/);
+  });
 
   it('refuses placeholder project identifiers or malformed database IDs', () => {
     expect(() => buildNativeFirebaseConfig({ ...staging, projectId: 'your-staging-project' })).toThrow();

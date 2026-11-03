@@ -6,6 +6,8 @@
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/slider": "5.2.0",
+    "@react-native-firebase/app": "27.1.0",
+    "@react-native-firebase/app-check": "27.1.0",
     "expo": "~57.0.25",
     "expo-constants": "~57.0.19",
     "expo-linking": "~57.0.11",
