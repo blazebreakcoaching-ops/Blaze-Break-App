@@ -79,6 +79,9 @@ const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m =
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { LandingPage } from "./components/LandingPage.tsx";
 import { BlazeBrandLogo } from "./components/BlazeBrandLogo";
+import { AppearanceMenu } from "./components/AppearanceMenu";
+import { useAppearanceTheme } from "./lib/useAppearanceTheme";
+import type { AppearanceMode } from "./lib/appearance-theme";
 import { MfaChallenge } from "./components/MfaChallenge.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 const ConnectedDailyCheckIn = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedDailyCheckIn })));
@@ -396,8 +399,8 @@ const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, ti
 const Sidebar = ({
   activeTab,
   setActiveTab,
-  darkMode,
-  setDarkMode,
+  themeMode,
+  setThemeMode,
   authRole,
   currentTier,
   isCollapsed,
@@ -410,8 +413,8 @@ const Sidebar = ({
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
-  darkMode: boolean;
-  setDarkMode: (d: boolean) => void;
+  themeMode: AppearanceMode;
+  setThemeMode: (mode: AppearanceMode) => void;
   authRole: string;
   currentTier: SubscriptionTier;
   isCollapsed: boolean;
@@ -709,65 +712,8 @@ const Sidebar = ({
         })()}
       </nav>
 
-      <div className="pt-6 border-t border-border/50 flex flex-col gap-6 shrink-0 w-full">
-        <button
-          onClick={() => setDarkMode(!darkMode)}
-          className={cn(
-            "flex items-center rounded-2xl bg-surface/50 hover:bg-white dark:hover:bg-surface transition-all group",
-            isCollapsed ? "justify-center p-3" : "justify-between p-2",
-          )}
-          title={
-            isCollapsed
-              ? darkMode
-                ? "Switch to Solar"
-                : "Switch to Eclipse"
-              : undefined
-          }
-        >
-          <div
-            className={cn("flex items-center gap-3", !isCollapsed && "ml-2")}
-          >
-            {darkMode ? (
-              <Moon className="w-5 h-5 text-primary shrink-0" />
-            ) : (
-              <Sun className="w-5 h-5 text-primary shrink-0" />
-            )}
-            <AnimatePresence>
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: "auto" }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="text-xs font-black uppercase tracking-[0.1em] text-text-muted group-hover:text-text-main transition-colors overflow-hidden whitespace-nowrap"
-                >
-                  {darkMode ? "Eclipse" : "Solar"}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
-          <AnimatePresence>
-            {!isCollapsed && (
-              <motion.div
-                initial={{ opacity: 0, width: 0, scale: 0.8 }}
-                animate={{ opacity: 1, width: "auto", scale: 1 }}
-                exit={{ opacity: 0, width: 0, scale: 0.8 }}
-                transition={{ duration: 0.2 }}
-                className={cn(
-                  "w-10 h-6 rounded-full p-1 transition-colors duration-500 shrink-0",
-                  darkMode ? "bg-primary" : "bg-border",
-                )}
-              >
-                <div
-                  className={cn(
-                    "w-4 h-4 bg-white rounded-full transition-transform duration-500 shadow-sm",
-                    darkMode ? "translate-x-4" : "translate-x-0",
-                  )}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </button>
+      <div className="pt-6 border-t border-border/50 shrink-0 w-full">
+        <AppearanceMenu mode={themeMode} onChange={setThemeMode} compact={isCollapsed} above />
       </div>
     </motion.aside>
   );
@@ -810,8 +756,8 @@ const EYEBROW_LABELS: Record<string, string> = {
 const Header = ({
   title,
   activeTab,
-  darkMode,
-  setDarkMode,
+  themeMode,
+  setThemeMode,
   onOpenSettings,
   onOpenTour,
   onSomaticReset,
@@ -822,8 +768,8 @@ const Header = ({
 }: {
   title: string;
   activeTab: string;
-  darkMode: boolean;
-  setDarkMode: (d: boolean) => void;
+  themeMode: AppearanceMode;
+  setThemeMode: (mode: AppearanceMode) => void;
   onOpenSettings: () => void;
   onOpenTour?: () => void;
   onSomaticReset?: () => void;
@@ -1067,14 +1013,9 @@ const Header = ({
           </div>
         </div>
       )}
-      <button
-        onClick={() => setDarkMode(!darkMode)}
-        className="p-2.5 rounded-full bg-surface dark:bg-card border border-border hover:border-primary/50 text-text-muted hover:text-primary transition-all md:hidden"
-        title="Toggle Theme"
-        aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
-      >
-        {darkMode ? <Sun className="w-5 h-5" aria-hidden="true" /> : <Moon className="w-5 h-5" aria-hidden="true" />}
-      </button>
+      <div className="md:hidden">
+        <AppearanceMenu mode={themeMode} onChange={setThemeMode} compact />
+      </div>
       <AuthStatusTracker />
       <button
         onClick={onOpenSettings}
@@ -1232,26 +1173,8 @@ export default function App() {
     awardPoints(15, "Recovery data saved locally (+15 pts)");
   };
 
-  // Dark Mode State
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("blaze_dark_mode");
-      return (
-        saved === "true" ||
-        (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)
-      );
-    }
-    return false;
-  });
-
-  useEffect(() => {
-    localStorage.setItem("blaze_dark_mode", String(darkMode));
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [darkMode]);
+  // One persisted choice; System follows device changes in real time.
+  const { mode: themeMode, setMode: setThemeMode, darkMode } = useAppearanceTheme();
 
   useEffect(() => {
     const handleNav = (e: Event) => {
@@ -2329,8 +2252,8 @@ export default function App() {
           onStart={() => setFlow("onboarding")}
           onViewDemo={() => { void continueAsGuest().then(() => setFlow("app")); }}
           onOpenTrustCentre={() => setFlow("trust-centre")}
-          darkMode={darkMode}
-          setDarkMode={setDarkMode}
+          themeMode={themeMode}
+          setThemeMode={setThemeMode}
           initialAuthModalOpen={landingInitialAuthOpen}
           onInitialAuthModalOpened={() => setLandingInitialAuthOpen(false)}
         />
@@ -2456,8 +2379,8 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={safeSetActiveTab as any}
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
+        themeMode={themeMode}
+        setThemeMode={setThemeMode}
         authRole={effectiveRole}
         currentTier={stats.profile?.subscription || "recovery"}
         isCollapsed={isSidebarCollapsed}
@@ -2580,8 +2503,8 @@ export default function App() {
         <Header
           title={titles[activeTab] || "Dashboard Module"}
           activeTab={activeTab}
-          darkMode={darkMode}
-          setDarkMode={setDarkMode}
+          themeMode={themeMode}
+          setThemeMode={setThemeMode}
           onOpenSettings={() => setShowSettings(true)}
           onOpenTour={() => setShowWalkthrough(true)}
           onSomaticReset={() => setShowSomaticReset(true)}

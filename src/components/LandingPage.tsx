@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { BlazeBrandLogo } from './BlazeBrandLogo';
+import { AppearanceMenu } from './AppearanceMenu';
+import type { AppearanceMode } from '../lib/appearance-theme';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
@@ -35,8 +37,8 @@ interface LandingPageProps {
   // Undefined props degrade gracefully: the toggle button simply doesn't
   // render rather than throwing, so this stays optional at the type
   // level even though App.tsx always passes both in practice.
-  darkMode?: boolean;
-  setDarkMode?: (d: boolean) => void;
+  themeMode?: AppearanceMode;
+  setThemeMode?: (mode: AppearanceMode) => void;
   // True when App.tsx routed here specifically to open the sign-up modal
   // (e.g. a demo session's "Sign up free" banner). Every visitor already
   // has a live anonymous session by the time this component mounts, so
@@ -53,7 +55,7 @@ interface LandingPageProps {
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
-export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, setDarkMode, initialAuthModalOpen, onInitialAuthModalOpened }: LandingPageProps) => {
+export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode, setThemeMode, initialAuthModalOpen, onInitialAuthModalOpened }: LandingPageProps) => {
   const { user, signIn, signInWithMicrosoft, signInWithFacebook, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
@@ -335,15 +337,8 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          {setDarkMode && (
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-2.5 rounded-full bg-surface dark:bg-card border border-border hover:border-primary/50 text-text-muted hover:text-primary transition-all"
-              title="Toggle theme"
-              aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
-            >
-              {darkMode ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
-            </button>
+          {setThemeMode && (
+            <AppearanceMenu mode={themeMode ?? 'system'} onChange={setThemeMode} compact />
           )}
           <button
             onClick={onOpenTrustCentre}
