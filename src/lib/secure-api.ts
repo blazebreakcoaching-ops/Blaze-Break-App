@@ -1,5 +1,6 @@
 import { auth, getAppCheckToken } from './firebase';
 import { getMfaSessionToken, clearMfaSessionToken } from './mfa-session';
+import { assertWebApiRoute, assertPublicLegalRoute } from './api-route-boundary';
 
 export class SecureApiError extends Error {
   public status: number;
@@ -18,6 +19,8 @@ interface SecureApiOptions extends RequestInit {
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
+  // Fail closed before reading credentials; callers may only target our /api/.
+  assertWebApiRoute(path, window.location.origin);
   // Phase 5E (directive §8) browser-level test escape hatch ONLY: a real
   // signed-in Firebase user is not available to the dev-only Playwright
   // preview entry (nhei-phase5-preview-e2e-entry.tsx), which runs against
@@ -68,22 +71,22 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     headers.set('X-Firebase-AppCheck', "dev-bypass");
   }
 
-  if (options.data) {
+  const { data, ...requestInit } = options;
+  if (data !== undefined) {
     headers.set('Content-Type', 'application/json');
-    options.body = JSON.stringify(options.data);
-    delete options.data;
+    requestInit.body = JSON.stringify(data);
   }
-
   const fetchOptions: RequestInit = {
-    ...options,
+    ...requestInit,
     headers,
+    redirect: 'error', // Auth headers cannot follow an HTTP redirect.
   };
 
   let response: Response;
   try {
     response = await fetch(path, fetchOptions);
-  } catch (error: any) {
-    throw new SecureApiError(`Network error: ${error.message}`, 0);
+  } catch {
+    throw new SecureApiError('Network error. Check your connection and try again.', 0);
   }
 
   if (response.ok) {
@@ -102,20 +105,14 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   let errorDetails: any = null;
   let errorCode: string | undefined;
 
+  // The body is a one-shot stream. Never call text() after json() fails.
   try {
-    const errorData = await response.json();
-    if (errorData.error) {
-      errorMessage = errorData.error;
-    }
-    if (errorData.details) {
-      errorDetails = errorData.details;
-    }
-    if (errorData.code) {
-      errorCode = errorData.code;
-    }
-  } catch (e) {
-    // Response is not JSON
-    errorMessage = await response.text() || errorMessage;
+    const errorData = JSON.parse(await response.text());
+    if (typeof errorData?.error === 'string') errorMessage = errorData.error;
+    if (errorData?.details !== undefined) errorDetails = errorData.details;
+    if (typeof errorData?.code === 'string') errorCode = errorData.code;
+  } catch {
+    // Do not leak HTML, provider text or stack traces in 5xx responses.
   }
 
   if (status === 401 || status === 403) {
@@ -154,6 +151,7 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
 // read what they'd be agreeing to before that session is even created,
 // the same way they'd expect from any legitimate site's policy pages.
 export async function publicApiFetch(path: string): Promise<Response> {
+  assertPublicLegalRoute(path, window.location.origin);
   const appCheckToken = await getAppCheckToken();
   const headers = new Headers();
   if (appCheckToken) {
@@ -164,9 +162,9 @@ export async function publicApiFetch(path: string): Promise<Response> {
 
   let response: Response;
   try {
-    response = await fetch(path, { headers });
-  } catch (error: any) {
-    throw new SecureApiError(`Network error: ${error.message}`, 0);
+    response = await fetch(path, { headers, redirect: 'error' });
+  } catch {
+    throw new SecureApiError('Network error. Check your connection and try again.', 0);
   }
 
   if (response.ok) {
@@ -176,10 +174,10 @@ export async function publicApiFetch(path: string): Promise<Response> {
   const status = response.status;
   let errorMessage = `API Error ${status}`;
   try {
-    const errorData = await response.json();
-    if (errorData.error) errorMessage = errorData.error;
-  } catch (e) {
-    errorMessage = await response.text() || errorMessage;
+    const errorData = JSON.parse(await response.text());
+    if (typeof errorData?.error === 'string') errorMessage = errorData.error;
+  } catch {
+    // A non-JSON error response is not safe to display verbatim.
   }
   throw new SecureApiError(errorMessage, status);
 }
