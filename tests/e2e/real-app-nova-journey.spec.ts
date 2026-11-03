@@ -73,6 +73,25 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
   test('a real signed-in anonymous user can have an ordinary conversation with Nova via the real navigation', async ({ page }) => {
     await gotoAppAsAnonymousUser(page);
     await openNovaTab(page);
+
+    // Regression for Report 33: the real Pixel 7 viewport exposed an
+    // 11.5px overlap between Nova's Send button and the viewport-fixed
+    // mobile navigation. Check genuine rendered geometry before sending,
+    // rather than force-clicking through the overlapping navigation.
+    if ((page.viewportSize()?.width ?? 1024) < 768) {
+      const sendButton = page.getByRole('button', { name: 'Send message' });
+      const mobileNav = page.getByTestId('mobile-bottom-nav');
+      await expect(mobileNav).toBeVisible();
+      await expect.poll(async () => {
+        const [sendRect, navRect] = await Promise.all([
+          sendButton.boundingBox(),
+          mobileNav.boundingBox(),
+        ]);
+        if (!sendRect || !navRect) return -1;
+        return navRect.y - (sendRect.y + sendRect.height);
+      }, { timeout: 5_000 }).toBeGreaterThanOrEqual(8);
+    }
+
     await mockChatOnce(page, { text: 'Thanks for sharing that - tell me more.' });
     await page.getByPlaceholder(/./).first().fill('I feel stretched thin this week.');
     await page.getByRole('button', { name: 'Send message' }).click();
