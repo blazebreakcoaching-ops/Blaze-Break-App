@@ -3,6 +3,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { evaluateIpVelocity, IP_VELOCITY_WINDOW_MS, sanitizeIpForDocId, type SignInEvent } from './signin-velocity';
 import { isDisposableEmailDomain } from './disposable-email';
+import { resolveBlockingFunctionsDatabaseId } from './firebase-target';
 
 initializeApp();
 
@@ -28,7 +29,10 @@ export const beforeSignIn = beforeUserSignedIn(async (event) => {
   const ip = event.ipAddress;
   if (!email || !ip) return;
 
-  const db = getFirestore();
+  // The Cloud Run app and Firebase rules use a NAMED Firestore database,
+  // not (default). The Admin SDK's no-argument getFirestore() would send
+  // sign-in velocity records to the wrong database (or fail outright).
+  const db = getFirestore(resolveBlockingFunctionsDatabaseId(process.env.FIRESTORE_DATABASE_ID));
   const eventsRef = db.collection(SIGNIN_EVENTS_COLLECTION).doc(sanitizeIpForDocId(ip)).collection('events');
   const windowStart = Timestamp.fromMillis(Date.now() - IP_VELOCITY_WINDOW_MS);
 
