@@ -13,6 +13,7 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
+    "lint:mobile": "eslint mobile --config eslint.cleanup.config.js",
     "test": "vitest run",
     "test:components": "vitest run --config vitest.components.config.ts",
     "test:coverage": "vitest run --coverage",
