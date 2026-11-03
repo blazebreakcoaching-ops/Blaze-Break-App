@@ -191,6 +191,17 @@ describe('POST /api/admin/admin-users/:uid/role', () => {
     expect(stored?.reason).toBe('promoted for content review duties');
   });
 
+  it('does not reveal unexpected Firestore errors in role-change responses', async () => {
+    seedDoc('admin_users/target_uid', { uid: 'target_uid', role: 'support_admin' });
+    const restore = forceDocError('admin_users/target_uid', 'update', new Error('PRIVATE_TEST_DB_INTERNALS'));
+    const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER))
+      .send({ role: 'content_admin', reason: 'role review' });
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toContain('PRIVATE_TEST_DB_INTERNALS');
+    expect(res.body.error).toBe('Something went wrong on our end. Please try again.');
+    restore();
+  });
+
   it('refuses to downgrade the last remaining platform owner', async () => {
     seedDoc('admin_users/target_uid', { uid: 'target_uid', role: 'platform_owner' });
     const res = await request(app).post('/api/admin/admin-users/target_uid/role').set(auth(OWNER)).send({ role: 'support_admin', reason: 'org restructure' });
@@ -346,6 +357,15 @@ describe('DELETE /api/admin/admin-users/:uid', () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toMatch(/last Platform Owner/i);
     expect(getDocRaw('admin_users/target_uid')).toBeDefined();
+  });
+
+  it('does not leak unexpected errors during admin removal', async () => {
+    seedDoc('admin_users/target_uid', { uid: 'target_uid', role: 'support_admin' });
+    const restore = forceDocError('admin_users/target_uid', 'delete', new Error('PRIVATE_ADMIN_DELETE_INTERNALS'));
+    const res = await request(app).delete('/api/admin/admin-users/target_uid').set(auth(OWNER));
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toContain('PRIVATE_ADMIN_DELETE_INTERNALS');
+    restore();
   });
 
   it('allows removing a non-owner admin', async () => {

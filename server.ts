@@ -8822,11 +8822,11 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
     res.json({ success: true });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-    // Unlike the generic 500 fallback elsewhere, this route's own safety
-    // check (assertNotLastPlatformOwner) throws a message specifically
-    // written to be shown to the admin attempting the change - preserved
-    // here rather than genericized.
-    res.status(500).json({ error: err.message });
+    // Preserve only the one deliberately user-facing governance error.
+    // Any other err.message may contain Firestore/Admin SDK internals.
+    const safeLastOwnerError = err instanceof Error &&
+      err.message === "Operation Rejected: Cannot remove or downgrade the last Platform Owner.";
+    res.status(500).json({ error: safeLastOwnerError ? err.message : GENERIC_SERVER_ERROR });
   }
 });
 
@@ -8848,9 +8848,10 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
     res.json({ success: true });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-    // Same reasoning as the role-update route above: preserve
-    // assertNotLastPlatformOwner's own deliberately admin-facing message.
-    res.status(500).json({ error: err.message });
+    // As above: never expose arbitrary unexpected exception text.
+    const safeLastOwnerError = err instanceof Error &&
+      err.message === "Operation Rejected: Cannot remove or downgrade the last Platform Owner.";
+    res.status(500).json({ error: safeLastOwnerError ? err.message : GENERIC_SERVER_ERROR });
   }
 });
 
