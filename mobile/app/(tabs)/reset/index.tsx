@@ -1,7 +1,10 @@
 // Reset picker - three real tools now (BLAME Reset, Nervous System
 // Reset, Sleep & Wind-Down Builder), replacing the earlier stub.
 import React from 'react';
-import { Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { Text } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -24,6 +27,7 @@ const TOOLS: { title: string; subtitle: string; route: string }[] = [
 ];
 
 export default function ResetPickerScreen() {
+  const styles = useThemedStyles();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -40,19 +44,24 @@ export default function ResetPickerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   container: { padding: 20 },
   title: { fontSize: 28, fontWeight: '800', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#666', lineHeight: 20, marginBottom: 24 },
+  subtitle: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: 24 },
   toolCard: {
-    backgroundColor: '#fafafa',
+    backgroundColor: colors.surface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     padding: 18,
     marginBottom: 12,
   },
   toolTitle: { fontSize: 16, fontWeight: '700' },
-  toolSubtitle: { fontSize: 13, color: '#777', marginTop: 4, lineHeight: 18 },
+  toolSubtitle: { fontSize: 13, color: colors.muted, marginTop: 4, lineHeight: 18 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

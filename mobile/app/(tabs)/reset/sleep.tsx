@@ -8,23 +8,17 @@
 // (the ritual itself, its persistence, the points award) is intact;
 // only the memory summary is deferred.
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Switch,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Switch, KeyboardAvoidingView, Platform } from 'react-native';
+import { Text, TextInput } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getDb, auth } from '../../../src/lib/firebase';
 import { usePoints } from '../../../src/lib/use-points';
 
 export default function SleepBuilderScreen() {
+  const styles = useThemedStyles();
   const { awardPoints } = usePoints();
   const [bedtime, setBedtime] = useState('22:30');
   const [caffeineCutoff, setCaffeineCutoff] = useState(true);
@@ -215,30 +209,35 @@ export default function SleepBuilderScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   container: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 26, fontWeight: '800', marginBottom: 8 },
-  subtitle: { fontSize: 13, fontStyle: 'italic', color: '#666', lineHeight: 19, marginBottom: 24 },
-  card: { backgroundColor: '#fafafa', borderRadius: 16, borderWidth: 1, borderColor: '#eee', padding: 18, marginBottom: 16 },
-  cardLabel: { fontSize: 11, fontWeight: '800', color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
-  cardHint: { fontSize: 12, color: '#777', marginBottom: 10 },
-  bedtimeInput: { fontSize: 28, fontWeight: '900', color: '#9a3412', paddingVertical: 4, borderBottomWidth: 2, borderBottomColor: '#eee' },
+  subtitle: { fontSize: 13, fontStyle: 'italic', color: colors.muted, lineHeight: 19, marginBottom: 24 },
+  card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 18, marginBottom: 16 },
+  cardLabel: { fontSize: 11, fontWeight: '800', color: colors.subtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
+  cardHint: { fontSize: 12, color: colors.muted, marginBottom: 10 },
+  bedtimeInput: { fontSize: 28, fontWeight: '900', color: colors.accent, paddingVertical: 4, borderBottomWidth: 2, borderBottomColor: colors.border },
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
-  toggleLabel: { fontSize: 14, fontWeight: '600', color: '#333' },
-  textarea: { borderWidth: 1, borderColor: '#eee', borderRadius: 12, padding: 12, fontSize: 14, minHeight: 100, textAlignVertical: 'top' },
+  toggleLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
+  textarea: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 12, fontSize: 14, minHeight: 100, textAlignVertical: 'top' },
   parkRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  parkInput: { flex: 1, borderWidth: 1, borderColor: '#eee', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
-  parkButton: { backgroundColor: '#ea580c', borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
-  parkButtonDisabled: { backgroundColor: '#fed7aa' },
-  parkButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  emptyText: { fontSize: 13, color: '#999', fontStyle: 'italic', textAlign: 'center', paddingVertical: 12 },
-  parkedItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#eee', padding: 12, marginBottom: 8 },
-  parkedItemText: { fontSize: 13, color: '#333', flex: 1 },
-  removeLink: { fontSize: 12, color: '#dc2626', fontWeight: '600' },
-  windDownButton: { backgroundColor: '#ea580c', borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
-  windDownButtonActive: { backgroundColor: '#fed7aa' },
-  windDownButtonText: { color: '#fff', fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
-  windDownButtonTextActive: { color: '#9a3412' },
+  parkInput: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  parkButton: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
+  parkButtonDisabled: { backgroundColor: colors.accentSoft },
+  parkButtonText: { color: colors.onAccent, fontWeight: '700', fontSize: 13 },
+  emptyText: { fontSize: 13, color: colors.subtle, fontStyle: 'italic', textAlign: 'center', paddingVertical: 12 },
+  parkedItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 8 },
+  parkedItemText: { fontSize: 13, color: colors.text, flex: 1 },
+  removeLink: { fontSize: 12, color: colors.danger, fontWeight: '600' },
+  windDownButton: { backgroundColor: colors.accent, borderRadius: 999, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  windDownButtonActive: { backgroundColor: colors.accentSoft },
+  windDownButtonText: { color: colors.onAccent, fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
+  windDownButtonTextActive: { color: colors.accent },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

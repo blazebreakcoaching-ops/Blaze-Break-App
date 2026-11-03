@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/lib/auth-context';
+import { NativeThemeProvider, useNativeTheme } from '../src/lib/native-theme';
 
 // The anonymous-first pattern means `user` is set as soon as loading
 // finishes for essentially everyone (even a brand-new visitor - see
@@ -24,6 +25,7 @@ import { AuthProvider, useAuth } from '../src/lib/auth-context';
 // App.tsx handles by falling back to LandingPage when `!user`.
 function RootNavigator() {
   const { loading, user } = useAuth();
+  const { colors } = useNativeTheme();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -33,14 +35,19 @@ function RootNavigator() {
 
   if (loading) {
     return (
-      <View style={styles.loading}>
+      <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" />
       </View>
     );
   }
 
   return (
-    <Stack>
+    <Stack screenOptions={{
+      contentStyle: { backgroundColor: colors.background },
+      headerStyle: { backgroundColor: colors.card },
+      headerTintColor: colors.text,
+      headerTitleStyle: { color: colors.text },
+    }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="sign-in" options={{ presentation: 'modal', title: 'Sign in' }} />
       <Stack.Screen name="sign-up" options={{ presentation: 'modal', title: 'Create account' }} />
@@ -49,12 +56,19 @@ function RootNavigator() {
   );
 }
 
+function ThemedStatusBar() {
+  const { isDark } = useNativeTheme();
+  return <StatusBar style={isDark ? 'light' : 'dark'} />;
+}
+
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootNavigator />
-      <StatusBar style="auto" />
-    </AuthProvider>
+    <NativeThemeProvider>
+      <AuthProvider>
+        <RootNavigator />
+        <ThemedStatusBar />
+      </AuthProvider>
+    </NativeThemeProvider>
   );
 }
 
@@ -63,6 +77,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+
   },
 });

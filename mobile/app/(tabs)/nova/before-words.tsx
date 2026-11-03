@@ -2,10 +2,10 @@
 // contract and one-turn handoff shape as the existing web component.
 // No model call, diagnosis, background analysis or persistence here.
 import React, { useState } from 'react';
-import {
-  KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
-  Text, TextInput, TouchableOpacity, View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -30,6 +30,7 @@ const MAX_CORRECTION = 1000;
 function Button({ label, onPress, outline = false }: {
   label: string; onPress: () => void; outline?: boolean;
 }) {
+  const styles = useThemedStyles();
   return (
     <TouchableOpacity
       onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
@@ -41,6 +42,7 @@ function Button({ label, onPress, outline = false }: {
 }
 
 export default function NativeBeforeWords() {
+  const styles = useThemedStyles();
   const [state, setState] = useState(initNheiBeforeWordsState);
   const [correctionDraft, setCorrectionDraft] = useState('');
   const { setPending } = useNovaBeforeWords();
@@ -59,7 +61,7 @@ export default function NativeBeforeWords() {
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} accessibilityRole="button"
             accessibilityLabel="Close Before Words" style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#111827" />
+            <Ionicons name="chevron-back" size={24} color={styles.colors.text} />
           </TouchableOpacity>
           <Text style={styles.title}>Before Words</Text>
         </View>
@@ -82,7 +84,7 @@ export default function NativeBeforeWords() {
               <TextInput
                 accessibilityLabel="Free expression"
                 placeholder="There's no wrong way to start..."
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={styles.colors.muted}
                 multiline textAlignVertical="top"
                 value={state.freeExpressionText}
                 maxLength={MAX_FREE_TEXT}
@@ -114,7 +116,7 @@ export default function NativeBeforeWords() {
                             answerPrompt(current, category, text, answer?.uncertain ?? false))}
                           maxLength={MAX_PROMPT_TEXT}
                           placeholder="Optional"
-                          placeholderTextColor="#6b7280"
+                          placeholderTextColor={styles.colors.muted}
                           style={styles.input}
                         />
                         <View style={styles.promptActions}>
@@ -125,7 +127,7 @@ export default function NativeBeforeWords() {
                               answerPrompt(current, category, answer?.text ?? '', !(answer?.uncertain ?? false)))}
                             style={styles.smallTouch}
                           >
-                            <Ionicons name={answer?.uncertain ? 'checkbox' : 'square-outline'} size={19} color="#9a3412" />
+                            <Ionicons name={answer?.uncertain ? 'checkbox' : 'square-outline'} size={19} color={styles.colors.accent} />
                             <Text style={styles.muted}>I'm not sure</Text>
                           </TouchableOpacity>
                           <TouchableOpacity accessibilityRole="button"
@@ -166,7 +168,7 @@ export default function NativeBeforeWords() {
                 onChangeText={setCorrectionDraft}
                 maxLength={MAX_CORRECTION}
                 placeholder="Want to correct or add something?"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={styles.colors.muted}
                 style={styles.input}
               />
               <Button label="Add correction" outline onPress={() => {
@@ -188,29 +190,34 @@ export default function NativeBeforeWords() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: colors.card },
   header: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12,
-    gap: 8, borderBottomWidth: 1, borderColor: '#e5e7eb' },
+    gap: 8, borderBottomWidth: 1, borderColor: colors.border },
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  title: { fontSize: 20, fontWeight: '800', color: colors.text },
   content: { padding: 18, paddingBottom: 40 },
-  section: { gap: 16 }, heading: { fontSize: 21, fontWeight: '700', color: '#111827' },
-  description: { fontSize: 14, lineHeight: 22, color: '#4b5563' },
+  section: { gap: 16 }, heading: { fontSize: 21, fontWeight: '700', color: colors.text },
+  description: { fontSize: 14, lineHeight: 22, color: colors.muted },
   button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#c2410c' },
-  buttonOutline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c2410c' },
-  buttonText: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center' },
-  buttonOutlineText: { color: '#9a3412' },
-  input: { minHeight: 46, borderRadius: 12, backgroundColor: '#f3f4f6', color: '#111827',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
+  buttonOutline: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.accent },
+  buttonText: { color: colors.onAccent, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  buttonOutlineText: { color: colors.accent },
+  input: { minHeight: 46, borderRadius: 12, backgroundColor: colors.surface, color: colors.text,
     paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
   longInput: { minHeight: 160 },
-  prompt: { borderBottomWidth: 1, borderColor: '#e5e7eb', paddingBottom: 14, gap: 8 },
-  promptLabel: { fontSize: 14, lineHeight: 21, color: '#374151', fontWeight: '600' },
+  prompt: { borderBottomWidth: 1, borderColor: colors.border, paddingBottom: 14, gap: 8 },
+  promptLabel: { fontSize: 14, lineHeight: 21, color: colors.muted, fontWeight: '600' },
   promptActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   smallTouch: { minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', paddingHorizontal: 4 },
-  skip: { color: '#9a3412', fontWeight: '700' },
-  muted: { color: '#6b7280', fontSize: 13 },
-  sharedText: { fontSize: 15, lineHeight: 22, color: '#111827', padding: 10,
-    backgroundColor: '#f3f4f6', borderRadius: 10 },
+  skip: { color: colors.accent, fontWeight: '700' },
+  muted: { color: colors.muted, fontSize: 13 },
+  sharedText: { fontSize: 15, lineHeight: 22, color: colors.text, padding: 10,
+    backgroundColor: colors.surface, borderRadius: 10 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

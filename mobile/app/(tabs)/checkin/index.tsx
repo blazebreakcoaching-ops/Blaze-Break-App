@@ -6,7 +6,10 @@
 // recovery-plan cross-linking, no FINGERPRINT_ENHANCEMENTS copy tables) -
 // "here's your profile + your top priorities," per the mobile plan.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { Text } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getDb, auth } from '../../../src/lib/firebase';
@@ -24,6 +27,7 @@ interface FingerprintResult {
 }
 
 export default function CheckInScreen() {
+  const styles = useThemedStyles();
   const { awardPoints } = usePoints();
   const [mode, setMode] = useState<Mode>('loading');
   const [step, setStep] = useState(0);
@@ -229,52 +233,57 @@ export default function CheckInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', gap: 16, padding: 20 },
-  loadingText: { fontSize: 14, color: '#666', textAlign: 'center' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, gap: 16, padding: 20 },
+  loadingText: { fontSize: 14, color: colors.muted, textAlign: 'center' },
   container: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 26, fontWeight: '800', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#666', lineHeight: 20, marginBottom: 24 },
-  error: { color: '#dc2626', fontSize: 13, marginBottom: 16, textAlign: 'center' },
+  subtitle: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: 24 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: 16, textAlign: 'center' },
   choiceCard: {
-    backgroundColor: '#fafafa',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     padding: 18,
     marginBottom: 14,
   },
-  choiceCardPrimary: { borderColor: '#ea580c', backgroundColor: '#fff7ed' },
-  choiceEyebrow: { fontSize: 11, fontWeight: '800', color: '#9a3412', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
-  choiceBody: { fontSize: 14, color: '#444', lineHeight: 20 },
+  choiceCardPrimary: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  choiceEyebrow: { fontSize: 11, fontWeight: '800', color: colors.accent, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  choiceBody: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   progressRow: { marginBottom: 6 },
-  progressText: { fontSize: 12, color: '#999', fontWeight: '600' },
-  progressBarTrack: { height: 4, backgroundColor: '#eee', borderRadius: 2, marginBottom: 28 },
-  progressBarFill: { height: 4, backgroundColor: '#ea580c', borderRadius: 2 },
+  progressText: { fontSize: 12, color: colors.subtle, fontWeight: '600' },
+  progressBarTrack: { height: 4, backgroundColor: colors.border, borderRadius: 2, marginBottom: 28 },
+  progressBarFill: { height: 4, backgroundColor: colors.accent, borderRadius: 2 },
   questionText: { fontSize: 22, fontWeight: '700', lineHeight: 30, marginBottom: 24 },
   optionsList: { gap: 12 },
   optionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     borderRadius: 14,
     padding: 18,
   },
-  optionText: { fontSize: 15, color: '#333', lineHeight: 21 },
-  backLink: { textAlign: 'center', marginTop: 24, color: '#999', fontSize: 13, fontWeight: '600' },
-  resultEyebrow: { fontSize: 11, fontWeight: '800', color: '#9a3412', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  optionText: { fontSize: 15, color: colors.text, lineHeight: 21 },
+  backLink: { textAlign: 'center', marginTop: 24, color: colors.subtle, fontSize: 13, fontWeight: '600' },
+  resultEyebrow: { fontSize: 11, fontWeight: '800', color: colors.accent, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   card: {
-    backgroundColor: '#fafafa',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     padding: 18,
     marginBottom: 16,
   },
-  cardEyebrow: { fontSize: 11, fontWeight: '800', color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
-  priorityItem: { fontSize: 14, color: '#333', lineHeight: 22 },
-  blendItem: { fontSize: 14, color: '#333', lineHeight: 22 },
-  retakeButton: { borderWidth: 2, borderColor: '#ea580c', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  retakeButtonText: { color: '#ea580c', fontWeight: '800', fontSize: 15 },
+  cardEyebrow: { fontSize: 11, fontWeight: '800', color: colors.subtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
+  priorityItem: { fontSize: 14, color: colors.text, lineHeight: 22 },
+  blendItem: { fontSize: 14, color: colors.text, lineHeight: 22 },
+  retakeButton: { borderWidth: 2, borderColor: colors.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  retakeButtonText: { color: colors.accent, fontWeight: '800', fontSize: 15 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

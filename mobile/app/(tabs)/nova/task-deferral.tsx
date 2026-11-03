@@ -5,10 +5,10 @@
 // always runs through the permanently mock-only one, so this can never
 // touch a real Asana/Monday/Jira task regardless of this screen.
 import React, { useState } from 'react';
-import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
-  Text, TextInput, TouchableOpacity, View,
-} from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,6 +21,7 @@ type ControlAnswer = 'yes' | 'no' | 'unsure';
 type Phase = 'describe' | 'clarify' | 'blocked' | 'prepare' | 'prepared' | 'awaiting_approval' | 'approved' | 'result';
 
 export default function TaskDeferralScreen() {
+  const styles = useThemedStyles();
   const params = useLocalSearchParams<{ description?: string }>();
   const [taskDescription, setTaskDescription] = useState(params.description ?? '');
   const [proposal, setProposal] = useState<TaskProposal | null>(null);
@@ -168,7 +169,7 @@ export default function TaskDeferralScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back to Nova" style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#111827" />
+            <Ionicons name="chevron-back" size={24} color={styles.colors.text} />
           </TouchableOpacity>
           <Text style={styles.title}>Take the Load - Move a Task</Text>
         </View>
@@ -185,7 +186,7 @@ export default function TaskDeferralScreen() {
               <TextInput
                 accessibilityLabel="Task description"
                 value={taskDescription} onChangeText={setTaskDescription}
-                placeholder="What's the task?" placeholderTextColor="#6b7280" style={styles.input}
+                placeholder="What's the task?" placeholderTextColor={styles.colors.muted} style={styles.input}
               />
               <PrimaryButton label="Tell Nova about this task" onPress={identify} disabled={!taskDescription.trim() || busy} />
             </View>
@@ -209,12 +210,12 @@ export default function TaskDeferralScreen() {
                 accessibilityLabel="Proposed new due date"
                 value={newDueDate} onChangeText={setNewDueDate}
                 placeholder="Proposed new due date (e.g. next Friday)"
-                placeholderTextColor="#6b7280" style={styles.input}
+                placeholderTextColor={styles.colors.muted} style={styles.input}
               />
               <TextInput
                 accessibilityLabel="Why, or why not"
                 value={reasoning} onChangeText={setReasoning}
-                placeholder="Why (or why not)?" placeholderTextColor="#6b7280" style={styles.input}
+                placeholder="Why (or why not)?" placeholderTextColor={styles.colors.muted} style={styles.input}
                 multiline
               />
               <PrimaryButton label="Prepare this proposal" onPress={prepare} disabled={!canPrepare || busy} />
@@ -268,7 +269,7 @@ export default function TaskDeferralScreen() {
             </View>
           )}
 
-          {busy && <ActivityIndicator color="#9a3412" style={styles.spinner} />}
+          {busy && <ActivityIndicator color={styles.colors.accent} style={styles.spinner} />}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -282,6 +283,7 @@ function ClarifyQuestions({ onSubmit, busy }: {
   onSubmit: (deadline: ControlAnswer, ownership: ControlAnswer) => void;
   busy: boolean;
 }) {
+  const styles = useThemedStyles();
   const [deadline, setDeadline] = useState<ControlAnswer | null>(null);
   const [ownership, setOwnership] = useState<ControlAnswer | null>(null);
   return (
@@ -300,6 +302,7 @@ function ClarifyQuestions({ onSubmit, busy }: {
 }
 
 function AnswerRow({ onAnswer, selected }: { onAnswer: (a: ControlAnswer) => void; selected: ControlAnswer | null }) {
+  const styles = useThemedStyles();
   const options: ControlAnswer[] = ['yes', 'no', 'unsure'];
   return (
     <View style={styles.answerRow}>
@@ -321,6 +324,7 @@ function AnswerRow({ onAnswer, selected }: { onAnswer: (a: ControlAnswer) => voi
 function PrimaryButton({ label, onPress, disabled, outline }: {
   label: string; onPress: () => void; disabled?: boolean; outline?: boolean;
 }) {
+  const styles = useThemedStyles();
   return (
     <TouchableOpacity
       onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={label}
@@ -331,30 +335,35 @@ function PrimaryButton({ label, onPress, disabled, outline }: {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: '#fff' },
-  header: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8, borderBottomWidth: 1, borderColor: '#e5e7eb' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: colors.card },
+  header: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8, borderBottomWidth: 1, borderColor: colors.border },
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontWeight: '800', color: '#111827', flexShrink: 1 },
+  title: { fontSize: 17, fontWeight: '800', color: colors.text, flexShrink: 1 },
   content: { padding: 18, gap: 16, paddingBottom: 40 },
-  description: { fontSize: 13, lineHeight: 19, color: '#4b5563' },
+  description: { fontSize: 13, lineHeight: 19, color: colors.muted },
   section: { gap: 12 },
-  proposalSummary: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 14, gap: 8, backgroundColor: '#f9fafb' },
-  proposalSummaryTitle: { fontSize: 15, color: '#111827', fontWeight: '700' },
-  proposalSummaryText: { fontSize: 14, color: '#111827', lineHeight: 21 },
-  proposalSummaryNote: { fontSize: 12, color: '#4b5563', lineHeight: 18 },
-  statusText: { fontSize: 15, color: '#111827', lineHeight: 21 },
-  input: { minHeight: 46, borderRadius: 12, backgroundColor: '#f3f4f6', color: '#111827', paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
+  proposalSummary: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, gap: 8, backgroundColor: colors.surface },
+  proposalSummaryTitle: { fontSize: 15, color: colors.text, fontWeight: '700' },
+  proposalSummaryText: { fontSize: 14, color: colors.text, lineHeight: 21 },
+  proposalSummaryNote: { fontSize: 12, color: colors.muted, lineHeight: 18 },
+  statusText: { fontSize: 15, color: colors.text, lineHeight: 21 },
+  input: { minHeight: 46, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
   answerRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  answerChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: '#e5e7eb' },
-  answerChipActive: { backgroundColor: '#c2410c', borderColor: '#c2410c' },
-  answerChipText: { fontSize: 13, color: '#4b5563', fontWeight: '600' },
-  answerChipTextActive: { color: '#fff' },
-  button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#c2410c' },
-  buttonOutline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c2410c' },
+  answerChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.border },
+  answerChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  answerChipText: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  answerChipTextActive: { color: colors.onAccent },
+  button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
+  buttonOutline: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.accent },
   buttonDisabled: { opacity: 0.45 },
-  buttonText: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center' },
-  buttonOutlineText: { color: '#9a3412' },
-  error: { color: '#b91c1c', fontSize: 13 },
+  buttonText: { color: colors.onAccent, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  buttonOutlineText: { color: colors.accent },
+  error: { color: colors.danger, fontSize: 13 },
   spinner: { marginTop: 8 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

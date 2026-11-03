@@ -6,10 +6,10 @@
 // constant in nova-calendar-protection-service.ts regardless of what
 // this screen does, so "Try to apply" can never reach a real calendar.
 import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
-  Text, TextInput, TouchableOpacity, View,
-} from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -28,6 +28,7 @@ interface CalendarProposal {
 type Phase = 'form' | 'prepared' | 'awaiting_approval' | 'approved' | 'result';
 
 export default function CalendarProtectionScreen() {
+  const styles = useThemedStyles();
   const params = useLocalSearchParams<{ title?: string }>();
   const [title, setTitle] = useState(params.title ?? '');
   const [startIso, setStartIso] = useState('');
@@ -160,7 +161,7 @@ export default function CalendarProtectionScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back to Nova" style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#111827" />
+            <Ionicons name="chevron-back" size={24} color={styles.colors.text} />
           </TouchableOpacity>
           <Text style={styles.title}>Take the Load - Calendar Protection</Text>
         </View>
@@ -186,19 +187,19 @@ export default function CalendarProtectionScreen() {
                 accessibilityLabel="Title for the protected time"
                 value={title} onChangeText={setTitle}
                 placeholder="What should this protected time be called?"
-                placeholderTextColor="#6b7280" style={styles.input}
+                placeholderTextColor={styles.colors.muted} style={styles.input}
               />
               <TextInput
                 accessibilityLabel="Start time"
                 value={startIso} onChangeText={setStartIso}
                 placeholder="Start (e.g. 2026-03-02T14:00)"
-                placeholderTextColor="#6b7280" style={styles.input}
+                placeholderTextColor={styles.colors.muted} style={styles.input}
               />
               <TextInput
                 accessibilityLabel="End time"
                 value={endIso} onChangeText={setEndIso}
                 placeholder="End (e.g. 2026-03-02T14:30)"
-                placeholderTextColor="#6b7280" style={styles.input}
+                placeholderTextColor={styles.colors.muted} style={styles.input}
               />
               <PrimaryButton label="Prepare this proposal" onPress={propose} disabled={!canPropose || busy} />
             </View>
@@ -246,7 +247,7 @@ export default function CalendarProtectionScreen() {
             </View>
           )}
 
-          {busy && <ActivityIndicator color="#9a3412" style={styles.spinner} />}
+          {busy && <ActivityIndicator color={styles.colors.accent} style={styles.spinner} />}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -277,6 +278,7 @@ function describeExecutionOutcome(status: string): string {
 function PrimaryButton({ label, onPress, disabled, outline }: {
   label: string; onPress: () => void; disabled?: boolean; outline?: boolean;
 }) {
+  const styles = useThemedStyles();
   return (
     <TouchableOpacity
       onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={label}
@@ -287,29 +289,34 @@ function PrimaryButton({ label, onPress, disabled, outline }: {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: '#fff' },
-  header: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8, borderBottomWidth: 1, borderColor: '#e5e7eb' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: colors.card },
+  header: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8, borderBottomWidth: 1, borderColor: colors.border },
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontWeight: '800', color: '#111827', flexShrink: 1 },
+  title: { fontSize: 17, fontWeight: '800', color: colors.text, flexShrink: 1 },
   content: { padding: 18, gap: 16, paddingBottom: 40 },
-  description: { fontSize: 13, lineHeight: 19, color: '#4b5563' },
-  permissionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f3f4f6', borderRadius: 12, padding: 12 },
-  permissionLabel: { fontSize: 13, color: '#374151', fontWeight: '600', flexShrink: 1 },
-  permissionButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#c2410c' },
-  permissionButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  description: { fontSize: 13, lineHeight: 19, color: colors.muted },
+  permissionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: 12, padding: 12 },
+  permissionLabel: { fontSize: 13, color: colors.muted, fontWeight: '600', flexShrink: 1 },
+  permissionButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: colors.accent },
+  permissionButtonText: { color: colors.onAccent, fontWeight: '700', fontSize: 12 },
   section: { gap: 12 },
-  proposalSummary: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, padding: 14, gap: 8, backgroundColor: '#f9fafb' },
-  proposalSummaryTitle: { fontSize: 15, color: '#111827', fontWeight: '700' },
-  proposalSummaryText: { fontSize: 14, color: '#111827', lineHeight: 21 },
-  proposalSummaryNote: { fontSize: 12, color: '#4b5563', lineHeight: 18 },
-  statusText: { fontSize: 15, color: '#111827', lineHeight: 21 },
-  input: { minHeight: 46, borderRadius: 12, backgroundColor: '#f3f4f6', color: '#111827', paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
-  button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#c2410c' },
-  buttonOutline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c2410c' },
+  proposalSummary: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, gap: 8, backgroundColor: colors.surface },
+  proposalSummaryTitle: { fontSize: 15, color: colors.text, fontWeight: '700' },
+  proposalSummaryText: { fontSize: 14, color: colors.text, lineHeight: 21 },
+  proposalSummaryNote: { fontSize: 12, color: colors.muted, lineHeight: 18 },
+  statusText: { fontSize: 15, color: colors.text, lineHeight: 21 },
+  input: { minHeight: 46, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
+  button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
+  buttonOutline: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.accent },
   buttonDisabled: { opacity: 0.45 },
-  buttonText: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center' },
-  buttonOutlineText: { color: '#9a3412' },
-  error: { color: '#b91c1c', fontSize: 13 },
+  buttonText: { color: colors.onAccent, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  buttonOutlineText: { color: colors.accent },
+  error: { color: colors.danger, fontSize: 13 },
   spinner: { marginTop: 8 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}
