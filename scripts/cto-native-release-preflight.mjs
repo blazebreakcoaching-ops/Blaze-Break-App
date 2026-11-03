@@ -29,6 +29,23 @@ check('Production and staging remain separate',
 check('Native identifiers', !!expo.ios?.bundleIdentifier && !!expo.android?.package, 'Bundle/package identifiers set');
 check('Android Firebase config', existsSync(resolve(root, 'mobile/google-services.json')), 'Native Firebase Android app config required');
 check('iOS Firebase config', existsSync(resolve(root, 'mobile/GoogleService-Info.plist')), 'Native Firebase iOS app config required');
+
+// Check project and app identity, not merely the presence of a config file.
+// Otherwise a production google-services.json placed in a staging build
+// would silently authenticate against production.
+let android;
+try { android = JSON.parse(get('mobile/google-services.json')); } catch { /* blocked below */ }
+const androidPackages = android?.client?.map(x => x.client_info?.android_client_info?.package_name) || [];
+check('Android Firebase project/package match',
+  android?.project_info?.project_id === releaseProject && androidPackages.includes(expo.android?.package),
+  'Android config must match the selected project AND app package');
+
+let iosPlist = '';
+try { iosPlist = get('mobile/GoogleService-Info.plist'); } catch { /* blocked below */ }
+const iosValue = key => iosPlist.match(new RegExp('<key>\\s*' + key + '\\s*</key>\\s*<string>([^<]+)</string>'))?.[1];
+check('iOS Firebase project/bundle match',
+  iosValue('PROJECT_ID') === releaseProject && iosValue('BUNDLE_ID') === expo.ios?.bundleIdentifier,
+  'iOS config must match the selected project AND bundle identifier');
 check('Native App Check implemented',
   !/return\s*['"]{2}\s*;/.test(appCheckSource) &&
     sdk.dependencies?.['@react-native-firebase/app-check'] &&
@@ -46,6 +63,10 @@ const validBase = !!base && base.protocol === 'https:' &&
   !base.username && !base.password && !base.search && !base.hash &&
   (base.pathname === '' || base.pathname === '/');
 check('Explicit HTTPS API origin', validBase, 'Set EXPO_PUBLIC_API_BASE_URL for the intended deployment environment');
+const knownProductionApiOrigin = 'https://blaze-break-220686314556.europe-west2.run.app';
+check('Staging API is not known production service',
+  target !== 'staging' || (validBase && base.origin !== knownProductionApiOrigin),
+  'Never point staging native builds at the known live Cloud Run service');
 
 const publicProject = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || '';
 const namedDb = process.env.EXPO_PUBLIC_FIREBASE_FIRESTORE_DATABASE_ID || '';

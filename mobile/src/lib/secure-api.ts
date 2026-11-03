@@ -65,7 +65,11 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     (rest as RequestInit).body = JSON.stringify(data);
   }
 
-  const fetchOptions: RequestInit = { ...rest, headers };
+  // Never follow a server redirect while carrying a bearer/App Check
+  // header. Even though standard fetch strips some cross-origin headers,
+  // native fetch implementations vary; redirects must be handled separately
+  // without automatically forwarding authenticated requests.
+  const fetchOptions: RequestInit = { ...rest, headers, redirect: 'error' };
   let response: Response;
   try {
     response = await fetch(url, fetchOptions);
