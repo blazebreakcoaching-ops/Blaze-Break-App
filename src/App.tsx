@@ -490,7 +490,7 @@ const Sidebar = ({
       animate={isCollapsed ? "collapsed" : "expanded"}
       variants={sidebarVariants}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="fixed left-6 top-6 bottom-6 glass rounded-2xl flex flex-col gap-8 hidden md:flex z-40 shadow-2xl shadow-primary/5 transition-colors duration-500"
+      className="ember-nav fixed left-6 top-6 bottom-6 glass rounded-2xl flex flex-col gap-8 hidden md:flex z-40 shadow-2xl shadow-primary/5 transition-colors duration-500"
     >
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -513,7 +513,7 @@ const Sidebar = ({
         onClick={() => setActiveTab("home")}
         aria-label="Blaze Break, go to Home"
       >
-        <div className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
+        <div className="ember-logo w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
           <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
           <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
         </div>
@@ -2407,7 +2407,7 @@ export default function App() {
   return (
     <div
       className={cn(
-        "min-h-screen bg-surface transition-colors duration-500",
+        "ember-shell ember-workspace min-h-screen bg-surface transition-colors duration-500",
         darkMode ? "dark" : "",
       )}
     >
@@ -2440,7 +2440,7 @@ export default function App() {
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
         className={cn(
           "relative transition-colors duration-500 min-w-0",
-          "p-8 md:p-12 lg:p-16",
+          "p-4 sm:p-6 md:p-10 lg:p-12",
           isSidebarCollapsed ? "md:ml-32" : "md:ml-72",
         )}
       >
