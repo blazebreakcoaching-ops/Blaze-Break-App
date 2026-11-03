@@ -516,7 +516,15 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       {/* Sleek Authentication Modal Overlay */}
       <AnimatePresence>
         {showAuthModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          // z-[100], not z-50: App.tsx's persistent "Need support now?"
+          // crisis button on this same landing flow is also z-50 and is
+          // declared later in the DOM (outside/after this component), so
+          // equal z-index let it paint on top of this modal, overlapping
+          // its content on narrow viewports. z-[100] matches the z-index
+          // every other modal in this codebase already uses (ConfirmDialog,
+          // CrisisSupport's own modal, NovaFeedbackModal, SettingsModal,
+          // etc.) specifically to stay above that button.
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             {/* Backdrop */}
             <motion.div 
               initial={{ opacity: 0 }}
