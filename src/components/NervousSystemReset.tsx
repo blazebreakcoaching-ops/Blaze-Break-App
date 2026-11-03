@@ -1003,7 +1003,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
   }, [isPlaying]);
 
   return (
-    <div id="nervous-system-reset-section" className="space-y-12 pb-24">
+    <div id="nervous-system-reset-section" className="ember-midnight space-y-12 pb-24">
       {/* Reset Confirmation Dialog Modal */}
       <AnimatePresence>
         {showResetConfirm && (
@@ -1577,7 +1577,7 @@ const BreathingSession = ({ practiceId, isPlaying, phase, showMidSessionPrompt, 
   const label = PHASE_LABELS[phase];
 
   return (
-    <div className="card border border-border p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
+    <div className="card ember-feature border border-border p-6 sm:p-8 md:p-12 h-full flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[500px]">
       <div className="absolute top-8 left-8 text-left">
         <span className="tag mb-4">{practice.name}</span>
         <p className="text-sm font-medium text-text-muted mt-4 max-w-sm">{cycle.instruction}</p>
