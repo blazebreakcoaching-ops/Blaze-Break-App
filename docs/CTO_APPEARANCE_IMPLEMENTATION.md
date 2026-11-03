@@ -18,3 +18,11 @@
 Expo SDK 57 requires compatible `expo-system-ui` installed and verified for Android userInterfaceStyle support. Do not hand-edit the lockfile or guess a package version. Run `cd mobile && npx expo install expo-system-ui` using the approved EAS/Expo development environment and commit its consistent package+lockfile before a native release. Verify themes on real Android and iOS devices.
 
 No production merge/deployment authorisation is implied. 
+
+## Verification checklist
+1. Root: `npx vitest run src/lib/appearance-theme.test.ts`, `npm run verify:release:offline -- --all`.
+2. Native: `cd mobile && npm ci && npx tsc --noEmit && npm run lint && npx jest --runInBand`.
+3. Confirm landing, signed-in desktop and mobile web show all three options; test device light/dark switching and persisted explicit selection.
+4. Confirm native Account selection, sign-in, Pulse, Check-in, Nova (all subflows), Reset (all subflows), overlay modals in both modes; test font scaling, keyboard, relaunch, system toggles.
+5. Install matching Expo SDK 57 `expo-system-ui` and update package + lockfile before real Android appearance acceptance. The native package lock has NOT been changed by this feature batch.
+6. Native physical iOS/Android builds and screenshots remain release gates. No GitHub Actions/deployment approval.

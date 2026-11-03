@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
+import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { BlazeBrandLogo } from './BlazeBrandLogo';
 import { AppearanceMenu } from './AppearanceMenu';

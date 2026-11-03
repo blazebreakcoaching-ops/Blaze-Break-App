@@ -20,8 +20,6 @@ import {
   Trophy,
   Award,
   Zap,
-  Moon,
-  Sun,
   Loader2,
   ChevronRight,
   ChevronLeft,

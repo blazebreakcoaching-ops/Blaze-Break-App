@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import { forwardRef } from 'react';
 import {
   Text as RNText, TextInput as RNTextInput,
   type TextProps, type TextInputProps,

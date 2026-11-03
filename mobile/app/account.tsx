@@ -3,7 +3,7 @@
 // from Pulse's header. Full settings (notifications, plan/billing, etc.)
 // is out of scope this phase - this is deliberately just identity.
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../src/lib/auth-context';
 import { getNovaMemoryConsent, setNovaMemoryConsent } from '../src/lib/nova-memory-consent';
@@ -76,7 +76,7 @@ export default function AccountScreen() {
   const isAnonymous = user?.isAnonymous ?? true;
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {isAnonymous ? (
         <>
           <Text style={styles.title}>Temporary session</Text>
@@ -142,12 +142,13 @@ export default function AccountScreen() {
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 24, flexGrow: 1, justifyContent: 'center' },
   title: { fontSize: 22, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
   subtitle: { fontSize: 14, color: colors.muted, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   button: { backgroundColor: colors.accent, borderRadius: 12, padding: 16, alignItems: 'center' },
@@ -159,7 +160,7 @@ const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
   consentTextGroup: { flex: 1, gap: 2 },
   consentLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
   consentDescription: { fontSize: 12, color: colors.muted, lineHeight: 16 },
-  consentError: { fontSize: 12, color: '#b91c1c', lineHeight: 17, marginTop: 4 },
+  consentError: { fontSize: 12, color: colors.danger, lineHeight: 17, marginTop: 4 },
   toggle: { width: 44, height: 28, borderRadius: 999, backgroundColor: colors.border, padding: 3, justifyContent: 'center' },
   toggleOn: { backgroundColor: colors.accent },
   toggleDot: { width: 22, height: 22, borderRadius: 999, backgroundColor: colors.card, alignSelf: 'flex-start' },

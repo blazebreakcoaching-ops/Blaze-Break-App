@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MonitorSmartphone, Moon, Sun, Check, ChevronDown } from 'lucide-react';
 import type { AppearanceMode } from '../lib/appearance-theme';
 
@@ -16,7 +16,7 @@ export function AppearanceMenu({ mode, onChange, compact = false, above = false 
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const selected = OPTIONS.find(option => option.mode === mode) ?? OPTIONS[2];
+  const selected = OPTIONS.find(option => option.mode === mode) ?? OPTIONS[2]!;
   const SelectedIcon = selected.Icon;
   useEffect(() => {
     if (!open) return;
