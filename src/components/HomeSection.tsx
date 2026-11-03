@@ -1455,7 +1455,7 @@ export const HomeSection = ({
       onTouchStart={handleHomeTouchStart}
       onTouchMove={handleHomeTouchMove}
       onTouchEnd={handleHomeTouchEnd}
-      className="relative"
+      className="relative ember-pulse"
     >
       <div
         className="flex justify-center overflow-hidden transition-none"
