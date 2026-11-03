@@ -772,3 +772,44 @@
   .ember-orbit:hover::before,
   .ember-orbit:focus-visible::before { animation: none; }
 }
+
+
+
+/* Nova mobile composer clearance — Report 33.
+ * The app header sits above this panel and the mobile nav is viewport-fixed.
+ * A bare h-full on NovaChat resolved to auto without a sized ancestor,
+ * putting Send under the nav on Pixel 7. Give the actual chat panel a
+ * viewport-bounded block size, so its existing flex column can shrink the
+ * MESSAGE LOG (not its header or composer) into an internal scroll area.
+ * Desktop layout and other NovaChat mounts are unchanged.
+ */
+@media (max-width: 767px) {
+  .ember-nova-tab .ember-nova-room {
+    block-size: clamp(
+      15rem,
+      calc(100dvh - 20rem - env(safe-area-inset-bottom, 0px)),
+      38rem
+    );
+    min-block-size: 0;
+  }
+
+  .ember-nova-tab .ember-nova-room [role="log"] {
+    min-block-size: 0;
+    overscroll-behavior-y: contain;
+  }
+
+  .ember-nova-tab .ember-nova-room > .border-t {
+    flex-shrink: 0;
+  }
+}
+
+/* If a very short viewport or an on-screen keyboard compresses the chat,
+ * users can still scroll the main page and reach the composer; don't
+ * hide it or allow the fixed nav to consume the only available tap area. */
+@supports (height: 100svh) {
+  @media (max-width: 767px) {
+    .ember-nova-tab .ember-nova-room {
+      max-block-size: max(15rem, calc(100svh - 10rem));
+    }
+  }
+}
