@@ -10,10 +10,10 @@
 // covers the add/review/remove core plus the two real hand-off
 // destinations the practical-assistance offer promises.
 import React, { useState } from 'react';
-import {
-  KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -29,6 +29,7 @@ const CATEGORIES = Object.keys(CATEGORY_LABEL) as NovaInvisibleLoadCategory[];
 const MAX_DESCRIPTION_LENGTH = 300;
 
 export default function InvisibleLoadScreen() {
+  const styles = useThemedStyles();
   const { state, addItem, removeItem } = useNovaInvisibleLoad();
   const [draft, setDraft] = useState('');
   const [category, setCategory] = useState<NovaInvisibleLoadCategory>('obligation');
@@ -50,7 +51,7 @@ export default function InvisibleLoadScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.topBar}>
           <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back to Nova chat" style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#111827" />
+            <Ionicons name="chevron-back" size={24} color={styles.colors.text} />
           </TouchableOpacity>
           <View>
             <Text style={styles.title}>What's on your plate</Text>
@@ -67,7 +68,7 @@ export default function InvisibleLoadScreen() {
               <View style={styles.cardHeader}>
                 <Text style={styles.categoryBadge}>{CATEGORY_LABEL[item.category]}</Text>
                 <TouchableOpacity onPress={() => removeItem(item.id)} accessibilityRole="button" accessibilityLabel={`Remove ${item.description}`}>
-                  <Ionicons name="close" size={18} color="#6b7280" />
+                  <Ionicons name="close" size={18} color={styles.colors.muted} />
                 </TouchableOpacity>
               </View>
               <Text style={styles.cardText}>{item.description}</Text>
@@ -102,7 +103,7 @@ export default function InvisibleLoadScreen() {
           onPress={() => router.push({ pathname: '/(tabs)/nova/proactive-suggestions', params: { obligation: state.items[0]?.description ?? '' } })}
           accessibilityRole="button" accessibilityLabel="See what Nova might proactively suggest" style={styles.suggestButton}
         >
-          <Ionicons name="bulb-outline" size={16} color="#4b5563" />
+          <Ionicons name="bulb-outline" size={16} color={styles.colors.muted} />
           <Text style={styles.suggestButtonText}>See what Nova might proactively suggest</Text>
         </TouchableOpacity>
 
@@ -126,7 +127,7 @@ export default function InvisibleLoadScreen() {
               value={draft}
               onChangeText={setDraft}
               placeholder="Something you're carrying right now..."
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={styles.colors.muted}
               style={styles.input}
               maxLength={MAX_DESCRIPTION_LENGTH}
               multiline
@@ -138,7 +139,7 @@ export default function InvisibleLoadScreen() {
               accessibilityLabel="Add"
               style={[styles.addButton, !canAdd && styles.addButtonDisabled]}
             >
-              <Ionicons name="add" size={22} color="#fff" />
+              <Ionicons name="add" size={22} color={styles.colors.onAccent} />
             </TouchableOpacity>
           </View>
         </View>
@@ -147,35 +148,40 @@ export default function InvisibleLoadScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
   flex: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: '#fff' },
-  topBar: { minHeight: 62, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: '#e5e7eb' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  topBar: { minHeight: 62, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: colors.border },
   backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  subtitle: { fontSize: 11, color: '#6b7280' },
+  title: { fontSize: 18, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 11, color: colors.muted },
   list: { padding: 16, gap: 12, flexGrow: 1 },
-  empty: { color: '#6b7280', fontSize: 14, textAlign: 'center', marginTop: 24 },
-  card: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 14, padding: 14, gap: 8 },
+  empty: { color: colors.muted, fontSize: 14, textAlign: 'center', marginTop: 24 },
+  card: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14, gap: 8 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  categoryBadge: { fontSize: 11, fontWeight: '700', color: '#9a3412', textTransform: 'uppercase', letterSpacing: 0.5 },
-  cardText: { fontSize: 15, color: '#111827', lineHeight: 21 },
+  categoryBadge: { fontSize: 11, fontWeight: '700', color: colors.accent, textTransform: 'uppercase', letterSpacing: 0.5 },
+  cardText: { fontSize: 15, color: colors.text, lineHeight: 21 },
   helpButton: { alignSelf: 'flex-start' },
-  helpButtonText: { fontSize: 13, color: '#c2410c', fontWeight: '600' },
-  helpNotice: { backgroundColor: '#f3f4f6', borderRadius: 10, padding: 10, gap: 8 },
+  helpButtonText: { fontSize: 13, color: colors.accent, fontWeight: '600' },
+  helpNotice: { backgroundColor: colors.surface, borderRadius: 10, padding: 10, gap: 8 },
   helpChoice: { minHeight: 36, justifyContent: 'center' },
-  helpNoticeText: { fontSize: 13, color: '#6b7280', lineHeight: 18 },
-  helpNoticeLink: { fontSize: 13, color: '#c2410c', fontWeight: '700' },
+  helpNoticeText: { fontSize: 13, color: colors.muted, lineHeight: 18 },
+  helpNoticeLink: { fontSize: 13, color: colors.accent, fontWeight: '700' },
   suggestButton: { flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', minHeight: 40, marginHorizontal: 16, marginBottom: 8 },
-  suggestButtonText: { fontSize: 12, color: '#4b5563', fontWeight: '600' },
-  composer: { padding: 12, gap: 10, borderTopWidth: 1, borderColor: '#e5e7eb' },
+  suggestButtonText: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  composer: { padding: 12, gap: 10, borderTopWidth: 1, borderColor: colors.border },
   categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  categoryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: '#e5e7eb' },
-  categoryChipActive: { backgroundColor: '#c2410c', borderColor: '#c2410c' },
-  categoryChipText: { fontSize: 12, color: '#4b5563', fontWeight: '600' },
-  categoryChipTextActive: { color: '#fff' },
+  categoryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.border },
+  categoryChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  categoryChipText: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  categoryChipTextActive: { color: colors.onAccent },
   addRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' },
-  input: { flex: 1, maxHeight: 100, minHeight: 44, paddingHorizontal: 14, paddingVertical: 10, color: '#111827', fontSize: 15, backgroundColor: '#f3f4f6', borderRadius: 14 },
-  addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#c2410c', alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, maxHeight: 100, minHeight: 44, paddingHorizontal: 14, paddingVertical: 10, color: colors.text, fontSize: 15, backgroundColor: colors.surface, borderRadius: 14 },
+  addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   addButtonDisabled: { opacity: 0.45 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

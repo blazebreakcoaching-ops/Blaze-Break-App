@@ -6,10 +6,10 @@
 // caller's REAL, server-checked authorisation already covers (never a
 // client-side guess).
 import React, { useState } from 'react';
-import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
-  Text, TextInput, TouchableOpacity, View,
-} from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -34,6 +34,7 @@ const CAPACITY_OPTIONS: { value: CapacityBand; label: string }[] = [
 ];
 
 export default function ProactiveSuggestionsScreen() {
+  const styles = useThemedStyles();
   const params = useLocalSearchParams<{ obligation?: string }>();
   const [obligation, setObligation] = useState(params.obligation ?? '');
   const [capacityBand, setCapacityBand] = useState<CapacityBand | null>(null);
@@ -77,7 +78,7 @@ export default function ProactiveSuggestionsScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back to Nova" style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#111827" />
+            <Ionicons name="chevron-back" size={24} color={styles.colors.text} />
           </TouchableOpacity>
           <Text style={styles.title}>Proactive Options</Text>
         </View>
@@ -92,7 +93,7 @@ export default function ProactiveSuggestionsScreen() {
             accessibilityLabel="Obligation or goal for proactive suggestions"
             value={obligation} onChangeText={setObligation}
             placeholder="What's the obligation or goal? (your own words)"
-            placeholderTextColor="#6b7280" style={styles.input}
+            placeholderTextColor={styles.colors.muted} style={styles.input}
           />
 
           <View style={styles.capacityRow}>
@@ -117,7 +118,7 @@ export default function ProactiveSuggestionsScreen() {
           </TouchableOpacity>
 
           {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-          {busy && <ActivityIndicator color="#9a3412" />}
+          {busy && <ActivityIndicator color={styles.colors.accent} />}
 
           {suggestions && suggestions.length === 0 && (
             <Text style={styles.description}>
@@ -148,27 +149,32 @@ export default function ProactiveSuggestionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: '#fff' },
-  header: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8, borderBottomWidth: 1, borderColor: '#e5e7eb' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  flex: { flex: 1 }, safeArea: { flex: 1, backgroundColor: colors.card },
+  header: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8, borderBottomWidth: 1, borderColor: colors.border },
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 18, fontWeight: '800', color: '#111827' },
+  title: { fontSize: 18, fontWeight: '800', color: colors.text },
   content: { padding: 18, gap: 14, paddingBottom: 40 },
-  description: { fontSize: 13, lineHeight: 19, color: '#4b5563' },
-  input: { minHeight: 46, borderRadius: 12, backgroundColor: '#f3f4f6', color: '#111827', paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
+  description: { fontSize: 13, lineHeight: 19, color: colors.muted },
+  input: { minHeight: 46, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
   capacityRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  capacityChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: '#e5e7eb' },
-  capacityChipActive: { backgroundColor: '#c2410c', borderColor: '#c2410c' },
-  capacityChipText: { fontSize: 13, color: '#4b5563', fontWeight: '600' },
-  capacityChipTextActive: { color: '#fff' },
-  button: { minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#c2410c' },
+  capacityChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.border },
+  capacityChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  capacityChipText: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  capacityChipTextActive: { color: colors.onAccent },
+  button: { minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
   buttonDisabled: { opacity: 0.45 },
-  buttonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  error: { color: '#b91c1c', fontSize: 13 },
-  card: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 14, padding: 14, gap: 6 },
-  cardText: { fontSize: 15, color: '#111827', lineHeight: 21, fontWeight: '600' },
-  cardLabel: { fontSize: 11, color: '#9a3412', fontWeight: '700', textTransform: 'uppercase', marginTop: 6 },
-  cardDetail: { fontSize: 13, color: '#4b5563', lineHeight: 18 },
-  useButton: { marginTop: 10, minHeight: 42, borderRadius: 10, backgroundColor: '#c2410c', alignItems: 'center', justifyContent: 'center' },
-  useButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  buttonText: { color: colors.onAccent, fontSize: 14, fontWeight: '700' },
+  error: { color: colors.danger, fontSize: 13 },
+  card: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14, gap: 6 },
+  cardText: { fontSize: 15, color: colors.text, lineHeight: 21, fontWeight: '600' },
+  cardLabel: { fontSize: 11, color: colors.accent, fontWeight: '700', textTransform: 'uppercase', marginTop: 6 },
+  cardDetail: { fontSize: 13, color: colors.muted, lineHeight: 18 },
+  useButton: { marginTop: 10, minHeight: 42, borderRadius: 10, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  useButtonText: { color: colors.onAccent, fontWeight: '700', fontSize: 13 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}
