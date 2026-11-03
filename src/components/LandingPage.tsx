@@ -308,7 +308,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
     <div className="ember-shell ember-sanctuary min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main">
       {/* Premium Glow Aura Backdrops */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
+      <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-amber-500/5 rounded-full blur-[160px] pointer-events-none" />
       {/* iOS Safari/Chrome (both WebKit) need -webkit-mask-image explicitly -
           without it, WebKit ignores the mask entirely and this faint grid
           pattern renders as a solid dark block over the hero heading
@@ -317,7 +317,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
           -webkit- prefixed properties are guaranteed to land, regardless
           of what the build pipeline does or doesn't autoprefix. */}
       <div
-        className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-25"
+        className="absolute inset-0 bg-[linear-gradient(to_right,#473124_1px,transparent_1px),linear-gradient(to_bottom,#473124_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-25"
         style={{
           maskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
           WebkitMaskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
@@ -560,7 +560,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                       <button
                         type="button"
                         onClick={finishOnboarding}
-                        className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15"
+                        className="w-full flex items-center justify-center gap-3 bg-primary text-primary-foreground font-bold text-xs uppercase tracking-widest py-4 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15"
                       >
                         Continue to Blaze Break
                       </button>
@@ -782,7 +782,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                     <button
                       type="submit"
                       disabled={emailAuthSubmitting || !legalAgreed}
-                      className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15 disabled:opacity-50"
+                      className="w-full flex items-center justify-center gap-3 bg-primary text-primary-foreground font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15 disabled:opacity-50"
                     >
                       {emailAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                       <span role="status" aria-live="polite">
