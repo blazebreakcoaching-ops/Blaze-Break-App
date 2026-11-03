@@ -1,0 +1,29 @@
+# Blaze Break — CTO to Claude Code deployment handover
+**Date:** 2026-11-03. **State:** DEVELOPMENT SOURCE ONLY. **Deployment:** NOT AUTHORISED BY THIS DOCUMENT.
+
+## What is already integrated
+- The current Nova composer branch descends from the Recovery Routing development branch, so Recovery Routing, Ember and native Nova source are already in the current ancestry.
+- PR #140's credential-export sanitiser and its unit-test file have byte-identical contents in the current development ancestor and the PR. The open PR itself is not merged. Reconcile all security changes and review the PR separately before any release.
+- Native Nova chat, Before Words, Invisible Load, Proactive Suggestions and the Calendar/Task proposal screens already exist. Do not rebuild them.
+- This batch removes the accidental production Cloud Run fallback in native builds and refuses absolute/off-origin authenticated API requests. It also guards double-send and preserves Before Words context on network failures.
+
+## Hard blockers — do NOT claim live-ready
+1. **Native App Check is still an empty-token stub** in `mobile/src/lib/app-check.ts`. Production backend routes reject native requests. Integrate the compatible native Firebase SDK and its Expo configuration plugins, with a valid, current `mobile/package-lock.json`. No fake token, bypass, or weakened server middleware.
+2. **Native Firebase app configuration is absent**: Android `mobile/google-services.json`, iOS `mobile/GoogleService-Info.plist`. Register apps to a separately authorised staging project first; match bundle and package identifiers. Treat credentials/signing files securely. Do not commit secret signing keys.
+3. **Expo/EAS authentication and app signing are unavailable in ChatGPT's GitHub-only environment.** Use the owner-authorised EAS account and inspect native Android/iOS builds before release.
+4. **Firebase/GCloud authenticated access is unavailable here.** Read-only inspect staging service, auth, Firestore named database, App Check enforcement, deployed revision, indexes, rules, secrets (names only), URLs and feature flags before any mutation.
+5. **Native MFA, subscriptions/billing and real-device iOS/Android verification remain incomplete.** Do not advertise or enable unsupported native flows. Pricing changes are not approved. NHEI educational/reflection activation remains gated behind human review and explicit approval.
+6. **Security PR #140 remains open.** Check the PR's actual history, tests and merge conflict state. Never assume content similarity equals an approved merge.
+
+## Safe release order (Claude Code)
+1. `git fetch`, verify the exact CTO handover branch SHA, check uncommitted changes, confirm `main` hasn't been changed and report proposed integration.
+2. Run root + native fresh installs, TypeScript, ESLint, unit tests, production build and `npm run verify:release:offline -- --all`. Record exit codes and exact HEAD. Do NOT invoke GitHub Actions.
+3. Confirm an **explicit** staging project. `.firebaserc` currently maps staging to `blaze-break-staging`, production/default to `gen-lang-client-0537893432`. `firebase.json` references named Firestore database `ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc`; do not assume it exists in staging.
+4. Configure the native Firebase apps and EAS development client, add native App Check SDK wiring, verify token refresh, invalid-token rejection and authenticated requests against staging. Set `EXPO_PUBLIC_API_BASE_URL` explicitly for each build (HTTPS staging service; no production fallback).
+5. `node scripts/cto-native-release-preflight.mjs --target staging` must pass *before* staging native build acceptance. This script performs no cloud actions and is not sufficient by itself.
+6. Perform real-device tests on iPhone and Android: sign-in/out, account isolation, API token refresh, offline/retry, app foreground/background, small screens, accessibility, app privacy, data export/deletion, and enabled/disabled feature flags.
+7. Reconcile security PR #140 and development branches using a reviewed integration branch. Never blindly merge current development straight into production.
+8. Only when the owner explicitly approves a controlled deployment: record the exact project, service, image/commit, rollout plan and rollback revision; deploy to the approved project with authenticated Firebase/GCloud tooling; run post-deploy smoke tests before any production traffic switch. Do not enable NHEI or agentic external writes implicitly.
+
+## Mandatory handover report
+For every gate report PASS, FAIL or NOT RUN with commands, exit codes, Git SHA, verified project/revision (non-sensitive), device/EAS evidence, test counts, newly introduced dependencies, live feature flags, App Check reject/pass tests, security PR status and rollback steps. No test result from a prior commit qualifies as a passing result for a new release commit.

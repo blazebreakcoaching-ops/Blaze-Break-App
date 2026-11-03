@@ -52,19 +52,32 @@ function NovaConversation() {
   const [error, setError] = useState<string | null>(null);
   const [practicalAssistanceOffer, setPracticalAssistanceOffer] = useState<PracticalAssistanceOffer | null>(null);
   const practicalAssistanceOfferShownRef = useRef(false);
+  // State updates are not synchronous; an immediate second tap must not
+  // initiate a second model request with the same history or consume
+  // one-time context twice.
+  const sendingRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const canSend = !busy && draft.trim().length > 0 &&
     draft.trim().length <= NOVA_MOBILE_MAX_MESSAGE_LENGTH;
 
   const send = async () => {
-    if (!canSend) return;
+    if (!canSend || sendingRef.current) return;
+    sendingRef.current = true;
     const text = draft.trim();
     // A user can return from Before Words with one temporary context.
     // Never include it in displayed/persisted history or a system
     // instruction; the server quarantines it as lower-trust message data.
-    const body = buildNovaMobileChatBody(text, messages,
-      advancedJourneyEnabled ? beforeWordsContext : null);
-    clearBeforeWords();
+    let body: ReturnType<typeof buildNovaMobileChatBody>;
+    try {
+      body = buildNovaMobileChatBody(text, messages,
+        advancedJourneyEnabled ? beforeWordsContext : null);
+    } catch {
+      sendingRef.current = false;
+      setError('That message could not be prepared. Please edit it and retry.');
+      return;
+    }
+    // Preserve the optional Before Words context until the server actually
+    // responds. A failed request must not silently discard it.
     setMessages((current) => [...current, { role: 'user', parts: [{ text }] }]);
     setDraft('');
     setBusy(true);
@@ -76,6 +89,7 @@ function NovaConversation() {
           !('text' in reply) || typeof reply.text !== 'string') {
         throw new Error('Nova returned an unexpected response. Please try again.');
       }
+      clearBeforeWords();
       setMessages((current) => [...current, { role: 'model', parts: [{ text: reply.text as string }] }]);
       const offer = 'planTrace' in reply ? findPracticalAssistanceOffer(reply.planTrace) : null;
       if (offer && !practicalAssistanceOfferShownRef.current) {
@@ -89,6 +103,7 @@ function NovaConversation() {
       setDraft(text);
       setMessages((current) => current.slice(0, -1));
     } finally {
+      sendingRef.current = false;
       setBusy(false);
     }
   };

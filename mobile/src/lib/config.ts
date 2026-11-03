@@ -1,6 +1,6 @@
-// EXPO_PUBLIC_-prefixed env vars are inlined at build time by Expo's own
-// tooling (no extra config needed) and are readable from process.env in
-// both Expo Go and a built app. Falls back to the known production Cloud
-// Run URL so the app works out of the box without an .env file.
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL || 'https://blaze-break-220686314556.europe-west2.run.app';
+// This value is public client configuration, never a secret. It MUST be
+// set separately for each EAS/internal/production build. A silent production
+// fallback allowed development/staging devices to send authenticated user
+// requests to the live Cloud Run service when a build variable was missing.
+// Fail closed instead; see docs/CTO_FIREBASE_GCLOUD_DEPLOY_HANDOFF.md.
+export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim().replace(/\/+$/, '');

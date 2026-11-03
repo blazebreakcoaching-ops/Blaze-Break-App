@@ -9,6 +9,7 @@
 import { auth } from './firebase';
 import { getAppCheckToken } from './app-check';
 import { API_BASE_URL } from './config';
+import { buildNativeApiUrl } from './api-url';
 
 export class SecureApiError extends Error {
   public status: number;
@@ -27,6 +28,16 @@ interface SecureApiOptions extends RequestInit {
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
+  // Validate the absolute destination BEFORE reading any auth credentials.
+  // Previously path.startsWith('http') trusted arbitrary URLs and attached
+  // bearer/App Check tokens to them. This code now permits only /api/ paths
+  // on the configured HTTPS (or local-emulator HTTP) origin.
+  let url: string;
+  try {
+    url = buildNativeApiUrl(API_BASE_URL, path);
+  } catch {
+    throw new SecureApiError('The Blaze Break API is not configured for this build. Please use a verified build.', 0);
+  }
   const user = auth.currentUser;
 
   if (!user) {
@@ -55,8 +66,6 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   }
 
   const fetchOptions: RequestInit = { ...rest, headers };
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-
   let response: Response;
   try {
     response = await fetch(url, fetchOptions);
