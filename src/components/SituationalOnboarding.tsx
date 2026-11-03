@@ -272,7 +272,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
   const CurrentIcon = steps[step].icon;
 
   return (
-    <div className="dark min-h-screen bg-background flex items-center justify-center p-6 sm:p-8 relative selection:bg-primary/20 selection:text-primary font-sans text-text-main">
+    <div className="ember-shell ember-sanctuary dark min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 relative selection:bg-primary/20 selection:text-primary font-sans text-text-main">
       {/* Background aesthetic */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
@@ -289,7 +289,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -20 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full p-10 sm:p-20 flex flex-col items-center space-y-12 bg-surface border border-border rounded-xl shadow-lg relative overflow-hidden"
+            className="ember-feature w-full p-5 sm:p-10 lg:p-14 flex flex-col items-center space-y-7 sm:space-y-10 rounded-2xl relative overflow-hidden"
           >
             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
@@ -305,7 +305,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   </span>
                 </div>
                 <span className="text-xs font-mono font-bold text-text-muted">
-                  Setting Up Nova
+                  Setting Up Nova Blaze
                 </span>
               </div>
               
@@ -342,7 +342,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             </div>
 
             <div className="text-center flex flex-col items-center space-y-6 w-full">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-inner">
+              <div className="ember-nova-mark w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
                 <CurrentIcon className="w-10 h-10" />
               </div>
 
