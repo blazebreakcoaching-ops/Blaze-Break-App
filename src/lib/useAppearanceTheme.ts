@@ -26,7 +26,6 @@ export function useAppearanceTheme() {
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return;
     const query = window.matchMedia(QUERY);
-    setSystemDark(query.matches);
     const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
     if (query.addEventListener) {
       query.addEventListener('change', onChange);
