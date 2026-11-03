@@ -930,8 +930,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
   };
 
   return (
-    <div className="ember-midnight flex flex-col h-full bg-card rounded-2xl border border-border overflow-hidden relative transition-all duration-500">
-      <div className="p-5 border-b border-border flex items-center justify-between">
+    <div className="ember-midnight ember-nova-room flex flex-col h-full bg-card rounded-2xl border border-border overflow-hidden relative transition-all duration-500">
+      <div className="px-4 py-4 sm:p-5 border-b border-border flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="ember-nova-mark w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary relative overflow-hidden group">
             <Sparkles className="w-4 h-4 relative z-10" />
@@ -987,15 +987,15 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           aria-live="polite"
           aria-atomic="false"
           aria-relevant="additions"
-          className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar"
+          className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 sm:space-y-8 no-scrollbar"
         >
           {messages.length === 0 && !loading && (
             <div className="h-full flex flex-col items-center justify-center max-w-sm mx-auto text-center space-y-8">
               <div className="space-y-4">
-                <div className="ember-nova-mark w-16 h-16 rounded-xl bg-primary/10 mx-auto flex items-center justify-center text-primary">
+                <div className="ember-nova-mark w-20 h-20 rounded-full bg-primary/10 mx-auto flex items-center justify-center text-primary">
                   <Sparkles className="w-7 h-7" />
                 </div>
-                <h4 className="text-2xl font-display font-medium text-text-main tracking-tight">
+                <h4 className="text-2xl font-serif font-semibold text-text-main tracking-tight">
                   Nova Blaze is ready
                 </h4>
                 <p className="text-text-muted font-serif italic leading-relaxed">
