@@ -930,15 +930,15 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
   };
 
   return (
-    <div className="flex flex-col h-full bg-card rounded-xl border border-border overflow-hidden relative transition-all duration-500">
+    <div className="ember-midnight flex flex-col h-full bg-card rounded-2xl border border-border overflow-hidden relative transition-all duration-500">
       <div className="p-5 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary relative overflow-hidden group">
+          <div className="ember-nova-mark w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary relative overflow-hidden group">
             <Sparkles className="w-4 h-4 relative z-10" />
           </div>
           <div>
             <h3 className="text-sm font-display font-medium text-text-main tracking-tight">
-              Nova
+              Nova Blaze
             </h3>
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-primary" />
@@ -992,11 +992,11 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           {messages.length === 0 && !loading && (
             <div className="h-full flex flex-col items-center justify-center max-w-sm mx-auto text-center space-y-8">
               <div className="space-y-4">
-                <div className="w-16 h-16 rounded-xl bg-primary/10 mx-auto flex items-center justify-center text-primary">
+                <div className="ember-nova-mark w-16 h-16 rounded-xl bg-primary/10 mx-auto flex items-center justify-center text-primary">
                   <Sparkles className="w-7 h-7" />
                 </div>
                 <h4 className="text-2xl font-display font-medium text-text-main tracking-tight">
-                  Nova is ready
+                  Nova Blaze is ready
                 </h4>
                 <p className="text-text-muted font-serif italic leading-relaxed">
                   "I don't do surface-level tips. I look at what's actually
@@ -1523,7 +1523,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
                 aria-label="Send message"
-                className="absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
+                className="ember-orbit absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
               >
                 <Send className="w-4.5 h-4.5" />
               </button>
