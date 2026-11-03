@@ -38,7 +38,7 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { validatePracticalAssistanceOffer } from './nova-practical-assistance-offer';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
-import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
+import { collectionsForExport, collectionsForErasure, userIdFieldsFor, USER_KEYED_TOP_LEVEL_COLLECTIONS } from './user-data-collections';
 import { sanitiseExportDoc, sanitiseExportCollectionsMap, extractOAuthFailureDiagnostics } from './export-credential-sanitiser';
 import { quarantineTemporaryBeforeWordsContextForPrompt } from './nova-before-words-temporary-context';
 // Phase 3C-2A section 8 wired exportAllNheiData (read-only GDPR export).
@@ -15706,6 +15706,15 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
       data[colName] = [...merged.values()];
     }));
 
+    // Legacy root collection gap: admin_users/{uid} is keyed by UID,
+    // not stored under users/{uid} and not indexed by a userId field.
+    // Export only the caller's own top-level record. It is current role
+    // metadata, unlike admin_audit_logs (which is intentionally retained).
+    for (const colName of USER_KEYED_TOP_LEVEL_COLLECTIONS) {
+      const snap = await db.collection(colName).doc(user.uid).get();
+      data[colName] = snap.exists ? [{ id: snap.id, ...snap.data() }] : [];
+    }
+
     // PRIORITY ZERO security fix (Phase 5F, directive §2): the generic
     // per-collection dump above (`data`) copied every direct subcollection
     // under users/{uid} into this response verbatim, with only
@@ -15750,6 +15759,20 @@ app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseU
 async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> {
   const db = getDb();
   const userRef = db.collection("users").doc(uid);
+
+  // A Platform Owner must not erase the only surviving owner. Perform
+  // this check BEFORE any destructive write, not after the user tree has
+  // already been deleted. Never treat an error reading the current role
+  // as "not an admin" and silently continue.
+  const keyedDocsToErase: any[] = [];
+  for (const colName of USER_KEYED_TOP_LEVEL_COLLECTIONS) {
+    const ref = db.collection(colName).doc(uid);
+    const snap = await ref.get();
+    if (colName === 'admin_users' && snap.exists && snap.data()?.role === 'platform_owner') {
+      await assertNotLastPlatformOwner(uid, firebaseConfigDatabaseId);
+    }
+    if (snap.exists) keyedDocsToErase.push(ref);
+  }
 
   // Remove this user from any organisation they belong to first, so a
   // deleted account can't linger in an org's memberUids/adminUids and
@@ -15808,6 +15831,11 @@ async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> 
     }
     await Promise.all([...toDelete.values()].map((ref) => ref.delete()));
   }
+
+  // Delete UID-keyed admin roster records after all collection erasure
+  // passes. Do not leave an active admin_users/{uid} orphan behind when
+  // the Firebase Auth account is removed.
+  await Promise.all(keyedDocsToErase.map((ref) => ref.delete()));
 
   // Delete the auth account itself last. If this fails, the personal
   // data is already gone, which is the part that actually matters for

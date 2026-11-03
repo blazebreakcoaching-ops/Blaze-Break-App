@@ -67,6 +67,24 @@ function seedFullUser() {
 }
 
 describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
+  it('exports only the caller own UID-keyed admin roster record', async () => {
+    seedFullUser();
+    seedDoc(`admin_users/${USER}`, { uid: USER, role: 'support_admin', email: 'owner@example.com', displayName: 'Jordan' });
+    seedDoc(`admin_users/${OTHER}`, { uid: OTHER, role: 'support_admin', email: 'other@example.com', displayName: 'Someone Else' });
+    const res = await request(app).get('/api/user/export').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.collections.admin_users).toHaveLength(1);
+    expect(res.body.collections.admin_users[0]).toMatchObject({ id: USER, role: 'support_admin', displayName: 'Jordan' });
+    expect(JSON.stringify(res.body.collections.admin_users)).not.toContain('other@example.com');
+  });
+
+  it('does not invent an admin record for an ordinary account', async () => {
+    seedFullUser();
+    const res = await request(app).get('/api/user/export').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(res.body.collections.admin_users).toEqual([]);
+  });
+
   it('exports the root profile, every subcollection, and stray collections scoped to the caller', async () => {
     seedFullUser();
     const res = await request(app).get('/api/user/export').set(auth(USER));
@@ -349,6 +367,27 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
 });
 
 describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
+  it('removes a former admin current-role record without touching other admin accounts', async () => {
+    seedFullUser();
+    seedDoc(`admin_users/${USER}`, { uid: USER, role: 'support_admin', email: 'owner@example.com' });
+    seedDoc(`admin_users/${OTHER}`, { uid: OTHER, role: 'platform_owner', email: 'other@example.com' });
+    const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`admin_users/${USER}`)).toBeUndefined();
+    expect(getDocRaw(`admin_users/${OTHER}`)).toBeDefined();
+  });
+
+  it('refuses to erase the last platform owner before deleting any personal data', async () => {
+    seedFullUser();
+    seedDoc(`admin_users/${USER}`, { uid: USER, role: 'platform_owner', email: 'owner@example.com' });
+    const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(getDocRaw(`admin_users/${USER}`)).toBeDefined();
+    expect(getDocRaw(`users/${USER}`)).toBeDefined();
+    expect(getDocRaw(`users/${USER}/mood_pulses/mp1`)).toBeDefined();
+    expect(h.deleteUser).not.toHaveBeenCalled();
+  });
+
   it('erases the user document, every subcollection, and erasable stray collections', async () => {
     seedFullUser();
     const res = await request(app).post('/api/user/delete-account').set(auth(USER));

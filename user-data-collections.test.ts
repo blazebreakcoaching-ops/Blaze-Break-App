@@ -7,6 +7,7 @@ import {
   collectionsForExport,
   collectionsForErasure,
   userIdFieldsFor,
+  USER_KEYED_TOP_LEVEL_COLLECTIONS,
 } from './user-data-collections';
 
 // The point of this suite is the guardrail test at the bottom: it reads
@@ -41,6 +42,11 @@ function findTopLevelUserIdCollections(src: string): string[] {
 }
 
 describe('user-data-collections registry', () => {
+  it('classifies UID-keyed admin roster data outside users/{uid}', () => {
+    expect(USER_KEYED_TOP_LEVEL_COLLECTIONS).toContain('admin_users');
+    expect(collectionsForExport()).not.toContain('admin_users');
+  });
+
   it('collectionsForExport includes every declared personal collection', () => {
     expect(collectionsForExport()).toContain('anxiety_reset_events');
     expect(collectionsForExport()).toContain('audit_logs');
