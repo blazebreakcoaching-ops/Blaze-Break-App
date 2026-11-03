@@ -332,7 +332,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
             <img src="/brand/flame-mark-dark.png" alt="" className="w-full h-full object-contain hidden dark:block" />
           </div>
           <div className="hidden sm:flex flex-col">
-            <h1 className="ember-wordmark text-base sm:text-xl text-text-main">Blaze Break</h1>
+            <span className="ember-wordmark text-base sm:text-xl text-text-main">Blaze Break</span>
             <span className="ember-tagline hidden sm:block mt-1">Rethink · Reflect · Rejuvenate</span>
           </div>
         </div>
@@ -373,10 +373,10 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
           <span className="ember-kicker inline-block px-4 py-1.5 rounded-full text-xs uppercase tracking-[0.2em] font-black">
             A Recovery Method for High Performers
           </span>
-          <h2 className="ember-title ember-hero-title text-text-main max-w-5xl">
+          <h1 className="ember-title ember-hero-title text-text-main max-w-5xl">
             High performance <br className="hidden sm:block" />
             without the <em>burnout.</em>
-          </h2>
+          </h1>
           <p className="ember-hero-subtitle max-w-2xl mx-auto md:mx-0 text-base sm:text-lg font-medium">
             Scale ambition without self-destruction. Blaze Break helps you recognise overload, build practical recovery habits and protect your energy. Your burnout fingerprint comes from a self-assessment, not a biometric scan.
           </p>
