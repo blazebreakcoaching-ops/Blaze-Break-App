@@ -49,7 +49,7 @@ export function AppearanceMenu({ mode, onChange, compact = false, above = false 
       </button>
       {open && (
         <div role="group" aria-label="Appearance options"
-          className={`absolute z-[190] min-w-44 rounded-xl bg-card text-text-main shadow-xl border border-border p-1 ${above ? 'bottom-full mb-2' : 'top-full mt-2'} right-0`}
+          className={`absolute z-[190] min-w-44 rounded-xl bg-card text-text-main shadow-xl border border-border p-1 ${above ? 'bottom-full mb-2' : 'top-full mt-2'} ${compact && above ? 'left-0' : 'right-0'}`}
         >
           {OPTIONS.map(({ mode: value, label, Icon }) => (
             <button key={value} type="button" aria-pressed={mode === value}

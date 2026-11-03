@@ -35,9 +35,10 @@ export function NativeThemeProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!ready) return;
-    // Keep OS-native alerts, pickers and status elements aligned. 'auto'
-    // clears any app override, allowing the system to change at runtime.
-    Appearance.setColorScheme(mode === 'system' ? 'auto' : mode);
+    // React Native 0.86 uses 'unspecified' (NOT 'auto') to remove
+    // an app-level override, following OS appearance again. Aligns native
+    // Alerts, Pickers and system-owned surfaces as well as app colours.
+    Appearance.setColorScheme(mode === 'system' ? 'unspecified' : mode);
   }, [mode, ready]);
 
   const setMode = useCallback((next: NativeAppearanceMode) => {
