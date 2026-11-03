@@ -513,7 +513,7 @@ const Sidebar = ({
         onClick={() => setActiveTab("home")}
         aria-label="Blaze Break, go to Home"
       >
-        <div className="ember-logo w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
+        <div className="ember-logo ember-brandmark w-12 h-12 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
           <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
           <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
         </div>
@@ -529,8 +529,8 @@ const Sidebar = ({
               <h1 className="font-display font-black text-xl tracking-tighter text-text-main leading-none truncate">
                 Blaze Break
               </h1>
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mt-1 whitespace-normal leading-tight">
-                Recovery Companion
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary mt-1 whitespace-normal leading-tight">
+                Rethink · Reflect · Rejuvenate
               </span>
             </motion.div>
           )}
@@ -788,7 +788,7 @@ const Sidebar = ({
 // silently go blank here again the way "Dashboard Module" once could for
 // the h2 title below (see dashboard-titles.test.ts).
 const EYEBROW_LABELS: Record<string, string> = {
-  home: "Neuro-Stability Engine",
+  home: "Your Pulse",
   recovery_intelligence: "Recovery Intelligence",
   diagnose: "Loop Analysis",
   recover: "Energy Delta Management",
@@ -897,7 +897,7 @@ const Header = ({
   }, [handleGuardianPing]);
 
   return (
-    <header className="flex flex-col sm:flex-row sm:items-center items-start justify-between gap-6 mb-12 relative transition-colors duration-500">
+    <header className={cn("flex flex-col sm:flex-row sm:items-center items-start justify-between gap-5 sm:gap-6 mb-8 sm:mb-10 relative transition-colors duration-500", activeTab === "home" && "ember-pulse-intro px-5 py-6 sm:px-9 sm:py-9", activeTab === "reset" && "ember-reset-showcase px-5 py-6 sm:px-9 sm:py-9")}>
       <AnimatePresence>
         {toastMessage && (
           <motion.div
