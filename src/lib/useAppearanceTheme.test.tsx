@@ -57,6 +57,18 @@ describe('web appearance preference and live System tracking', () => {
     next.unmount();
   });
 
+  it('updates another open tab when the saved appearance changes', () => {
+    const { result, unmount } = renderHook(() => useAppearanceTheme());
+    expect(result.current.mode).toBe('system');
+    localStorage.setItem('blaze_theme_mode', 'dark');
+    act(() => window.dispatchEvent(new StorageEvent('storage', {
+      key: 'blaze_theme_mode', newValue: 'dark',
+    })));
+    expect(result.current.mode).toBe('dark');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    unmount();
+  });
+
   it('migrates the previous dark-mode toggle', () => {
     localStorage.setItem('blaze_dark_mode', 'true');
     const { result, unmount } = renderHook(() => useAppearanceTheme());

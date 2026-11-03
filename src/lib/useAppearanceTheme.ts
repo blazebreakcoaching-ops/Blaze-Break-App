@@ -36,6 +36,26 @@ export function useAppearanceTheme() {
     return () => query.removeListener(onChange);
   }, []);
 
+  // Keep multiple open Blaze Break tabs consistent without server writes.
+  // Storage events fire in OTHER tabs; the tab making a change already
+  // updates immediately through setMode.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== APPEARANCE_STORAGE_KEY &&
+          event.key !== LEGACY_DARK_MODE_KEY) return;
+      try {
+        setMode(readAppearanceMode(
+          localStorage.getItem(APPEARANCE_STORAGE_KEY),
+          localStorage.getItem(LEGACY_DARK_MODE_KEY),
+        ));
+      } catch {
+        setMode('system');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const darkMode = isDarkAppearance(mode, systemDark);
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
