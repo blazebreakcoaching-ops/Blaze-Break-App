@@ -47,6 +47,19 @@ async function mockChatOnce(page: Page, body: { text: string; planTrace?: unknow
   }, { times: 1 });
 }
 
+// WhatsNewModal mounts for any signed-in Firebase identity (its own
+// lastSeenChangelogVersion check, unrelated to Nova) and can pop up mid-test
+// on a long-running test like the Report 35 viewport/theme matrix below,
+// blocking clicks behind its fixed, full-screen backdrop. Dismiss it if
+// it's there rather than suppress it outright (its gate is Firestore
+// profile-backed, not a simple localStorage flag like NovaFeedbackModal's).
+async function dismissWhatsNewModalIfOpen(page: Page) {
+  const gotIt = page.getByRole('button', { name: 'Got it' });
+  if (await gotIt.isVisible({ timeout: 500 }).catch(() => false)) {
+    await gotIt.click({ timeout: 2_000 }).catch(() => {});
+  }
+}
+
 test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
   test('the real landing page, "See a live demo", and sidebar/nav render with no horizontal overflow', async ({ page }) => {
     await gotoAppAsAnonymousUser(page);
@@ -227,5 +240,88 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
       return localStorage.getItem('blaze_profile');
     });
     expect(unrelatedKeyStillBlocked).toBeNull();
+  });
+
+  // CTO Report 35 - replaces the Report 33/34 static rem reserve with a
+  // measured, bounded-parent layout (see src/App.tsx's
+  // recomputeNovaShellMetrics and src/index.css's .ember-nova-shell rules).
+  // This exercises the full required matrix in one real, signed-in session:
+  // every directive viewport, both themes, real typing/scroll/send/receive,
+  // and - critically - that the Send button is never silently obstructed by
+  // the fixed mobile nav at any of them, including the two genuinely
+  // cramped ones (320x568, 375x600) where the header and demo-account
+  // banner alone can legitimately exceed the space above the nav even with
+  // the message log collapsed to nothing. On those, reaching the composer
+  // takes a scroll within the Nova shell itself - never behind the fixed
+  // nav, which is what made it unclickable before this fix.
+  const REQUIRED_VIEWPORTS: { width: number; height: number }[] = [
+    { width: 320, height: 568 },
+    { width: 375, height: 600 },
+    { width: 390, height: 844 },
+    { width: 412, height: 839 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ];
+
+  test('the Nova composer is reachable, typeable and sendable at every directive viewport and theme (Report 35)', async ({ page }) => {
+    // 12 real viewport x theme combinations, each with a real network
+    // round-trip and UI settle wait, genuinely exceed the config's default
+    // 30s single-assertion-style budget.
+    test.setTimeout(120_000);
+    await gotoAppAsAnonymousUser(page);
+    await openNovaTab(page);
+
+    for (const viewport of REQUIRED_VIEWPORTS) {
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await test.step(`${viewport.width}x${viewport.height} (${colorScheme})`, async () => {
+          await page.setViewportSize(viewport);
+          await page.emulateMedia({ colorScheme });
+          await dismissWhatsNewModalIfOpen(page);
+          // Let the ResizeObserver/onAnimationComplete-driven shell-height
+          // measurement (src/App.tsx) settle after the resize before
+          // asserting geometry against it.
+          await page.waitForTimeout(150);
+
+          const sendButton = page.getByRole('button', { name: 'Send message' });
+          await expect(sendButton).toBeVisible({ timeout: 10_000 });
+
+          const isMobile = viewport.width < 768;
+          if (isMobile) {
+            const mobileNav = page.getByTestId('mobile-bottom-nav');
+            await expect(mobileNav).toBeVisible();
+            // On the two most cramped viewports the header + demo-account
+            // banner alone can exceed the space above the nav even with
+            // the message log collapsed - .ember-nova-shell is then
+            // genuinely scrollable (by design, see src/index.css), and
+            // Playwright's scrollIntoViewIfNeeded() only scrolls far
+            // enough for partial visibility, not to the shell's true max.
+            // Scroll the shell itself to its real end, matching what a
+            // real user reaching for the composer on a screen this small
+            // would do.
+            await page.evaluate(() => {
+              const shell = document.querySelector('.ember-nova-shell');
+              if (shell) shell.scrollTop = shell.scrollHeight;
+            });
+            await expect.poll(async () => {
+              const [sendRect, navRect] = await Promise.all([
+                sendButton.boundingBox(),
+                mobileNav.boundingBox(),
+              ]);
+              if (!sendRect || !navRect) return -1;
+              return navRect.y - (sendRect.y + sendRect.height);
+            }, { timeout: 5_000 }).toBeGreaterThanOrEqual(8);
+          }
+
+          const replyText = `Reply for ${viewport.width}x${viewport.height} ${colorScheme}`;
+          await mockChatOnce(page, { text: replyText });
+          const input = page.getByPlaceholder(/./).first();
+          await input.scrollIntoViewIfNeeded();
+          await input.fill(`Testing ${viewport.width}x${viewport.height} ${colorScheme}`);
+          await dismissWhatsNewModalIfOpen(page);
+          await sendButton.click();
+          await expect(page.getByText(replyText)).toBeVisible({ timeout: 10_000 });
+        });
+      }
+    }
   });
 });

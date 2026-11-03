@@ -775,68 +775,118 @@
 
 
 
-/* Nova mobile composer clearance — Report 33.
- * The app header sits above this panel and the mobile nav is viewport-fixed.
- * A bare h-full on NovaChat resolved to auto without a sized ancestor,
- * putting Send under the nav on Pixel 7. Give the actual chat panel a
- * viewport-bounded block size, so its existing flex column can shrink the
- * MESSAGE LOG (not its header or composer) into an internal scroll area.
- * Desktop layout and other NovaChat mounts are unchanged.
+/* Nova mobile composer clearance — Report 35 structural fix.
+ * Reports 33/34 reserved a static rem constant above the chat panel to
+ * approximate "everything else on screen" - it was wrong at Pixel 7 (20rem),
+ * corrected once (30rem), and still wrong at narrower/shorter viewports,
+ * because no fixed constant can track variable content (wrapped header
+ * text, the demo-account banner) across every screen size.
+ *
+ * This replaces the constant with a real bounded-parent flex chain:
+ * - App.tsx measures, with getBoundingClientRect() (not guessed), the
+ *   fixed mobile nav's real rendered height and the Nova shell's own real
+ *   top offset (the page's own top padding, which varies by breakpoint -
+ *   a plain `100dvh - navHeight` calc ignores this and overflows the
+ *   shell past the nav by exactly that padding amount, which is what an
+ *   earlier draft of this fix did). It publishes the result - real
+ *   viewport height minus that top offset minus the nav height - as
+ *   --ember-nova-shell-height, recomputed via ResizeObserver on the nav
+ *   and on window/visualViewport resize (keyboard, rotation, breakpoint).
+ * - .ember-nova-shell (App.tsx's Nova-tab content wrapper) gets a
+ *   DEFINITE block-size from that measured variable - not a min-height.
+ *   A flex column's flex-grow only has "remaining space" to distribute to
+ *   its children when the container's own main size is definite; a
+ *   min-height-only container sizes to its content instead and flex-grow
+ *   has nothing to redistribute, which is what made an earlier draft of
+ *   this fix size to content height again instead of bounding it.
+ * - Every element between that bounded wrapper and the chat panel
+ *   (AnimatePresence's motion.div, .ember-nova-tab) is a flex column that
+ *   passes its remaining space straight down via flex:1 1 0; min-height:0,
+ *   so variable content above (header, account banner) takes exactly the
+ *   space it naturally needs (protected by flex items' default automatic
+ *   minimum size, so it's never clipped) and the chat panel - the one
+ *   link in the chain with min-height:0 overriding that default - absorbs
+ *   whatever's left, shrinking and scrolling internally rather than
+ *   pushing the composer below the fold.
+ * - .ember-nova-room itself drops h-full (which had no bounded ancestor
+ *   to resolve against) for flex:1 1 auto so it fills that remaining
+ *   space and its own [role="log"] scrolls internally, exactly as its
+ *   existing flex-col/overflow-y-auto classes already intended.
+ * Desktop layout and other NovaChat mounts are untouched: .ember-nova-shell
+ * is only applied when the Nova tab is active, and every rule here is
+ * scoped under max-width: 767px.
  */
 @media (max-width: 767px) {
-  .ember-nova-tab .ember-nova-room {
-    /* CTO Report 34 correction: 20rem under-measured the space actually
-     * above this panel - the shared page <header> (kicker + H2 title +
-     * Quick Support row, rendered for every tab) plus
-     * AccountStatusBanner's "Sample Account" banner, which every demo/
-     * anonymous session shows (the exact account state every real-app
-     * Playwright test uses), total ~391px on a Pixel 7, not ~320px. At
-     * 20rem the real geometry assertion measured -113px of clearance
-     * instead of the required >=8px. Measured directly (not guessed):
-     * panel top offset 391px against an 839px dvh viewport. 30rem
-     * (480px) reserved gives 47px of verified clearance at Pixel 7
-     * (412x839) and 390x844 - the viewport the real-app Playwright
-     * "realapp-mobile" project and this file's own regression assertion
-     * actually run at.
-     *
-     * Known residual gap, not fixed here: at narrower widths (320-375px)
-     * combined with short real-device heights (e.g. 320x568, 375x600),
-     * the shared header/banner text wraps onto more lines, pushing the
-     * panel's top further down than at Pixel 7's 412px width - this
-     * reserve, calibrated for Pixel 7, is not generous enough there, and
-     * neither the clamp's 15rem floor nor page-level scrolling
-     * compensates (the obstruction is a position:fixed nav, which page
-     * scroll cannot create clearance against). No width×height
-     * combination the CI suite actually exercises is affected. A real
-     * fix needs the panel's available height to come from an actual
-     * bounded-height ancestor rather than a static reserved constant -
-     * flagged for follow-up rather than attempted here.
-     */
-    block-size: clamp(
-      15rem,
-      calc(100dvh - 30rem - env(safe-area-inset-bottom, 0px)),
-      38rem
-    );
+  .ember-nova-shell {
+    display: flex;
+    flex-direction: column;
+    /* Fallback (pre-JS-measurement paint only): dvh minus the fixed nav's
+     * typical height. Overwritten within one frame by the real measured
+     * --ember-nova-shell-height once the effect above runs. */
+    block-size: calc(100dvh - var(--mobile-bottom-nav-height, 5rem));
+    block-size: var(--ember-nova-shell-height, calc(100dvh - var(--mobile-bottom-nav-height, 5rem)));
+    /* On the narrowest/shortest real screens, the header alone (wrapped
+     * onto more lines) plus the demo-account banner can legitimately
+     * exceed the space left above the nav, even with the message log
+     * shrunk to nothing. Rather than let the composer overflow the
+     * shell's bottom edge and land behind the fixed nav (unreachable),
+     * let the shell itself scroll: the composer stays reachable by
+     * scrolling past the header, and it can never render behind the nav
+     * because the shell's own box - not the page - is what's bounded. */
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .ember-nova-shell > .ember-tab-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
     min-block-size: 0;
   }
 
-  .ember-nova-tab .ember-nova-room [role="log"] {
+  .ember-nova-shell .ember-nova-tab {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
+    min-block-size: 0;
+  }
+
+  .ember-nova-shell .ember-nova-room {
+    block-size: auto;
+    flex: 1 1 auto;
+    min-block-size: 0;
+    /* The room's own composer row refuses to shrink (flex-shrink: 0,
+     * below), so on the most cramped screens the room's content can
+     * need more space than the outer flex chain has left to give it.
+     * NovaChat.tsx's root div normally clips with overflow-hidden (for
+     * its rounded corners); kept as-is, that would make any such
+     * shortfall invisible - the composer silently disappears instead of
+     * just needing a scroll. Letting the room's own overflow be visible
+     * here means a shortfall spills into .ember-nova-shell's own
+     * overflow-y: auto (above) instead, which scrolls - so the composer
+     * stays reachable rather than disappearing. Only relevant when
+     * content is already too tall for the room's flex allocation; the
+     * rounded-corner clipping this overrides isn't visible at that
+     * point anyway (the content has overflowed past the rounded box).
+     */
+    overflow: visible;
+  }
+
+  .ember-nova-shell .ember-nova-room [role="log"] {
     min-block-size: 0;
     overscroll-behavior-y: contain;
   }
 
-  .ember-nova-tab .ember-nova-room > .border-t {
+  .ember-nova-shell .ember-nova-room > .border-t {
     flex-shrink: 0;
   }
 }
 
-/* If a very short viewport or an on-screen keyboard compresses the chat,
- * users can still scroll the main page and reach the composer; don't
- * hide it or allow the fixed nav to consume the only available tap area. */
 @supports (height: 100svh) {
   @media (max-width: 767px) {
-    .ember-nova-tab .ember-nova-room {
-      max-block-size: max(15rem, calc(100svh - 30rem));
+    .ember-nova-shell {
+      block-size: calc(100svh - var(--mobile-bottom-nav-height, 5rem));
+      block-size: var(--ember-nova-shell-height, calc(100svh - var(--mobile-bottom-nav-height, 5rem)));
     }
   }
 }

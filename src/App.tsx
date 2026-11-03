@@ -1363,6 +1363,44 @@ export default function App() {
   }, [postOnboardingProfile]);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
   const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
+  const mobileNavRef = useRef<HTMLDivElement>(null);
+  const novaShellRef = useRef<HTMLDivElement>(null);
+
+  // Measured, not guessed: how tall the chat panel can actually be is the
+  // real viewport height minus however far down this shell's own top
+  // already sits (the page's own top padding, which varies by breakpoint)
+  // minus the real rendered nav height - not a static rem reserve for
+  // "everything above," which can't track variable content like a
+  // wrapped header or the demo-account banner. Exposed as a callback (not
+  // just an effect-local closure) so it can also be re-run deterministically
+  // when the Nova tab's own entrance transition finishes, below.
+  const recomputeNovaShellMetrics = useCallback(() => {
+    const navEl = mobileNavRef.current;
+    if (!navEl) return;
+    const navHeight = navEl.getBoundingClientRect().height;
+    document.documentElement.style.setProperty("--mobile-bottom-nav-height", `${navHeight}px`);
+    const shellEl = novaShellRef.current;
+    if (!shellEl) return;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const shellTop = shellEl.getBoundingClientRect().top;
+    const available = Math.max(0, viewportHeight - shellTop - navHeight);
+    document.documentElement.style.setProperty("--ember-nova-shell-height", `${available}px`);
+  }, []);
+
+  useEffect(() => {
+    const navEl = mobileNavRef.current;
+    if (!navEl) return;
+    recomputeNovaShellMetrics();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(recomputeNovaShellMetrics) : undefined;
+    observer?.observe(navEl);
+    window.addEventListener("resize", recomputeNovaShellMetrics);
+    window.visualViewport?.addEventListener("resize", recomputeNovaShellMetrics);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", recomputeNovaShellMetrics);
+      window.visualViewport?.removeEventListener("resize", recomputeNovaShellMetrics);
+    };
+  }, [activeTab, recomputeNovaShellMetrics]);
 
   useEffect(() => {
     if (!showMobileToolsSheet) return;
@@ -2453,7 +2491,7 @@ export default function App() {
             containing block automatically; adding w-full back would make
             width 100% of the containing block with the margin added on
             top, overflowing the right edge by exactly the sidebar offset. */}
-        <div className="max-w-7xl mx-auto min-w-0">
+        <div ref={novaShellRef} className={cn("max-w-7xl mx-auto min-w-0", activeTab === "nova" && "ember-nova-shell")}>
         <AccountStatusBanner
           isDemoSession={isDemoSession}
           onSignUp={() => { setFlow("landing"); setLandingInitialAuthOpen(true); }}
@@ -2567,12 +2605,14 @@ export default function App() {
 
         <AnimatePresence mode="wait">
           <motion.div
+            className="ember-tab-panel"
             layout
             key={activeTab}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3 }}
+            onAnimationComplete={activeTab === "nova" ? recomputeNovaShellMetrics : undefined}
           >
             <Suspense fallback={
               <div className="flex items-center justify-center py-32">
@@ -3157,6 +3197,7 @@ export default function App() {
           )}
         </button>
         <motion.div
+          ref={mobileNavRef}
           initial={false}
           animate={{ y: isMobileNavCollapsed ? "100%" : 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}

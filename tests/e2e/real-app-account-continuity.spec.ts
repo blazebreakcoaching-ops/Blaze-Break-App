@@ -19,9 +19,20 @@ function uniqueEmail(label: string): string {
 const PASSWORD = 'Ph5N-Synthetic-Pass-1!';
 
 async function mockChatOnce(page: Page, text: string) {
+  // CTO Report 35 investigation of :308's intermittent "mocked reply never
+  // appears" failure: clickRobustly (below) can legitimately retry a click
+  // after a transient actionability failure (its own doc comment - a
+  // modal popping up mid-click). If the FIRST click's request had already
+  // reached the server before the retry fires, a `{ times: 1 }` route
+  // would already be consumed, and the retry's real request would fall
+  // through to the actual (unmocked, no GEMINI_API_KEY in this
+  // environment) endpoint instead of the expected canned reply - a test
+  // synchronization gap, not an application defect. Serving every match
+  // for this route's lifetime removes that gap: a genuine retry gets the
+  // same correct reply instead of silently hitting the real API.
   await page.route('**/api/nova/chat', async (route) => {
     await route.fulfill({ json: { text, planTrace: [] } });
-  }, { times: 1 });
+  });
 }
 
 async function dismissFeedbackModalIfOpen(page: Page) {
