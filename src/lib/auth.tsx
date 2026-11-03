@@ -26,6 +26,8 @@ interface AuthContextType {
   // verified it this session - App.tsx renders MfaChallenge instead of the
   // app while this is true. Always false for anonymous sessions.
   mfaPending: boolean;
+  mfaStatusError: boolean;
+  retryMfaStatus: () => Promise<void>;
   // isNewUser reflects whether this operation just created the account
   // (including the anonymous-session-upgrade case, which Firebase also
   // reports as isNewUser: true) - used by LandingPage.tsx to decide
@@ -64,6 +66,8 @@ const AuthContext = createContext<AuthContextType>({
   emailVerified: false,
   refreshEmailVerified: async () => {},
   mfaPending: false,
+  mfaStatusError: false,
+  retryMfaStatus: async () => {},
   continueAsGuest: async () => {},
   signIn: async () => ({ isNewUser: false }),
   signInWithCalendar: async () => null,
@@ -260,6 +264,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [mfaPending, setMfaPending] = useState(false);
+  const [mfaStatusError, setMfaStatusError] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   // Set right before signOut() and consumed the next time onAuthStateChanged
   // fires with no user. Without this, an explicit sign-out was indistinguishable
@@ -338,29 +343,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const alreadyVerifiedThisSession = !!getMfaSessionToken(userRecord.uid);
 
           if (alreadyVerifiedThisSession) {
+            setMfaStatusError(false);
             setMfaPending(false);
           } else {
             try {
               const res = await secureApiFetch('/api/auth/mfa/status');
               const data = await res.json();
-              setMfaPending(data.enabled === true);
-            } catch (e) {
-              // Fail OPEN, not closed - a transient network error checking
-              // 2FA status must never lock someone out of their own
-              // account. The mirror image of this app's established
-              // "never remove safety to save availability" principle:
-              // never ADD a blocking gate on top of a mere connectivity
-              // hiccup either.
-              console.warn("Could not check two-factor status — continuing without the extra sign-in step this session.", e);
-              setMfaPending(false);
+              if (typeof data?.enabled !== 'boolean') throw new Error('Invalid security status');
+              setMfaStatusError(false);
+              setMfaPending(data.enabled);
+            } catch {
+              // A failed status check is UNKNOWN, not "MFA disabled".
+              // Show a retryable secure gate rather than permitting app
+              // access with an unverified MFA state.
+              setMfaStatusError(true);
+              setMfaPending(true);
             }
           }
         } else {
+          setMfaStatusError(false);
           setMfaPending(false);
         }
 
       } else {
         (window as any).__ACTIVE_USER_EMAIL__ = null;
+        setMfaStatusError(false);
+        setMfaPending(false);
         setAppRole('individual');
 
         if (explicitSignOutRef.current) {
@@ -500,15 +508,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // (POST /api/auth/mfa/totp/verify-at-signin, which also enforces the
   // lockout) - this just records the result for this session and clears
   // the gate.
+  const retryMfaStatus = async () => {
+    try {
+      const res = await secureApiFetch('/api/auth/mfa/status');
+      const data = await res.json();
+      if (typeof data?.enabled !== 'boolean') throw new Error('Invalid security status');
+      setMfaStatusError(false);
+      setMfaPending(data.enabled);
+    } catch {
+      setMfaStatusError(true);
+      setMfaPending(true);
+      throw new Error('Security status is unavailable. Check your connection and retry.');
+    }
+  };
+
   const verifyMfaAtSignIn = async (codeOrRecoveryCode: string, isRecoveryCode = false) => {
     const res = await secureApiFetch('/api/auth/mfa/totp/verify-at-signin', {
       method: 'POST',
       data: isRecoveryCode ? { recoveryCode: codeOrRecoveryCode } : { code: codeOrRecoveryCode },
     });
     const data = await res.json();
-    if (auth.currentUser && data.mfaSessionToken) {
-      setMfaSessionToken(auth.currentUser.uid, data.mfaSessionToken);
+    if (!auth.currentUser || typeof data?.mfaSessionToken !== 'string' || !data.mfaSessionToken) {
+      throw new Error('Verification did not return a valid session. Please try again.');
     }
+    setMfaSessionToken(auth.currentUser.uid, data.mfaSessionToken);
+    if (getMfaSessionToken(auth.currentUser.uid) !== data.mfaSessionToken) {
+      throw new Error('Could not save this verified session. Enable session storage and try again.');
+    }
+    setMfaStatusError(false);
     setMfaPending(false);
   };
 
@@ -528,8 +555,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (user) {
       clearMfaSessionToken(user.uid);
     }
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch (e) {
+      explicitSignOutRef.current = false;
+      throw e;
+    }
     setAccessToken(null);
+    setMfaStatusError(false);
     setMfaPending(false);
   };
   
@@ -542,7 +575,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, appRole, loading, accessToken, emailVerified, refreshEmailVerified, mfaPending, continueAsGuest: () => continueAsGuest(auth), signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
+    <AuthContext.Provider value={{ user, appRole, loading, accessToken, emailVerified, refreshEmailVerified, mfaPending, mfaStatusError, retryMfaStatus, continueAsGuest: () => continueAsGuest(auth), signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
