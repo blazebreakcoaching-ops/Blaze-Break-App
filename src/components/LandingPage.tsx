@@ -328,7 +328,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       <nav className="ember-nav fixed top-0 w-full z-50 px-4 sm:px-8 py-4 sm:py-5 flex justify-between items-center border-b">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className="ember-logo ember-brandmark w-12 h-12 sm:w-14 sm:h-14">
-            <img src="/brand/flame-mark-light.png" alt="" className="w-full h-full object-contain dark:hidden" />
+            <img src="/brand/ember-logo-light.svg" alt="" className="w-full h-full object-contain dark:hidden" />
             <img src="/brand/flame-mark-dark.png" alt="" className="w-full h-full object-contain hidden dark:block" />
           </div>
           <div className="flex flex-col">
@@ -497,7 +497,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       {/* Footer */}
       <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <img src="/brand/flame-mark-light.png" alt="" className="w-8 h-8 dark:hidden" />
+          <img src="/brand/ember-logo-light.svg" alt="" className="w-8 h-8 dark:hidden" />
           <img src="/brand/flame-mark-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
           <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
         </div>
@@ -551,7 +551,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
               <div className="text-left pt-4">
                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
-                  <img src="/brand/flame-mark-light.png" alt="" className="w-6 h-6 dark:hidden" />
+                  <img src="/brand/ember-logo-light.svg" alt="" className="w-6 h-6 dark:hidden" />
                   <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
