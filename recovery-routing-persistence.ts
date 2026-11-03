@@ -60,7 +60,14 @@ export const nextSessionCounterState = (
 
 export interface RecommendationOfferInput {
   selectedRoute: string;
-  selectedModule: string;
+  // null for an outcome with no selected module at all (currently only
+  // 'needs_clarification' - the one lightweight bandwidth question -
+  // reaches this function with a null module; a real module is always a
+  // string). Deduplicates against the most recent entry with the exact
+  // same (possibly null) selectedModule within the recency window, so
+  // repeated identical bandwidth questions are exactly as idempotent as
+  // repeated identical module-based offers.
+  selectedModule: string | null;
   routingOutcome: string;
   reasonCodes: string[];
   confidence: string;
@@ -91,8 +98,14 @@ export type RecommendationOfferResult =
   | { kind: 'infra_error'; error: unknown };
 
 // The one place either route creates a new, budget-counted recovery
-// routing decision. All of "is there already an open offer for this
-// module", "does the budget still allow one more", and "persist the
+// routing decision - including the one lightweight "what have you got
+// room for" clarification question itself (selectedModule: null), which
+// needs exactly the same idempotency and budget-reservation guarantee a
+// real module-based offer does: repeated identical clarification
+// requests, or several arriving at once, must count as the one question
+// actually being asked, not one per request. All of "is there already an
+// open offer for this (possibly null) module", "does the budget still
+// allow one more", and "persist the
 // counter increment + the decision doc" happen as reads-then-writes
 // inside a single transaction - never a plain query used as a
 // deduplication guard on its own. In real Firestore, a transaction's

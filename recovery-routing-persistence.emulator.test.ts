@@ -235,6 +235,34 @@ describe('Firestore emulator: reserveRecommendationOffer concurrency', () => {
   });
 });
 
+describe('Firestore emulator: null-module (needs_clarification) concurrency', () => {
+  it('ten simultaneous clarification requests produce exactly one counted, reused decision', async () => {
+    const uid = 'emu_clarification_concurrent';
+    const input = baseOffer({ selectedModule: null, routingOutcome: 'needs_clarification', selectedRoute: 'NONE' });
+    const results = await Promise.all(Array.from({ length: 10 }, () => reserveRecommendationOffer(db, uid, input)));
+    expect(results.filter((r) => r.kind === 'reserved')).toHaveLength(1);
+    expect(results.filter((r) => r.kind === 'reused')).toHaveLength(9);
+    const decisionsSnap = await db.collection(`users/${uid}/recovery_routing_decisions`).get();
+    expect(decisionsSnap.docs).toHaveLength(1);
+    const sessionSnap = await db.collection(`users/${uid}/recovery_routing`).doc('session_state').get();
+    expect(sessionSnap.data()!.recommendationsOffered).toBe(1);
+  });
+
+  it('a null-module clarification request and a real-module offer never collide with each other', async () => {
+    const uid = 'emu_clarification_vs_module';
+    const [clarification, moduleOffer] = await Promise.all([
+      reserveRecommendationOffer(db, uid, baseOffer({ selectedModule: null, routingOutcome: 'needs_clarification', selectedRoute: 'NONE' })),
+      reserveRecommendationOffer(db, uid, baseOffer({ selectedModule: 'energy_delta' })),
+    ]);
+    expect(clarification.kind).toBe('reserved');
+    expect(moduleOffer.kind).toBe('reserved');
+    const decisionsSnap = await db.collection(`users/${uid}/recovery_routing_decisions`).get();
+    expect(decisionsSnap.docs).toHaveLength(2);
+    const sessionSnap = await db.collection(`users/${uid}/recovery_routing`).doc('session_state').get();
+    expect(sessionSnap.data()!.recommendationsOffered).toBe(2);
+  });
+});
+
 describe('Firestore emulator: resolveStaleInterventionAbandonment concurrency', () => {
   it('concurrent abandonment resolution of the same stale decision counts it exactly once', async () => {
     const uid = 'emu_abandon_concurrent';

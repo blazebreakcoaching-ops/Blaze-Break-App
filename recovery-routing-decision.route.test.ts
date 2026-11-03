@@ -26,7 +26,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, getDocRaw } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -307,5 +307,67 @@ describe('POST /api/recovery/routing-decision', () => {
     const { getDocRaw } = await import('./test/fake-firestore');
     const session = getDocRaw(`users/${USER}/recovery_routing/session_state`);
     expect(session?.recommendationsOffered).toBe(1);
+  });
+});
+
+// CTO final closeout - clarification budget: repeated needs_clarification
+// responses must be idempotent, and simultaneous clarification requests
+// must not unnecessarily exhaust the shared recommendation limit, without
+// changing the bandwidth-question experience itself.
+describe('POST /api/recovery/routing-decision - idempotent clarification budget', () => {
+  it('a repeated, still-unanswered clarification request reuses the same decision id and counts once', async () => {
+    const first = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(first.body.routingOutcome).toBe('needs_clarification');
+    expect(first.body.decisionId).toBeTruthy();
+
+    const second = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(second.body.routingOutcome).toBe('needs_clarification');
+    expect(second.body.decisionId).toBe(first.body.decisionId);
+
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+    const decisionsSnap = await (await import('./test/fake-firestore')).allPaths();
+    expect(decisionsSnap.filter((p) => p.startsWith(`users/${USER}/recovery_routing_decisions/`))).toHaveLength(1);
+  });
+
+  it('simultaneous clarification requests never exceed one counted offer', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({})),
+    );
+    for (const res of results) {
+      expect(res.body.routingOutcome).toBe('needs_clarification');
+    }
+    const ids = new Set(results.map((r) => r.body.decisionId));
+    expect(ids.size).toBe(1);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+  });
+
+  it('still asks a genuinely new clarification question once an answer resolves the prior one', async () => {
+    const first = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(first.body.routingOutcome).toBe('needs_clarification');
+    // Answering it resolves to none_needed (nothing else logged) - a real,
+    // distinct outcome, not the same open clarification any more.
+    const answered = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitBandwidthReport: 'reflective_bandwidth' });
+    expect(answered.body.routingOutcome).toBe('none_needed');
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+  });
+
+  it('falls back to suppressed_by_budget rather than asking a clarifying question that leads nowhere', async () => {
+    seedDoc(`users/${USER}/recovery_routing/session_state`, {
+      day: new Date().toISOString().split('T')[0], recommendationsOffered: 3, recommendationsDeclined: 0,
+      interventionsStarted: 0, interventionsCompleted: 0, interventionsAbandoned: 0, updatedAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.body.routingOutcome).toBe('suppressed_by_budget');
+    expect(res.body.decisionId).toBeNull();
+  });
+
+  it('preserves the existing bandwidth-question response shape', async () => {
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.routingOutcome).toBe('needs_clarification');
+    expect(res.body.selectedRoute).toBe('NONE');
+    expect(res.body.selectedModule).toBeNull();
+    expect(res.body.sufficientBandwidthData).toBe(false);
+    expect(typeof res.body.decisionId === 'string' || res.body.decisionId === null).toBe(true);
   });
 });

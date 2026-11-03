@@ -16976,20 +16976,38 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         return res.status(500).json({ error: GENERIC_SERVER_ERROR });
       }
     } else if (decision.routingOutcome === 'needs_clarification') {
-      // Pre-existing behaviour, unchanged by this fix: asking the one
-      // lightweight bandwidth question still counts toward the daily
-      // budget and is recorded for history, but has no selected module to
-      // deduplicate by (there is nothing yet to avoid duplicating).
-      await incrementSessionCounter(db, user.uid, 'recommendationsOffered').catch(() => {});
-      try {
-        const ref = await db.collection("users").doc(user.uid).collection("recovery_routing_decisions").add({
-          createdAt: new Date().toISOString(), selectedRoute: decision.selectedRoute, selectedModule: null,
-          routingOutcome: decision.routingOutcome, reasonCodes: decision.reasonCodes, confidence: decision.confidence,
-          consideredModules: candidates.map((c) => c.sourceModule), bandwidthBand: bandwidth.band, sourceSurface: 'recovery_hub',
-        });
-        decisionId = ref.id;
-      } catch (e) {
-        // Non-fatal - the decision still reaches the user even if the audit write fails, just without an outcome loop for this one.
+      // The one lightweight bandwidth question still counts toward the
+      // daily budget, but - same reservation gate the module-based case
+      // uses, with selectedModule: null - a repeated, still-unanswered
+      // clarification request (a refresh, a re-render, two simultaneous
+      // requests) reuses the same decision id and counts once, not once
+      // per request. Never an explicit request (selectRoute only reaches
+      // needs_clarification when none exists).
+      const reservation = await reserveRecommendationOffer(db, user.uid, {
+        selectedRoute: decision.selectedRoute,
+        selectedModule: null,
+        routingOutcome: decision.routingOutcome,
+        reasonCodes: decision.reasonCodes,
+        confidence: decision.confidence,
+        consideredModules: candidates.map((c) => c.sourceModule),
+        bandwidthBand: bandwidth.band,
+        sourceSurface: 'recovery_hub',
+        isExplicitRequest: false,
+        recentWindowMs: RECENTLY_USED_WINDOW_MS,
+        sessionOfferLimit: SESSION_RECOMMENDATION_OFFER_LIMIT,
+        nowMs,
+      });
+      if (reservation.kind === 'reused' || reservation.kind === 'reserved') {
+        decisionId = reservation.decisionId;
+      } else if (reservation.kind === 'budget_exhausted') {
+        // If the budget is genuinely spent, asking the question is moot -
+        // nothing would be offered afterward either way. The honest
+        // outcome is the same suppressed_by_budget the module-based case
+        // already uses, not a question that leads nowhere.
+        outcomeOverride = { routingOutcome: 'suppressed_by_budget', selectedRoute: 'NONE', selectedModule: null };
+      } else {
+        logger.error('Recovery routing offer reservation failed for /api/recovery/routing-decision (needs_clarification)', errorFields(reservation.error));
+        return res.status(500).json({ error: GENERIC_SERVER_ERROR });
       }
     } else {
       // none_needed / suppressed_by_budget from the optimistic read itself
