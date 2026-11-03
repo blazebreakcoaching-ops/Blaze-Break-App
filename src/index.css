@@ -510,3 +510,234 @@
     transition: none;
   }
 }
+
+
+
+/* EMBER 2026 — reference-layout refinement
+ * Light: Warm Atelier; dark: Sunset Sanctuary / Midnight Focus.
+ * Design-only selectors; user data and existing navigation are untouched.
+ */
+:root {
+  --ember-sunset-copper: #bc421a;
+  --ember-warm-cream: #fff6ea;
+  --ember-panel-ring: rgba(158, 79, 41, 0.17);
+}
+.dark {
+  --ember-sunset-copper: #f68c45;
+  --ember-warm-cream: #221713;
+  --ember-panel-ring: rgba(255, 176, 93, 0.24);
+}
+.ember-brandmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  line-height: 1;
+  isolation: isolate;
+}
+.ember-brandmark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 12px rgba(227, 104, 44, 0.12));
+}
+.ember-brandmark--dark img {
+  filter: drop-shadow(0 0 14px rgba(255, 150, 65, 0.18));
+}
+.ember-wordmark {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -.035em;
+}
+.ember-tagline {
+  color: var(--muted-foreground);
+  font-size: .7rem;
+  line-height: 1.3;
+  letter-spacing: .07em;
+}
+
+.ember-landing-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 630px;
+  align-items: center;
+  justify-content: flex-start;
+}
+.ember-landing-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: url("/brand/ember-sunset.svg") center 48% / cover no-repeat;
+  opacity: .35;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 40%);
+  mask-image: linear-gradient(to right, transparent 0%, black 40%);
+}
+.ember-landing-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, var(--background) 0%, color-mix(in srgb, var(--background) 96%, transparent) 30%, transparent 84%),
+    linear-gradient(0deg, var(--background) 0%, transparent 40%);
+  pointer-events: none;
+}
+.dark .ember-landing-hero::before { opacity: .94; }
+.dark .ember-landing-hero::after {
+  background:
+    linear-gradient(90deg, #100f0e 0%, rgba(16, 15, 14, .96) 28%, rgba(16, 15, 14, .62) 57%, rgba(16, 15, 14, .10) 100%),
+    linear-gradient(0deg, #100f0e 0%, transparent 38%);
+}
+.ember-hero-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 790px;
+  margin-inline: 0;
+}
+.ember-hero-title {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(2.7rem, 5.7vw, 5.8rem);
+  line-height: 1.09;
+  letter-spacing: -.048em;
+  text-wrap: balance;
+}
+.ember-hero-title em {
+  font-weight: 500;
+  color: var(--ember-sunset-copper);
+  font-style: italic;
+}
+.ember-hero-subtitle {
+  max-width: 40rem;
+  color: var(--muted-foreground);
+  line-height: 1.7;
+}
+.dark .ember-hero-subtitle { color: #e3cec2; }
+.ember-hero-actions button {
+  min-height: 3.25rem;
+}
+.ember-feature-band {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  border: 1px solid var(--ember-panel-ring);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: 0 18px 45px -35px rgba(22, 12, 8, .45);
+  backdrop-filter: blur(12px);
+}
+.ember-feature-band > div + div {
+  border-left: 1px solid var(--border);
+}
+.ember-feature-band strong {
+  display: block;
+  font-family: "Manrope", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: .85rem;
+}
+.ember-feature-band span {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: .69rem;
+  margin-top: .2rem;
+}
+.ember-feature-band svg { color: var(--ember-sunset-copper); }
+.ember-feature {
+  border-radius: 1.4rem;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.ember-feature h3 {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.3rem;
+  letter-spacing: -.02em;
+}
+.ember-feature p { font-size: .86rem; line-height: 1.7; }
+.ember-pulse-intro,
+.ember-reset-showcase {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  box-shadow: var(--ember-card-shadow);
+}
+.ember-pulse-intro::before,
+.ember-reset-showcase::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: url("/brand/ember-sunset.svg") center 57% / cover no-repeat;
+  opacity: .19;
+  -webkit-mask-image: linear-gradient(to right, transparent 15%, black 100%);
+  mask-image: linear-gradient(to right, transparent 15%, black 100%);
+}
+.dark .ember-pulse-intro::before,
+.dark .ember-reset-showcase::before { opacity: .58; }
+.ember-pulse-intro::after,
+.ember-reset-showcase::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, var(--card) 0%, color-mix(in srgb, var(--card) 74%, transparent) 45%, transparent 100%);
+}
+.ember-pulse-intro h2,
+.ember-reset-showcase h3 {
+  font-family: "Fraunces", Georgia, serif;
+  letter-spacing: -.04em;
+}
+.ember-nova-room {
+  border-radius: 1.45rem;
+  box-shadow: var(--ember-card-shadow);
+}
+.ember-nova-room .ember-nova-mark {
+  border-radius: 50%;
+  border: 1px solid var(--ember-sunset-copper);
+  background: radial-gradient(circle at 50% 50%, var(--card) 39%, var(--ember-halo) 100%);
+  box-shadow: 0 0 0 5px var(--ember-halo), 0 0 24px rgba(236, 122, 49, .25);
+}
+.ember-nova-room [role="log"] {
+  background-image: radial-gradient(ellipse 75% 40% at 50% 0%, var(--ember-radiance), transparent);
+}
+.ember-nova-room [role="log"] > div { max-width: 100%; }
+.ember-reset-showcase .tag {
+  background: color-mix(in srgb, var(--surface) 83%, transparent);
+}
+.ember-nav {
+  box-shadow: var(--ember-card-shadow);
+}
+.ember-nav .ember-brandmark { flex-shrink: 0; }
+.ember-sanctuary .ember-nav {
+  border-bottom: 1px solid var(--border);
+}
+@media (max-width: 767px) {
+  .ember-landing-hero {
+    min-height: 0;
+    padding-top: 9rem;
+    padding-bottom: 3rem;
+  }
+  .ember-landing-hero::before {
+    opacity: .18;
+    background-position: 62% center;
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 95%);
+    mask-image: linear-gradient(to bottom, black 0%, transparent 95%);
+  }
+  .dark .ember-landing-hero::before { opacity: .46; }
+  .ember-landing-hero::after {
+    background: linear-gradient(0deg, var(--background) 0%, color-mix(in srgb, var(--background) 76%, transparent) 68%, transparent 100%);
+  }
+  .dark .ember-landing-hero::after {
+    background: linear-gradient(0deg, var(--background) 0%, rgba(16,15,14,.72) 72%, rgba(16,15,14,.48) 100%);
+  }
+  .ember-feature-band { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .ember-feature-band > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--border); }
+  .ember-feature-band > div:nth-child(4) { border-top: 1px solid var(--border); }
+  .ember-nova-room [role="log"] { padding: 1rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ember-feature { transition: none; }
+}
