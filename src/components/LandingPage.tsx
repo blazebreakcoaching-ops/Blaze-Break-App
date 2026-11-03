@@ -325,13 +325,13 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       />
 
       {/* Navigation */}
-      <nav className="ember-nav fixed top-0 w-full z-50 px-4 sm:px-8 py-4 sm:py-5 flex justify-between items-center border-b">
+      <nav aria-label="Primary navigation" className="ember-nav fixed top-0 w-full z-50 px-3 sm:px-8 py-3 sm:py-5 flex justify-between items-center border-b">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="ember-logo ember-brandmark w-12 h-12 sm:w-14 sm:h-14">
+          <div className="ember-logo ember-brandmark w-12 h-12 sm:w-14 sm:h-14" role="img" aria-label="Blaze Break">
             <img src="/brand/ember-logo-light.svg" alt="" className="w-full h-full object-contain dark:hidden" />
             <img src="/brand/flame-mark-dark.png" alt="" className="w-full h-full object-contain hidden dark:block" />
           </div>
-          <div className="flex flex-col">
+          <div className="hidden sm:flex flex-col">
             <h1 className="ember-wordmark text-base sm:text-xl text-text-main">Blaze Break</h1>
             <span className="ember-tagline hidden sm:block mt-1">Rethink · Reflect · Rejuvenate</span>
           </div>
