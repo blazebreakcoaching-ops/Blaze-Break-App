@@ -337,3 +337,176 @@
     scroll-behavior: auto !important;
   }
 }
+
+
+/* BLAZE BREAK EMBER / EXECUTIVE CALM
+ * Shared web theme primitives. A single palette feeds both the public
+ * Sunset Sanctuary and the signed-in Warm Atelier / Midnight Focus.
+ * Deliberately decorative only: no permissions, routing or data changes.
+ */
+@layer base {
+  :root {
+    --background: #fbf8f3;
+    --foreground: #231e1a;
+    --surface: #f3ede5;
+    --surface-elevated: #fffdfa;
+    --card: #fffdfa;
+    --card-foreground: #231e1a;
+    --muted-foreground: #5f554c;
+    --border: #e4d9cd;
+    --ember-copper: #ae4214;
+    --ember-gold: #9c621b;
+    --ember-halo: rgba(214, 120, 47, 0.15);
+    --ember-radiance: rgba(242, 168, 89, 0.14);
+    --ember-card-shadow: 0 12px 38px -24px rgba(60, 38, 20, 0.28);
+  }
+
+  .dark {
+    --background: #100f0e;
+    --foreground: #f8f0e5;
+    --surface: #181614;
+    --surface-elevated: #28211c;
+    --card: #201b18;
+    --card-foreground: #f8f0e5;
+    --muted-foreground: #c4b7a9;
+    --border: #41352e;
+    --ember-copper: #ffa46c;
+    --ember-gold: #f6ca85;
+    --ember-halo: rgba(236, 122, 49, 0.18);
+    --ember-radiance: rgba(237, 162, 79, 0.10);
+    --ember-card-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.65);
+  }
+}
+
+.ember-shell {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.ember-sanctuary {
+  background-image:
+    radial-gradient(ellipse 62% 38% at 50% 5%, var(--ember-radiance), transparent 83%),
+    radial-gradient(ellipse 48% 35% at 92% 65%, var(--ember-halo), transparent 90%);
+}
+
+.ember-workspace {
+  background-image: radial-gradient(ellipse 65% 45% at 85% 0%, var(--ember-radiance), transparent 80%);
+}
+
+.ember-nav {
+  background-color: var(--card);
+  border-color: var(--border);
+  box-shadow: var(--ember-card-shadow);
+}
+
+.ember-sanctuary .ember-nav {
+  background-color: color-mix(in srgb, var(--background) 90%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.ember-logo img {
+  filter: drop-shadow(0 0 12px var(--ember-halo));
+  transition: filter 200ms ease;
+}
+
+.ember-logo:hover img,
+.ember-logo:focus-within img {
+  filter: drop-shadow(0 0 20px var(--ember-radiance));
+}
+
+.ember-hero {
+  isolation: isolate;
+}
+
+.ember-title {
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+
+.ember-heading-glow {
+  background-image: linear-gradient(110deg, var(--ember-copper), var(--ember-gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.ember-kicker {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ember-copper);
+}
+
+.ember-orbit {
+  position: relative;
+  transition: box-shadow 200ms ease, transform 200ms ease, background-color 200ms ease;
+}
+
+.ember-orbit:hover,
+.ember-orbit:focus-visible {
+  box-shadow: 0 0 0 1px var(--ember-copper), 0 0 0 4px var(--ember-halo), 0 8px 24px -14px var(--ember-copper);
+}
+
+.ember-orbit:focus-visible {
+  outline: 2px solid var(--ember-copper);
+  outline-offset: 4px;
+}
+
+.ember-soft-action {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.ember-soft-action:hover {
+  background: var(--surface-elevated);
+  border-color: var(--ember-copper);
+}
+
+.ember-feature {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  box-shadow: var(--ember-card-shadow);
+}
+
+@media (hover: hover) {
+  .ember-feature:hover {
+    border-color: var(--ember-copper);
+    box-shadow: 0 16px 42px -23px var(--ember-halo), var(--ember-card-shadow);
+  }
+}
+
+.ember-pulse .card {
+  border-color: var(--border);
+  box-shadow: var(--ember-card-shadow);
+}
+
+.ember-midnight {
+  background-image: radial-gradient(ellipse 75% 50% at 50% 0%, var(--ember-radiance), transparent 78%);
+}
+
+.ember-nova-mark {
+  border: 1px solid var(--border);
+  box-shadow: 0 0 0 1px var(--ember-halo), 0 0 26px -8px var(--ember-copper);
+}
+
+@media (max-width: 639px) {
+  .ember-sanctuary .ember-nav {
+    gap: 0.75rem;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ember-feature,
+  .ember-nav,
+  .ember-nova-mark {
+    border-color: var(--foreground);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ember-logo img,
+  .ember-orbit {
+    transition: none;
+  }
+}
