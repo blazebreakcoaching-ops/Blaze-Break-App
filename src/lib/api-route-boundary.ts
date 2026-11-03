@@ -21,7 +21,7 @@ export function assertWebApiRoute(path: string, origin: string): string {
 }
 export function assertPublicLegalRoute(path: string, origin: string): string {
   assertWebApiRoute(path, origin);
-  if (!/^\/api\/legal\/documents(?:\/[a-z][a-z-]*)?(?:\?.*)?$/.test(path)) {
+  if (!/^\/api\/legal\/documents(?:\/[A-Za-z][A-Za-z0-9_-]*)?(?:\?.*)?$/.test(path)) {
     throw new Error('Public API is restricted to Blaze Break legal documents');
   }
   return path;

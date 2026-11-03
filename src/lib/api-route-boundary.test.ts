@@ -16,6 +16,10 @@ describe('shared legacy web API token destination boundary', () => {
   it('limits unauthenticated reads to the legal API', () => {
     expect(assertPublicLegalRoute('/api/legal/documents', origin)).toBe('/api/legal/documents');
     expect(assertPublicLegalRoute('/api/legal/documents/privacy', origin)).toBe('/api/legal/documents/privacy');
+    // The actual frontend uses these uppercase/underscore enum IDs.
+    for (const id of ['TERMS', 'PRIVACY', 'COOKIE_NOTICE', 'ACCEPTABLE_USE', 'AI_NOTICE']) {
+      expect(assertPublicLegalRoute('/api/legal/documents/' + id, origin)).toBe('/api/legal/documents/' + id);
+    }
     expect(() => assertPublicLegalRoute('/api/user/export', origin)).toThrow();
   });
 });
