@@ -46,7 +46,23 @@ const validBase = !!base && base.protocol === 'https:' &&
   !base.username && !base.password && !base.search && !base.hash &&
   (base.pathname === '' || base.pathname === '/');
 check('Explicit HTTPS API origin', validBase, 'Set EXPO_PUBLIC_API_BASE_URL for the intended deployment environment');
-check('No silent production fallback', !get('mobile/src/lib/config.ts').includes("|| 'https://blaze-break-"),
+
+const publicProject = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || '';
+const namedDb = process.env.EXPO_PUBLIC_FIREBASE_FIRESTORE_DATABASE_ID || '';
+const firebasePublicKeys = ['API_KEY', 'AUTH_DOMAIN', 'APP_ID', 'FIRESTORE_DATABASE_ID'];
+check('Complete public Firebase app config',
+  firebasePublicKeys.every(k => !!process.env['EXPO_PUBLIC_FIREBASE_' + k]),
+  'Require explicit EXPO_PUBLIC_FIREBASE_* values for each build');
+check('Firebase project matches deployment target',
+  publicProject === releaseProject,
+  'Native Auth/Firestore MUST NOT point at a different project than the intended target');
+check('Explicit Firestore database ID',
+  !!namedDb && !/^replace|^your/i.test(namedDb),
+  'Verify that the named database actually exists in the selected Firebase project');
+check('No web production config import in native',
+  !get('mobile/src/lib/firebase.ts').includes("from '../../../firebase-applet-config.json'"),
+  'A staging native build must never inherit production Auth/Firestore config');
+check('No silent production API fallback', !get('mobile/src/lib/config.ts').includes("|| 'https://blaze-break-"),
   'Staging must not silently point at the live service');
 
 console.log('Blaze Break native release preflight (' + target + ', source/config only)');
