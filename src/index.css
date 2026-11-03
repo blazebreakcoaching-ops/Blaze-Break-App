@@ -741,3 +741,34 @@
 @media (prefers-reduced-motion: reduce) {
   .ember-feature { transition: none; }
 }
+
+
+/* Ember Orbit: trace only during deliberate hover/focus, never continuous. */
+.ember-orbit { isolation: isolate; }
+.ember-orbit::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  padding: 2px;
+  background: conic-gradient(from 0deg, transparent 0deg, var(--ember-copper) 65deg, var(--ember-gold) 90deg, transparent 135deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.ember-orbit:hover::before,
+.ember-orbit:focus-visible::before {
+  opacity: 1;
+  animation: ember-border-trace 2.8s linear infinite;
+}
+@keyframes ember-border-trace {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ember-orbit:hover::before,
+  .ember-orbit:focus-visible::before { animation: none; }
+}
