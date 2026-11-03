@@ -29,3 +29,6 @@
 
 ## Mandatory handover report
 For every gate report PASS, FAIL or NOT RUN with commands, exit codes, Git SHA, verified project/revision (non-sensitive), device/EAS evidence, test counts, newly introduced dependencies, live feature flags, App Check reject/pass tests, security PR status and rollback steps. No test result from a prior commit qualifies as a passing result for a new release commit.
+
+## CTO gap closeout audit — 2026-11-03
+For the latest classified findings and release blockers, read `docs/CTO_GAP_AUDIT_20261103.md`. This handover's earlier wording about native App Check being unimplemented is superseded by the integrated App Check source; real native registration/attestation still needs authenticated verification. The native UI MFA gate blocks access for MFA-enabled accounts, but **Firestore owner rules still check only UID, not an MFA-verified session**. Do not claim native MFA is implemented or direct Firestore MFA protection is resolved.

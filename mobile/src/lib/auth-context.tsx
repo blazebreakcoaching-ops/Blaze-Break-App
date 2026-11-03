@@ -2,10 +2,10 @@
 // Phase 1 screen needs (anonymous-first sign-in, email/password with
 // anonymous-session upgrade, sign-out) and drops what's out of scope
 // this phase: social providers other than email (Google native sign-in
-// needs its own extra native config, tracked separately), MFA, role/
-// entitlement claims (nothing in Phase 1 is role-gated), email
-// verification banners. All kept logic is copied as-is from the web
-// version since it's pure Firebase Auth SDK calls, not browser-specific.
+// needs its own extra native config), an interactive MFA challenge and
+// email-verification banners. Native must still CHECK the MFA-enabled
+// claim and block access until it has a real second-factor experience.
+// This client gate does not replace Firestore rules or server enforcement.
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   User,
