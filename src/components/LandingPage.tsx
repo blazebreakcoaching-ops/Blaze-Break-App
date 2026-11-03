@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { BlazeBrandLogo } from './BlazeBrandLogo';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
@@ -327,10 +328,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       {/* Navigation */}
       <nav aria-label="Primary navigation" className="ember-nav fixed top-0 w-full z-50 px-3 sm:px-8 py-3 sm:py-5 flex justify-between items-center border-b">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="ember-logo ember-brandmark w-12 h-12 sm:w-14 sm:h-14" role="img" aria-label="Blaze Break">
-            <img src="/brand/ember-logo-light.svg" alt="" className="w-full h-full object-contain dark:hidden" />
-            <img src="/brand/flame-mark-dark.png" alt="" className="w-full h-full object-contain hidden dark:block" />
-          </div>
+          <BlazeBrandLogo className="w-12 h-12 sm:w-14 sm:h-14" />
           <div className="hidden sm:flex flex-col">
             <span className="ember-wordmark text-base sm:text-xl text-text-main">Blaze Break</span>
             <span className="ember-tagline hidden sm:block mt-1">Rethink · Reflect · Rejuvenate</span>
@@ -497,8 +495,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       {/* Footer */}
       <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <img src="/brand/ember-logo-light.svg" alt="" className="w-8 h-8 dark:hidden" />
-          <img src="/brand/flame-mark-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
+          <BlazeBrandLogo className="w-8 h-8" decorative />
           <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
@@ -551,8 +548,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
               <div className="text-left pt-4">
                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
-                  <img src="/brand/ember-logo-light.svg" alt="" className="w-6 h-6 dark:hidden" />
-                  <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
+                  <BlazeBrandLogo className="w-6 h-6" decorative />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
                   {showPostSignupMfaStep ? 'Secure your account' : authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
