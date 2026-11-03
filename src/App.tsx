@@ -2864,7 +2864,7 @@ export default function App() {
                 onVoiceAutoOpened: () => setNovaAutoVoiceRequested(false),
               };
               return (
-                <div className="space-y-32">
+                <div className="ember-nova-tab space-y-32">
                   {novaAgenticJourneyEnabled ? (
                     <NovaAgenticJourney initialStep="chat" {...sharedNovaChatProps} />
                   ) : (
@@ -3161,6 +3161,7 @@ export default function App() {
           animate={{ y: isMobileNavCollapsed ? "100%" : 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="fixed bottom-0 left-0 w-full bg-card/80 backdrop-blur-xl border-t border-border pt-2 px-2 z-40 transition-colors duration-500"
+          data-testid="mobile-bottom-nav"
           style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
         >
           <AnimatePresence>
