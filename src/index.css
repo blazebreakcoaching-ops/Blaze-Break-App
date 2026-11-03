@@ -785,9 +785,36 @@
  */
 @media (max-width: 767px) {
   .ember-nova-tab .ember-nova-room {
+    /* CTO Report 34 correction: 20rem under-measured the space actually
+     * above this panel - the shared page <header> (kicker + H2 title +
+     * Quick Support row, rendered for every tab) plus
+     * AccountStatusBanner's "Sample Account" banner, which every demo/
+     * anonymous session shows (the exact account state every real-app
+     * Playwright test uses), total ~391px on a Pixel 7, not ~320px. At
+     * 20rem the real geometry assertion measured -113px of clearance
+     * instead of the required >=8px. Measured directly (not guessed):
+     * panel top offset 391px against an 839px dvh viewport. 30rem
+     * (480px) reserved gives 47px of verified clearance at Pixel 7
+     * (412x839) and 390x844 - the viewport the real-app Playwright
+     * "realapp-mobile" project and this file's own regression assertion
+     * actually run at.
+     *
+     * Known residual gap, not fixed here: at narrower widths (320-375px)
+     * combined with short real-device heights (e.g. 320x568, 375x600),
+     * the shared header/banner text wraps onto more lines, pushing the
+     * panel's top further down than at Pixel 7's 412px width - this
+     * reserve, calibrated for Pixel 7, is not generous enough there, and
+     * neither the clamp's 15rem floor nor page-level scrolling
+     * compensates (the obstruction is a position:fixed nav, which page
+     * scroll cannot create clearance against). No width×height
+     * combination the CI suite actually exercises is affected. A real
+     * fix needs the panel's available height to come from an actual
+     * bounded-height ancestor rather than a static reserved constant -
+     * flagged for follow-up rather than attempted here.
+     */
     block-size: clamp(
       15rem,
-      calc(100dvh - 20rem - env(safe-area-inset-bottom, 0px)),
+      calc(100dvh - 30rem - env(safe-area-inset-bottom, 0px)),
       38rem
     );
     min-block-size: 0;
@@ -809,7 +836,7 @@
 @supports (height: 100svh) {
   @media (max-width: 767px) {
     .ember-nova-tab .ember-nova-room {
-      max-block-size: max(15rem, calc(100svh - 10rem));
+      max-block-size: max(15rem, calc(100svh - 30rem));
     }
   }
 }
