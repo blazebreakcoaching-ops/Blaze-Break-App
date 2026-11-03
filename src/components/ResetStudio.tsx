@@ -44,7 +44,7 @@ export const ResetStudio = ({ fingerprint, onAwardPoints, onNavigate, onOpenCris
   }, []);
 
   return (
-    <div id="reset-studio-section" className="space-y-8">
+    <div id="reset-studio-section" className="ember-midnight space-y-8 rounded-2xl">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
           <div className="tag">Stabilise · Core Pillar: Rebuild</div>
@@ -69,7 +69,7 @@ export const ResetStudio = ({ fingerprint, onAwardPoints, onNavigate, onOpenCris
                   <button
                     key={id}
                     onClick={() => setSelected(id)}
-                    className="card p-6 border border-border hover:border-primary/50 text-left space-y-2 transition-colors"
+                    className="card ember-feature ember-orbit p-6 text-left space-y-2 transition-colors"
                   >
                     <span className="block text-2xl font-display font-bold text-text-main">{state.label}</span>
                     <span className="block text-sm text-text-muted">{state.description}</span>
