@@ -76,6 +76,12 @@ export default defineConfig({
   testMatch: /real-app-.*\.spec\.ts/,
   timeout: 30_000,
   fullyParallel: false,
+  // Real-app E2E starts two Vite servers, Auth/Firestore emulators and
+  // multiple Chromium projects. Playwright's default auto-sized worker pool
+  // can exhaust the restricted sandbox and close browser contexts mid-test.
+  // Serialize *all* projects without skipping, retrying or weakening tests.
+  // A sufficiently provisioned runner may explicitly override via CLI.
+  workers: 1,
   retries: 0,
   reporter: [['list']],
   webServer: [
