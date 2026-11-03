@@ -326,17 +326,17 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
       {/* Navigation */}
       <nav className="ember-nav fixed top-0 w-full z-50 px-4 sm:px-8 py-4 sm:py-5 flex justify-between items-center border-b">
-        <div className="flex items-center gap-3">
-          <div className="ember-logo w-10 h-10 flex items-center justify-center shadow-xl shadow-primary/20">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="ember-logo ember-brandmark w-12 h-12 sm:w-14 sm:h-14">
             <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
             <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
           </div>
           <div className="flex flex-col">
-            <h1 className="font-serif font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Recovery Companion</span>
+            <h1 className="ember-wordmark text-base sm:text-xl text-text-main">Blaze Break</h1>
+            <span className="ember-tagline hidden sm:block mt-1">Recovery Companion</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {setDarkMode && (
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -363,24 +363,24 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       </nav>
 
       {/* Hero Section */}
-      <section className="ember-hero pt-36 sm:pt-44 pb-16 sm:pb-20 px-5 sm:px-6 max-w-7xl mx-auto flex flex-col items-center text-center relative z-10">
+      <section className="ember-hero ember-landing-hero pt-36 sm:pt-44 pb-16 sm:pb-20 px-5 sm:px-10 lg:px-16 max-w-7xl mx-auto flex flex-col items-center text-center md:text-left relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-          className="space-y-8"
+          className="ember-hero-content space-y-7"
         >
           <span className="ember-kicker inline-block px-4 py-1.5 rounded-full text-xs uppercase tracking-[0.2em] font-black">
             A Recovery Method for High Performers
           </span>
-          <h2 className="ember-title text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-light tracking-tight text-text-main leading-[1.08] max-w-5xl mx-auto">
-            Scale ambition <br />
-            without <span className="ember-heading-glow italic font-serif font-medium">self-destruction.</span>
+          <h2 className="ember-title ember-hero-title text-text-main max-w-5xl">
+            High performance <br className="hidden sm:block" />
+            without the <em>burnout.</em>
           </h2>
-          <p className="max-w-2xl mx-auto text-base sm:text-lg text-text-muted font-light leading-relaxed">
-            Stop optimising your exhaustion. Blaze Break maps your personal burnout fingerprint - from a self-assessment, not a biometric scan - to rebuild real recovery into your hyper-scale workload.
+          <p className="ember-hero-subtitle max-w-2xl mx-auto md:mx-0 text-base sm:text-lg font-medium">
+            Scale ambition without self-destruction. Blaze Break helps you recognise overload, build practical recovery habits and protect your energy. Your burnout fingerprint comes from a self-assessment, not a biometric scan.
           </p>
-          <div className="pt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="ember-hero-actions pt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-3 sm:gap-4">
             <button
               onClick={handleStartRequest}
               className="btn-primary ember-orbit w-full sm:w-auto justify-center px-6 sm:px-10 py-4 sm:py-5 rounded-xl font-bold uppercase tracking-[0.12em] sm:tracking-[0.2em] text-xs flex items-center gap-3 sm:gap-4 group"
@@ -395,6 +395,24 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
               See a live demo
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
+          </div>
+          <div className="ember-feature-band rounded-2xl mt-8 text-left overflow-hidden">
+            <div className="p-3 sm:p-4">
+              <BatteryLow className="h-5 w-5 mb-2" aria-hidden="true" />
+              <strong>Reset</strong><span>Recover your energy</span>
+            </div>
+            <div className="p-3 sm:p-4">
+              <ShieldCheck className="h-5 w-5 mb-2" aria-hidden="true" />
+              <strong>Refocus</strong><span>Find clarity</span>
+            </div>
+            <div className="p-3 sm:p-4">
+              <TrendingUp className="h-5 w-5 mb-2" aria-hidden="true" />
+              <strong>Perform</strong><span>Work sustainably</span>
+            </div>
+            <div className="p-3 sm:p-4">
+              <Users className="h-5 w-5 mb-2" aria-hidden="true" />
+              <strong>Rejuvenate</strong><span>Make room to recover</span>
+            </div>
           </div>
         </motion.div>
       </section>
