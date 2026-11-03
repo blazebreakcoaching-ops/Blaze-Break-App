@@ -32,3 +32,24 @@
 - **Sunset Sanctuary:** `LandingPage.tsx`, onboarding.
 - **Warm Atelier:** `App.tsx`, `HomeSection.tsx`.
 - **Midnight Focus:** `NovaChat.tsx`, `ResetStudio.tsx`, `NervousSystemReset.tsx`, `MicroRecovery.tsx`.
+
+
+## Visual reference upgrade — 3 November, follow-up batch
+The user supplied two approved Blaze Break logo variants and two dark/light visual mockups. This update implements their theme direction on the same UI branch.
+
+### New or updated code
+- `src/components/BlazeBrandLogo.tsx` centralises the actual responsive light/dark logo swap. Light uses `public/brand/ember-logo-light.svg` (small transparent, optimised copy of the supplied gradient logo); dark reuses the previously checked-in `public/brand/flame-mark-dark.png` (white brush ring with orange flame).
+- `public/brand/ember-sunset.svg` is an original lightweight scenery illustration used as decorative background. It is **not** a photorealistic copy of the reference mockup.
+- `LandingPage.tsx` now uses a left-aligned scenic hero, the reference-inspired “High performance without the burnout.” page H1, real CTA handlers, four short principle labels, and a compact mobile navigation bar.
+- `App.tsx` uses the shared logo and gives the existing real Pulse greeting and Reset page headers scenic surfaces; risk messaging remains driven by real data.
+- `NovaChat.tsx` applies Midnight Focus styling while retaining the existing conversation, voice-feature gates and real send handlers.
+- `ResetStudio.tsx` gains scenic background, accessible card sizing and mobile typography.
+- `index.css` centralises the new responsive light/dark surfaces and adds an optional hover/focus Ember Orbit border trace that respects reduced-motion preference.
+
+### Verification notes and release restrictions
+- Source checks confirmed both logo files and sunset artwork exist in the branch, but **no local build, browser screenshot or automated test run** was possible through this connected GitHub editing workflow.
+- This is a visual interpretation of the approved mockups, not a guarantee that every page is pixel-identical.
+- Test the marketing heading change against existing e2e assertions; update tests only if expectations legitimately changed, never by weakening behaviour.
+- Check the narrow mobile header, light SVG rendering in Safari, dark image blending, primary CTA states, focus rings, real Pulse values and recovery screen access.
+- Do not merge or deploy production until the mandatory tests, security review and release decision are complete. Keep GitHub Actions disabled.
+
