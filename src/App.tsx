@@ -78,6 +78,7 @@ const MySupportCircle = lazy(() => import("./components/MySupportCircle.tsx").th
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { LandingPage } from "./components/LandingPage.tsx";
+import { BlazeBrandLogo } from "./components/BlazeBrandLogo";
 import { MfaChallenge } from "./components/MfaChallenge.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 const ConnectedDailyCheckIn = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedDailyCheckIn })));
@@ -513,10 +514,7 @@ const Sidebar = ({
         onClick={() => setActiveTab("home")}
         aria-label="Blaze Break, go to Home"
       >
-        <div className="ember-logo ember-brandmark w-12 h-12 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
-          <img src="/brand/ember-logo-light.svg" alt="" className="w-10 h-10 dark:hidden" />
-          <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
-        </div>
+        <BlazeBrandLogo className="w-12 h-12 shrink-0 group-hover:scale-105 transition-all duration-500" decorative />
         <AnimatePresence>
           {!isCollapsed && (
             <motion.div
