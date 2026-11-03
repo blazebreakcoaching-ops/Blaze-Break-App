@@ -1,7 +1,7 @@
 name: Deploy
 
 # Ships the app to the already-running Cloud Run service (see docs/DEPLOY.md)
-# whenever main changes, or on demand via the "Run workflow" button - so
+# only when a trusted operator explicitly invokes the manual workflow - so
 # "going live" never again means running gcloud/firebase commands by hand in
 # Cloud Shell. Builds straight from source using Cloud Run's own buildpacks
 # support (no Dockerfile needed - Node.js is auto-detected from
@@ -18,9 +18,11 @@ name: Deploy
 # with its JSON key pasted into this repo's GCP_SA_KEY secret
 # (Settings -> Secrets and variables -> Actions).
 
+# Production deployment is an explicit release operation. Merging into
+# main no longer automatically deploys Cloud Run or Firestore. Keep this
+# workflow as a manual fallback; the approved operator normally deploys
+# via authenticated Firebase/GCloud tooling after staging verification.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 env:

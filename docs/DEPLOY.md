@@ -463,3 +463,9 @@ A complete, authenticated staging build and verification remain release gates.
   infrastructure layer (separate project, separate database, separate
   secrets, separate Cloud Run service), which is what actually prevents
   a staging mistake from touching real user data.
+
+### CTO release safeguard (2026-11-03)
+
+The previous GitHub workflow deployed **Cloud Run and Firestore rules/indexes on every `main` push**, without a staging approval gate. The development branch now changes `.github/workflows/deploy.yml` to `workflow_dispatch` only, removing the automatic deployment trigger. This is an intentional release-model change: merging code does **not** constitute permission to deploy.
+
+The preferred release path is an owner-approved authenticated Firebase/GCloud deployment by the operator, after a green integration/staging gate and an explicit rollback plan. The manual GitHub workflow remains a fallback; do not run it unless separately approved. Confirm the trigger is disabled on `main` **before** a production merge; any existing automation or rules outside GitHub still requires review.
