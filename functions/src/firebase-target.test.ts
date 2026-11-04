@@ -9,8 +9,7 @@ describe('Firebase Auth blocking-function Firestore target', () => {
   it('accepts an explicitly configured named database for isolated projects', () => {
     expect(resolveBlockingFunctionsDatabaseId('staging-project-database')).toBe('staging-project-database');
   });
-  it.each(['(default)', '', ' ', 'users/production', 'https://database'])
-  ('refuses invalid database ID %s', value => {
+  it.each(['(default)', '', ' ', 'users/production', 'https://database'])('refuses invalid database ID %s', value => {
     expect(() => resolveBlockingFunctionsDatabaseId(value)).toThrow();
   });
 });

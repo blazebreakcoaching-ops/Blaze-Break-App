@@ -3,14 +3,12 @@ import { assertWebApiRoute, assertPublicLegalRoute, assertPublicPasswordRoute } 
 
 const origin = 'https://www.blazebreak.app';
 describe('shared legacy web API token destination boundary', () => {
-  it.each(['/api/nova/chat', '/api/user/export', '/api/auth/mfa/status', '/api/user/recommendation?week=1'])
-  ('allows internal API paths %s', path => {
+  it.each(['/api/nova/chat', '/api/user/export', '/api/auth/mfa/status', '/api/user/recommendation?week=1'])('allows internal API paths %s', path => {
     expect(assertWebApiRoute(path, origin)).toBe(path);
   });
   it.each(['https://example.com/api/steal', 'http://localhost:8080/api/steal',
     '//example.com/api/steal', '/health', 'api/nova/chat',
-    '/api/../admin', '/api/../../secret', '/api/\\evil', '/api/chat\nInjected: header'])
-  ('rejects unsafe or foreign paths: %s', path => {
+    '/api/../admin', '/api/../../secret', '/api/\\evil', '/api/chat\nInjected: header'])('rejects unsafe or foreign paths: %s', path => {
     expect(() => assertWebApiRoute(path, origin)).toThrow();
   });
   it('limits signed-out password recovery to the two approved POST destinations', () => {

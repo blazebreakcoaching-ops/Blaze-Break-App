@@ -1,6 +1,10 @@
 export function assertWebApiRoute(path: string, origin: string): string {
+  // Deliberately rejecting control characters (CRLF injection, etc.) in
+  // the route, not a mistake.
   if (typeof path !== 'string' || !path.startsWith('/api/') ||
-      path.includes('\\') || /[\u0000-\u001f\u007f]/.test(path)) {
+      path.includes('\\') ||
+      // eslint-disable-next-line no-control-regex
+      /[\u0000-\u001f\u007f]/.test(path)) {
     throw new Error('Only relative Blaze Break /api/ routes are permitted');
   }
   let base: URL, resolved: URL;

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 
 describe('integrated source verification entrypoints', () => {
   it('exposes explicit web-only and all-platforms offline gates', () => {

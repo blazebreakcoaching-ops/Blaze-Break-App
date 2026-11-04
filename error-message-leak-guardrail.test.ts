@@ -14,30 +14,52 @@ import path from 'path';
 // specifically authored to be shown to the admin attempting the change,
 // not an unanticipated failure.
 //
+// Those 2 sites were later tightened further (still Batch 3's own intent,
+// just a stricter implementation of it): rather than unconditionally
+// trusting ANY Error thrown inside that route's try block to be the safe,
+// admin-facing one, each now gates on the exact expected message text
+// (`safeLastOwnerError = err.message === "Operation Rejected: ..."`) before
+// echoing it, falling back to GENERIC_SERVER_ERROR otherwise. This is
+// strictly safer than the plain literal this guardrail originally looked
+// for - an unrelated Firestore/Admin SDK exception bubbling up from the
+// same try block can no longer leak its own message just by also being an
+// Error instance. The pattern below matches that current, tighter shape.
+//
 // A scanner limitation worth being explicit about (same honesty this
 // codebase's other scanner-based guardrails already practice): this only
-// catches the exact literal source text `res.status(500).json({ error:
-// err.message })`. A route that assigns err.message to a local variable
-// first, or spreads it into a larger object, would not be caught here -
-// but every site this batch touched used the literal form directly, and a
-// future route doing something cleverer to route around this guardrail
-// would be a deliberate act, not an accident this test is meant to catch.
+// catches the exact literal source text this batch's sites use. A route
+// that assigns err.message to a local variable first, or spreads it into
+// a larger object, would not be caught here - but every site this batch
+// touched used the literal form directly, and a future route doing
+// something cleverer to route around this guardrail would be a
+// deliberate act, not an accident this test is meant to catch.
 
 const REVIEWED_EXCEPTION_COUNT = 2;
 
 describe('error message leak guardrail', () => {
-  it('keeps the unconditional 500-fallback err.message leak at exactly the reviewed exception count', () => {
+  it('keeps the guarded 500-fallback err.message leak at exactly the reviewed exception count', () => {
     const serverSource = fs.readFileSync(path.join(__dirname, 'server.ts'), 'utf8');
-    const matches = serverSource.match(/res\.status\(500\)\.json\(\{ error: err\.message \}\)/g) || [];
+    const matches = serverSource.match(/res\.status\(500\)\.json\(\{ error: safeLastOwnerError \? err\.message : GENERIC_SERVER_ERROR \}\)/g) || [];
     expect(matches).toHaveLength(REVIEWED_EXCEPTION_COUNT);
-    // Both exceptions must stay commented as deliberate, not just numerically
-    // coincidental - if this ever drifts, the comment search below catches it.
-    expect(serverSource).toContain('assertNotLastPlatformOwner\'s own deliberately admin-facing message');
+    // The exact string assertNotLastPlatformOwner throws, and the exact
+    // string both guards check for, must be the SAME string - not just
+    // numerically coincidental counts. If either drifts independently
+    // (the throw site reworded without updating the guards, or vice
+    // versa), the guard silently stops recognising the real message and
+    // every admin-role-change failure falls back to GENERIC_SERVER_ERROR
+    // - not a security leak, but a real admin-facing regression this
+    // assertion also catches.
+    const safeMessage = 'Operation Rejected: Cannot remove or downgrade the last Platform Owner.';
+    expect(serverSource).toContain(`throw new Error("${safeMessage}")`);
+    const guardMatches = serverSource.match(
+      new RegExp(`err\\.message === "${safeMessage.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}"`, 'g'),
+    ) || [];
+    expect(guardMatches).toHaveLength(REVIEWED_EXCEPTION_COUNT);
   });
 
   it('the scanner itself actually detects the leak pattern (sanity check against a synthetic string, not server.ts)', () => {
-    const synthetic = 'app.get("/x", async (req, res) => {\n  try {} catch (err: any) {\n    res.status(500).json({ error: err.message });\n  }\n});';
-    const matches = synthetic.match(/res\.status\(500\)\.json\(\{ error: err\.message \}\)/g) || [];
+    const synthetic = 'app.get("/x", async (req, res) => {\n  try {} catch (err: any) {\n    const safeLastOwnerError = err.message === "x";\n    res.status(500).json({ error: safeLastOwnerError ? err.message : GENERIC_SERVER_ERROR });\n  }\n});';
+    const matches = synthetic.match(/res\.status\(500\)\.json\(\{ error: safeLastOwnerError \? err\.message : GENERIC_SERVER_ERROR \}\)/g) || [];
     expect(matches.length).toBeGreaterThan(0);
   });
 
