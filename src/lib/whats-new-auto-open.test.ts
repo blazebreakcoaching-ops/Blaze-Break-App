@@ -30,6 +30,7 @@ describe("What's New should never cover an active task", () => {
   it('does not interrupt custom rich-text boxes', () => {
     const input = document.createElement('div');
     input.setAttribute('contenteditable', 'true');
+    input.tabIndex = 0; // jsdom and keyboard users both need an explicit focus target.
     document.body.appendChild(input);
     input.focus();
     expect(isWhatsNewAutoOpenSafe(document)).toBe(false);
