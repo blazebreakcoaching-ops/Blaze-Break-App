@@ -24,7 +24,7 @@ import { PATTERN_DIMENSION_ORDER, PatternDimensionId, PATTERN_DIMENSIONS } from 
 import { CommunityConfig } from './community-config';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -4649,6 +4649,54 @@ const verifyMfaSessionToken = (token: string, uid: string): boolean => {
   return crypto.timingSafeEqual(expectedBuf, actualBuf);
 };
 
+// PRIORITY ZERO MFA FIX (2026-11-04): signMfaSessionToken/verifyMfaSessionToken
+// above only prove a session cleared 2FA to THIS server's own REST API -
+// the Firestore client SDK talks to Firestore directly and never sees that
+// HMAC token, so firestore.rules had no way to know whether the session
+// presenting a given ID token had actually passed the 2FA challenge or had
+// merely signed in with a password. mfa_session_state is a second, parallel
+// record of the exact same fact, written at the exact same two moments
+// (confirming enrollment, verifying at sign-in) and read directly by
+// firestore.rules' mfaSessionSatisfied() via get()/exists() - see that
+// function's own comment in firestore.rules for why it's keyed on
+// auth_time rather than the account-wide mfaEnabled claim.
+const MFA_SESSION_STATE_DOC = 'mfa_session_state';
+
+const getMfaSessionStateDocRef = (db: FirebaseFirestore.Firestore, uid: string) =>
+  db.collection('users').doc(uid).collection('security').doc(MFA_SESSION_STATE_DOC);
+
+// authTimeSeconds must be the auth_time of the SAME decoded ID token this
+// request authenticated with (never recomputed, never "now") - it is the
+// one fact firestore.rules checks a future request's own auth_time against,
+// so recording anything else would verify the wrong session.
+const markFirestoreMfaSessionVerified = async (
+  db: FirebaseFirestore.Firestore, uid: string, authTimeSeconds: number,
+): Promise<void> => {
+  try {
+    await getMfaSessionStateDocRef(db, uid).set({
+      verifiedAuthTime: authTimeSeconds,
+      expiresAt: Timestamp.fromMillis(Date.now() + MFA_SESSION_TOKEN_TTL_MS),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    // Best-effort, logged the same way setMfaEnabledClaim below is: a
+    // failure here must not fail the enroll/verify request itself (the
+    // user did genuinely clear their 2FA challenge), but a stuck/missing
+    // record would wrongly keep blocking this session's own direct
+    // Firestore reads until it's retried, so it's never allowed to fail
+    // silently.
+    logger.error(`[MFA] Failed to write Firestore session-verified record for ${uid}:`, errorFields(error));
+  }
+};
+
+const clearFirestoreMfaSessionVerified = async (db: FirebaseFirestore.Firestore, uid: string): Promise<void> => {
+  try {
+    await getMfaSessionStateDocRef(db, uid).delete();
+  } catch (error) {
+    logger.error(`[MFA] Failed to clear Firestore session-verified record for ${uid}:`, errorFields(error));
+  }
+};
+
 // Keeps the account-level "does this uid have 2FA on" fact (used by the
 // cheap per-request gate check in authenticateFirebaseUser) in sync with
 // the Firestore record that's the actual source of truth. Best-effort: a
@@ -4742,6 +4790,7 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
     }, { merge: true });
 
     await setMfaEnabledClaim(user.uid, true);
+    await markFirestoreMfaSessionVerified(db, user.uid, user.auth_time);
 
     if (user.email) {
       const { subject, html } = buildMfaEnabledEmail();
@@ -4852,6 +4901,7 @@ app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFire
       // 2FA somehow isn't enrolled — no reason to tell an attacker which.
       return res.status(401).json({ error: "That code didn't match. Please try again." });
     }
+    await markFirestoreMfaSessionVerified(db, user.uid, user.auth_time);
     res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid) });
   } catch (error: any) {
     logger.error("[MFA] verify-at-signin error:", errorFields(error));
@@ -4889,6 +4939,7 @@ app.post("/api/auth/mfa/totp/disable", verifyAppCheck, authenticateFirebaseUser,
     }, { merge: true });
 
     await setMfaEnabledClaim(user.uid, false);
+    await clearFirestoreMfaSessionVerified(db, user.uid);
     // Revoke every refresh token issued before this moment. Without this,
     // an already-open session elsewhere (e.g. an attacker's, if this
     // disable itself was unauthorized) would keep working indefinitely on

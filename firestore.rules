@@ -18,8 +18,59 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // PRIORITY ZERO MFA FIX (2026-11-04): until now, every isOwner() rule
+    // below only checked request.auth.uid == uid - i.e. "do you hold a
+    // valid Firebase ID token for this account", never "has this specific
+    // sign-in session actually cleared its 2FA challenge". The MFA gate in
+    // authenticateFirebaseUser (server.ts) and the AccountAccessGate UI
+    // component both only protect the REST API and the React tree - the
+    // Firestore client SDK talks to Firestore directly and was never
+    // covered by either, so anyone holding a password-valid-but-not-yet-
+    // MFA-verified ID token for a 2FA-enabled account could read or write
+    // that account's private data straight from the browser/app, with the
+    // MFA screen never even rendering.
+    //
+    // mfaSessionSatisfied(uid) below closes this at the one place that
+    // actually matters: isOwner() itself, so it applies to all ~230
+    // existing isOwner()-gated rules in this file at once, with no risk of
+    // a collection being missed. It deliberately does NOT reuse the
+    // account-level `mfaEnabled` custom claim as ITS OWN proof of
+    // verification (that claim only says "this uid has 2FA turned on" -
+    // baked into every future token Firebase mints for this uid, so it
+    // can never distinguish a verified session from an attacker's own
+    // fresh, independently-obtained one, which is exactly the account-wide-
+    // claim trap this fix must not fall into). Instead it ties verification
+    // to request.auth.token.auth_time - the timestamp of the actual sign-in
+    // credential presentation that produced the CURRENT token, which stays
+    // fixed across token refreshes within one continuous session but
+    // changes on every fresh sign-in - against a server-written record of
+    // which auth_time last cleared a real TOTP/recovery-code challenge for
+    // this uid (users/{uid}/security/mfa_session_state, written only by the
+    // Admin SDK in server.ts's /api/auth/mfa/totp/verify-at-signin and
+    // /enroll/confirm routes - see MFA_DOC below for why that whole
+    // sub-collection is already locked to `allow read, write: if false`,
+    // so this never needs - or gets - its own separate rule).
+    function mfaSessionDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)/security/mfa_session_state);
+    }
+
+    function mfaSessionSatisfied(uid) {
+      // .get('mfaEnabled', false), not dot access: an account that has
+      // never enabled 2FA has no mfaEnabled claim on its token AT ALL
+      // (not even `false`), and in the Firestore Rules language - unlike
+      // plain JS - reading a genuinely absent map key via dot notation
+      // throws rather than evaluating to null/undefined, which would deny
+      // every single non-2FA account instead of leaving them unaffected.
+      return request.auth.token.get('mfaEnabled', false) != true ||
+        (
+          exists(/databases/$(database)/documents/users/$(uid)/security/mfa_session_state) &&
+          mfaSessionDoc(uid).data.verifiedAuthTime == request.auth.token.auth_time &&
+          mfaSessionDoc(uid).data.expiresAt > request.time
+        );
+    }
+
     function isOwner(uid) {
-      return isSignedIn() && request.auth.uid == uid;
+      return isSignedIn() && request.auth.uid == uid && mfaSessionSatisfied(uid);
     }
 
     function hasOnly(fields) {
@@ -570,7 +621,12 @@ service cloud.firestore {
       // redacted "is MFA enabled" read goes through the dedicated
       // GET /api/auth/mfa/status endpoint, never direct Firestore access,
       // so the encrypted secret can never reach the client outside the
-      // one-time enrollment response.
+      // one-time enrollment response. Also holds mfa_session_state (the
+      // server-written "which auth_time last cleared a real 2FA challenge"
+      // record mfaSessionSatisfied() above reads via get()/exists() -
+      // those calls read the raw document for rule evaluation and are not
+      // themselves subject to this `if false`, so no separate rule is
+      // needed or wanted here for it) — same "server/Admin SDK only" shape.
       match /security/{docId} {
         allow read, write: if false;
       }
@@ -2084,7 +2140,7 @@ service cloud.firestore {
     // person themselves) - server-write-only so it's a genuine, tamper-
     // resistant record, not something the client could edit or fabricate.
     match /audit_logs/{logId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid && mfaSessionSatisfied(request.auth.uid);
       allow write: if false;
     }
 
@@ -2097,7 +2153,7 @@ service cloud.firestore {
     // the Firestore SDK - including a fabricated safetyLevel - bypassing
     // App Check, validation, and the server's point-award logic entirely.
     match /anxiety_reset_events/{eventId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid && mfaSessionSatisfied(request.auth.uid);
       allow write: if false;
     }
 
