@@ -2218,19 +2218,22 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Admin-specific collections
+    // Admin-specific collections. Being an administrator must not bypass
+    // step-up authentication on an account that has MFA enabled. Apply the
+    // same authoritative enrollment/session gate as customer-data reads;
+    // a token carrying the admin claim alone is not an MFA proof.
     match /admin_users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || request.auth.token.admin == true);
+      allow read: if isSignedIn() && (request.auth.uid == uid || request.auth.token.get('admin', false) == true) && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only mutations
     }
 
     match /admin_audit_logs/{logId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
     match /app_config/{configId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -2248,7 +2251,7 @@ service cloud.firestore {
     // boundary (narrower than general admin) is enforced server-side by
     // requireEvolutionAccess, not by this rule.
     match /platform_feature_registry/{featureId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -2271,7 +2274,7 @@ service cloud.firestore {
     // was never meant to express the review boundary, only to keep any
     // direct client read/write off the table entirely.
     match /nhei_knowledge_entries/{entryId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -2280,7 +2283,7 @@ service cloud.firestore {
     // Owner only, narrower than general admin) is enforced server-side by
     // requirePlatformOwner, not by this rule.
     match /platform_protected_core/{invariantId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -2289,7 +2292,7 @@ service cloud.firestore {
     // access to create/list, tier-derived approval to decide, proposer-
     // or-owner to withdraw) is enforced server-side, not by this rule.
     match /platform_change_proposals/{proposalId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -2297,7 +2300,7 @@ service cloud.firestore {
     // write-only pattern. A coordination record, not an enforcement
     // mechanism - see rollout-plans.ts's module docstring.
     match /platform_rollout_plans/{rolloutId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -2306,7 +2309,7 @@ service cloud.firestore {
     // write goes through server.ts's requireAdmin + logAdminAction, never
     // direct from a client.
     match /platform_incidents/{incidentId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
