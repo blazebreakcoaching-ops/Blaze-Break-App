@@ -33,7 +33,11 @@ if (git.status !== 0 || status.status !== 0 || status.stdout.trim() !== '' ||
 }
 const head = git.stdout.trim();
 const expected = process.env.EXPECTED_RELEASE_SHA?.trim();
-if (expected && expected !== head) {
+if (!expected || !/^[0-9a-f]{40}$/.test(expected)) {
+  console.error('BLOCKED: EXPECTED_RELEASE_SHA must be the exact reviewed 40-character commit SHA.');
+  process.exit(2);
+}
+if (expected !== head) {
   console.error('BLOCKED: checkout SHA differs from EXPECTED_RELEASE_SHA.');
   process.exit(2);
 }
