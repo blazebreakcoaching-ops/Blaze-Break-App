@@ -65,21 +65,25 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModal
     // starts interacting, leave their task alone for this page visit.
     // It is not marked "seen", so the next quiet visit can still offer it.
     let userInteracted = false;
-    let timer: ReturnType<typeof setTimeout>;
     const onInteraction = () => {
       userInteracted = true;
       clearTimeout(timer);
     };
+    // Declared (and the listeners attached) before any code that could
+    // invoke onInteraction runs - setTimeout's callback and a real user
+    // interaction event both only fire asynchronously, after this
+    // synchronous block finishes, so `timer` is always initialised by
+    // the time onInteraction's closure over it is ever read.
+    const timer = setTimeout(() => {
+      if (!userInteracted && isWhatsNewAutoOpenSafe(document)) {
+        setIsOpen(true);
+      }
+    }, 3000);
     const options: AddEventListenerOptions = { capture: true };
     window.addEventListener('pointerdown', onInteraction, options);
     window.addEventListener('keydown', onInteraction, options);
     window.addEventListener('touchstart', onInteraction, options);
 
-    timer = setTimeout(() => {
-      if (!userInteracted && isWhatsNewAutoOpenSafe(document)) {
-        setIsOpen(true);
-      }
-    }, 3000);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('pointerdown', onInteraction, options);
