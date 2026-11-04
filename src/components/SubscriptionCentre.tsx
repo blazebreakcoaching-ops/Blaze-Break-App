@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CreditCard, Loader2, Check, Sparkles, ShieldCheck, Mail } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
+import { buildManualPlanRequestUrl } from '../lib/manual-plan-request';
 
 // Reads entirely from GET /api/entitlements/me and GET /api/entitlements/pricing
 // (entitlements.ts / server.ts) - nothing here hardcodes a price or a
@@ -172,7 +173,7 @@ export const SubscriptionCentre = () => {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h3 className="text-lg font-bold text-text-main tracking-tight">Compare plans</h3>
-            <p className="text-xs text-text-muted mt-1">Prices shown are the current standard rate for new subscriptions.</p>
+            <p className="text-xs text-text-muted mt-1">Plan prices are indicative until payment and plan changes are enabled.</p>
           </div>
           <div className="inline-flex items-center rounded-xl border border-white/10 p-1 bg-white/[0.03]">
             <button
@@ -225,16 +226,19 @@ export const SubscriptionCentre = () => {
                   </li>
                   {p.plan === 'executive' && <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-success dark:text-[#4ade80] shrink-0" /> Priority booking + discount on 1:1 Executive Coaching</li>}
                 </ul>
-                <button
-                  disabled={isCurrent}
-                  className={`w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-colors ${
-                    isCurrent
-                      ? 'bg-white/[0.05] text-text-muted cursor-default'
-                      : 'bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary'
-                  }`}
-                >
-                  {isCurrent ? 'Current plan' : `Request ${PLAN_LABEL[p.plan]}`}
-                </button>
+                {isCurrent ? (
+                  <span aria-current="true" className="w-full py-2.5 rounded-xl text-xs font-black uppercase text-center bg-white/[0.05] text-text-muted cursor-default">
+                    Current plan
+                  </span>
+                ) : (
+                  <a
+                    href={buildManualPlanRequestUrl(p.plan, cadence)}
+                    className="block w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-colors text-center bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                    aria-label={`Email support to request ${PLAN_LABEL[p.plan]}`}
+                  >
+                    Request {PLAN_LABEL[p.plan]}
+                  </a>
+                )}
               </div>
             );
           })}
@@ -247,9 +251,9 @@ export const SubscriptionCentre = () => {
         <div className="text-xs text-text-muted leading-relaxed">
           <p className="font-bold text-text-main mb-1">Plan changes are handled by our team today, not an automatic checkout.</p>
           <p>
-            We don't yet have card payments connected in the app. Tap "Request" above,
-            or contact support, and we'll set up your plan change by hand - usually
-            same day. This never affects your account security, privacy, or Guardian
+            Card payments are not connected yet. Select "Request" above to open
+            an email to support with your preferred plan. We will confirm whether
+            a manual change is available before making any changes. This never affects your account security, privacy, or Guardian
             Support, which are always available regardless of plan.
           </p>
         </div>
