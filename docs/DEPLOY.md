@@ -11,44 +11,37 @@ voice. It runs on Google Cloud Run today (see the `*.run.app` origins in
 
 ---
 
-## 0. The easy way: automatic deploys via GitHub Actions
+## 0. Release control: reviewed, manually authorised deployments only
 
-Everything below this section describes deploying by hand, in a terminal.
-You shouldn't need to do that day to day. `.github/workflows/deploy.yml`
-does it automatically: every time `main` changes (or you click "Run
-workflow" on it in the GitHub Actions tab), it builds the app and ships
-it straight to the existing Cloud Run service, then updates the Firestore
-rules/indexes to match. No terminal, no `gcloud`, no Cloud Shell.
+**Current deployment status (4 November 2026): not approved.** A successful
+source test does not authorise publishing changes or moving customer traffic.
 
-It needs **one small one-time setup**, entirely by clicking through two
-websites (Google Cloud Console and GitHub) — no commands to type:
+- **The existing production `main` branch still has a `push: main`
+  deployment trigger.** Treat any main-branch merge as potentially deploying
+  Cloud Run and Firestore rules/indexes until the live repository has been
+  independently checked and the trigger removed in an approved release.
+- **The development release branch changes
+  `.github/workflows/deploy.yml` to `workflow_dispatch` only.**
+  This change is not on production main. Do not invoke GitHub Actions,
+  merge to main or deploy merely to test it.
+- A release needs a pinned full commit SHA, passing fresh web verification,
+  explicit staging project isolation, live auth/App Check/MFA/privacy checks,
+  a captured previous Cloud Run revision **and** Firestore rules rollback
+  procedure, followed by the owner's explicit approval.
+- After approval, an authorised operator can deploy with authenticated
+  Google Cloud/Firebase CLI access using least-privilege roles and verify
+  the selected project, named Firestore database and service before every
+  command. A rollback of Cloud Run traffic alone does not revert Firestore
+  security rules.
+- The manual GitHub workflow in this repository currently uses the
+  legacy `GCP_SA_KEY` service-account JSON secret. It is **not** the
+  recommended default. Do not create/upload new long-lived service-account
+  keys or grant project-wide `Editor` merely to enable deployments.
+  If a future GitHub workflow is authorised, migrate authentication to
+  short-lived Workload Identity Federation and narrowly scoped roles first.
 
-1. **Google Cloud Console → IAM & Admin → Service Accounts → "+ Create
-   Service Account".** Name it something like `github-actions-deploy`.
-   Click through the wizard.
-2. **On the "Grant this service account access" step**, add these two
-   roles (search each by name in the role picker):
-   - `Editor` — covers deploying to Cloud Run, building the image, and
-     updating Firestore rules/indexes.
-   - `Service Account User` — needed so the deploy is allowed to run
-     the service as its existing identity.
-
-   (`Editor` is broad on purpose, to keep this first setup simple. A
-   follow-up to narrow it to the exact handful of roles it actually
-   uses is a reasonable later improvement, not something that has to
-   happen before this works.)
-3. **Open the new service account → Keys tab → Add Key → Create new
-   key → JSON.** This downloads a `.json` file to your computer. Keep
-   it private — anyone with this file can deploy to your project.
-4. **In this GitHub repo → Settings → Secrets and variables → Actions
-   → New repository secret.** Name it `GCP_SA_KEY`, and paste the
-   *entire contents* of that downloaded `.json` file as the value.
-   Save.
-
-That's it. From then on, merging anything into `main` deploys it
-automatically, and the Actions tab shows you exactly what happened (and
-lets you re-run it, or trigger it manually any time, without waiting
-for a code change).
+See `docs/CTO_SATURDAY_LAUNCH_20261107.md` for the release checklist and
+`docs/CTO_FIREBASE_GCLOUD_DEPLOY_HANDOFF.md` for the separate cloud handoff.
 
 ---
 
