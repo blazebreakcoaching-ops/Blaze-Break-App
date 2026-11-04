@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, ArrowRight } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { isWhatsNewAutoOpenSafe } from '../lib/whats-new-auto-open';
 
 // Bump this string and replace CHANGELOG_ITEMS whenever new features ship
 // that existing users wouldn't otherwise discover. Shows the current full
@@ -38,8 +39,8 @@ interface WhatsNewModalProps {
   onSeen: (version: string) => void;
 }
 
-// Only mounted by the caller when a user is signed in (App.tsx gates this
-// on `user`, unlike NovaFeedbackModal which is guest-only) - so this
+// Only mounted for registered accounts (App.tsx requires a non-anonymous
+// user, unlike NovaFeedbackModal which is guest-only) - so this
 // component doesn't need its own auth check, just the version-gated
 // trigger, mirroring NovaFeedbackModal.tsx's self-triggering shape with a
 // hardcoded version string instead of a rolling time window.
@@ -54,9 +55,37 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModal
 
   useEffect(() => {
     if (!loaded || lastSeenVersion === CHANGELOG_VERSION) return;
-    // Small delay so this never interrupts someone the moment the app loads.
-    const timer = setTimeout(() => setIsOpen(true), 3000);
-    return () => clearTimeout(timer);
+
+    // This is informational, not a security/consent prompt. Previously
+    // it could appear in the middle of typing or clicking because it
+    // opened unconditionally after 3s. That interrupted real users and
+    // caused the same race in two different browser-test journeys.
+    //
+    // Offer it ONLY on an uninterrupted, quiet first load. If the user
+    // starts interacting, leave their task alone for this page visit.
+    // It is not marked "seen", so the next quiet visit can still offer it.
+    let userInteracted = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const onInteraction = () => {
+      userInteracted = true;
+      clearTimeout(timer);
+    };
+    const options: AddEventListenerOptions = { capture: true };
+    window.addEventListener('pointerdown', onInteraction, options);
+    window.addEventListener('keydown', onInteraction, options);
+    window.addEventListener('touchstart', onInteraction, options);
+
+    timer = setTimeout(() => {
+      if (!userInteracted && isWhatsNewAutoOpenSafe(document)) {
+        setIsOpen(true);
+      }
+    }, 3000);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', onInteraction, options);
+      window.removeEventListener('keydown', onInteraction, options);
+      window.removeEventListener('touchstart', onInteraction, options);
+    };
   }, [loaded, lastSeenVersion]);
 
   useEffect(() => {
