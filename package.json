@@ -21,7 +21,9 @@
     "test:nova-live-eval": "vitest run --config vitest.live-eval.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:realapp": "firebase emulators:exec --only firestore,auth --project default \"playwright test --config playwright.realapp.config.ts\"",
-    "verify:release:offline": "node scripts/verify-release-offline.mjs"
+    "verify:release:offline": "node scripts/verify-release-offline.mjs",
+    "verify:web:offline": "node scripts/verify-integrated-release.mjs --web",
+    "verify:integration:offline": "node scripts/verify-integrated-release.mjs --all"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
