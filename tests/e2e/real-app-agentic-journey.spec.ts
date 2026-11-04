@@ -301,7 +301,7 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     const toggle = page.getByRole('switch', { name: 'Behavioural Learning' });
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
-    await toggle.click();
+    await clickRobustly(page, toggle);
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
 
     await page.keyboard.press('Escape');
