@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider, getAdditionalUserInfo, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, authPersistenceReady, getDb } from './firebase';
 import { secureApiFetch, publicPasswordApiFetch } from './secure-api';
-import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken } from './mfa-session';
+import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken, MFA_SESSION_REQUIRED_EVENT } from './mfa-session';
 import { AuthRole } from '../types';
 
 interface AuthContextType {
@@ -272,6 +272,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // anonymous account - discarding the real one - and the app treated that
   // empty account as someone who'd never onboarded, running onboarding again.
   const explicitSignOutRef = React.useRef(false);
+
+  // A server-expired MFA session must take the active user back to the
+  // security challenge immediately, not leave protected screens mounted
+  // until they reload. This does not change Firebase Auth or Firestore rules.
+  useEffect(() => {
+    const onMfaRequired = () => {
+      if (auth.currentUser && !auth.currentUser.isAnonymous) {
+        setMfaStatusError(false);
+        setMfaPending(true);
+      }
+    };
+    window.addEventListener(MFA_SESSION_REQUIRED_EVENT, onMfaRequired);
+    return () => window.removeEventListener(MFA_SESSION_REQUIRED_EVENT, onMfaRequired);
+  }, []);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;

@@ -37,3 +37,15 @@ export function clearMfaSessionToken(uid: string): void {
     // Nothing to clear.
   }
 }
+
+/** Trigger a fresh 2FA challenge immediately when the backend reports
+ * MFA_SESSION_REQUIRED. Client expiry is never proof of server authorisation.
+ */
+export const MFA_SESSION_REQUIRED_EVENT = 'blazebreak:mfa-session-required';
+
+export function expireMfaSession(uid: string): void {
+  clearMfaSessionToken(uid);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(MFA_SESSION_REQUIRED_EVENT));
+  }
+}

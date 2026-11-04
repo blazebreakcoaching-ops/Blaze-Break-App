@@ -1,5 +1,5 @@
 import { auth, getAppCheckToken } from './firebase';
-import { getMfaSessionToken, clearMfaSessionToken } from './mfa-session';
+import { getMfaSessionToken, expireMfaSession } from './mfa-session';
 import { assertWebApiRoute, assertPublicLegalRoute, assertPublicPasswordRoute, type PublicPasswordRoute } from './api-route-boundary';
 
 export class SecureApiError extends Error {
@@ -122,7 +122,7 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
       // mfa/status check on a refresh correctly re-challenges, rather than
       // trusting a stale sessionStorage flag that no longer matches what
       // the server will accept.
-      if (auth.currentUser) clearMfaSessionToken(auth.currentUser.uid);
+      if (auth.currentUser) expireMfaSession(auth.currentUser.uid);
       throw new SecureApiError('Two-factor verification is required again for this session.', status, errorDetails);
     }
     throw new SecureApiError(`Unauthorized: ${errorMessage}. Please sign in again.`, status, errorDetails);

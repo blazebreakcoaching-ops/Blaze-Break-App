@@ -1,7 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { MotionConfig } from 'motion/react';
-import App from './App.tsx';
+import { AccountAccessGate } from './components/AccountAccessGate.tsx';
 import { AllyView } from './components/AllyView.tsx';
 import { AuthActionPage } from './components/AuthActionPage.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
@@ -114,7 +114,7 @@ createRoot(document.getElementById('root')!).render(
           ) : isAuthActionPath ? (
             <AuthActionPage />
           ) : (
-            <App />
+            <AccountAccessGate />
           )}
         </MotionConfig>
       </AuthProvider>
