@@ -13,6 +13,8 @@ describe('integrated source verification entrypoints', () => {
     expect(proc).toContain('Native Jest');
     expect(proc).toContain('Functions unit tests');
     expect(proc).toContain('EXPECTED_RELEASE_SHA');
+    expect(proc).toContain('if (!expected || !/^[0-9a-f]{40}$/.test(expected))');
+    expect(proc).toContain('if (expected !== head)');
     expect(proc).not.toMatch(/['"](?:gcloud|firebase|eas|gh)['"],\s*\['(?:deploy|workflow)/);
   });
 });
