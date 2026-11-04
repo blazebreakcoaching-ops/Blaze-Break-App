@@ -11,6 +11,7 @@ import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { useAuth } from '../lib/auth';
+import { profileImageFileError, profileImageDimensions } from '../lib/profile-image-safety';
 
 interface SettingsModalProps {
   profile: UserProfileData | undefined;
@@ -30,6 +31,8 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageUploadSeq = useRef(0);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string }>({});
   const [deletionRequestStatus, setDeletionRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
@@ -43,25 +46,48 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 200;
-          const scaleSize = MAX_WIDTH / img.width;
-          canvas.width = MAX_WIDTH;
-          canvas.height = img.height * scaleSize;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          setFormData(prev => ({ ...prev, avatarBase64: dataUrl }));
-        };
-        img.src = event.target?.result as string;
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    // Permit retrying the exact same file after a validation/decode error.
+    e.target.value = '';
+    const current = ++imageUploadSeq.current;
+    setImageUploadError(null);
+
+    const problem = profileImageFileError(file.type, file.size);
+    if (problem) {
+      setImageUploadError(problem);
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      if (current === imageUploadSeq.current) setImageUploadError('Could not read the photo. Please try another image.');
+    };
+    reader.onload = () => {
+      if (current !== imageUploadSeq.current) return;
+      const img = new Image();
+      img.onerror = () => {
+        if (current === imageUploadSeq.current) setImageUploadError('Could not open the photo. Please try another image.');
+      };
+      img.onload = () => {
+        if (current !== imageUploadSeq.current) return;
+        try {
+          const size = profileImageDimensions(img.width, img.height);
+          const canvas = document.createElement('canvas');
+          canvas.width = size.width;
+          canvas.height = size.height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('Canvas unavailable');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          if (!dataUrl.startsWith('data:image/jpeg;base64,')) throw new Error('Image conversion failed');
+          setFormData(prev => ({ ...prev, avatarBase64: dataUrl }));
+        } catch {
+          setImageUploadError('This photo could not be processed. Try a smaller image.');
+        }
+      };
+      img.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
   };
 
   const validate = () => {
@@ -269,8 +295,16 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                        <span className="text-text-main text-xs font-bold uppercase tracking-wider">Change</span>
                     </div>
                   </div>
-                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                  <input type="file" ref={fileInputRef} className="hidden"
+                    accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+                    onChange={handleImageUpload} aria-describedby={imageUploadError ? 'settings-photo-error' : undefined} />
                 </div>
+                {imageUploadError && (
+                  <p id="settings-photo-error" role="alert"
+                    className="text-xs text-destructive text-center -mt-4">
+                    {imageUploadError}
+                  </p>
+                )}
 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
