@@ -63,7 +63,7 @@ describe('firestore.rules — groundingPromptHistory', () => {
   });
 
   it('owner can delete a prompt-history doc outright (personalisation reset, section 37)', () => {
-    expect(block).toMatch(/allow read, delete: if isOwner\(uid\)/);
+    expect(block).toMatch(/allow read, delete: if isOwnerVerified\(uid\)/);
   });
 });
 
@@ -71,7 +71,7 @@ describe('firestore.rules — every Phase 3 collection is owner-deletable', () =
   for (const collection of ['groundingProfile', 'groundingPromptHistory', 'groundingFeedback', 'groundingRoutines', 'savedReflections']) {
     it(`${collection} allows owner delete`, () => {
       const block = extractBlock(`match /${collection}/{`);
-      expect(block).toMatch(/allow read, delete: if isOwner\(uid\)/);
+      expect(block).toMatch(/allow read, delete: if isOwnerVerified\(uid\)/);
     });
   }
 });

@@ -611,8 +611,127 @@ async function runTests() {
   await assertFails(unauthCalendarActionsRef.get());
   await assertFails(unauthCalendarActionsRef.set({ allowCalendarActions: true }));
 
+  // ---- MFA PER-SESSION FIRESTORE ENFORCEMENT TESTS ----
+  // Proves the actual vulnerability this pass fixes: a Firebase ID token
+  // alone (even one carrying the mfaEnabled:true custom claim) must not
+  // be enough to read or write protected per-user data via the client
+  // SDK directly - only a live, session-bound users/{uid}/mfa_sessions/
+  // {authTime} doc (written server-side by server.ts's
+  // writeMfaSessionDoc, only ever reachable here via
+  // withSecurityRulesDisabled to simulate that) clears the gate.
+  console.log("Testing MFA per-session Firestore enforcement...");
+
+  const mfaUid = 'mfaUser';
+  const sessionAuthTime = Math.floor(Date.now() / 1000);
+
+  // An MFA-enabled account, mid-session (ID token minted at
+  // sessionAuthTime), before any TOTP/recovery-code challenge has been
+  // cleared for this session. No mfa_sessions doc exists yet.
+  const mfaCtxUnverified = testEnv.authenticatedContext(mfaUid, {
+    mfaEnabled: true,
+    auth_time: sessionAuthTime,
+  });
+
+  // * Missing MFA session: profile read/write, and the generic owner
+  //   collections (checkins, mood_pulses, body_checkins, etc.) must all
+  //   be denied even though request.auth.uid == mfaUid - this is exactly
+  //   the "valid Firebase login token without completing MFA" bypass.
+  await assertFails(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).get());
+  await assertFails(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).set({ displayName: 'x', createdAt: '2025' }));
+  await assertFails(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).collection('checkins').doc('c1')
+    .set({ createdAt: '2025', updatedAt: '2025', energyLevel: 5, focusLevel: 5, detachmentLevel: 5, stressLoad: 5, source: 'user' }));
+  await assertFails(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).collection('mood_pulses').doc('m1').get());
+  await assertFails(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).collection('boundary_profiles').doc('p1').get());
+
+  // Simulate server.ts's writeMfaSessionDoc(): the only real path that
+  // can ever create this doc, since mfa_sessions/{authTime} is
+  // "allow read, write: if false" for every client - seeded here via the
+  // emulator's rules-bypass, the same way the Admin SDK bypasses rules.
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().collection('users').doc(mfaUid).collection('mfa_sessions').doc(String(sessionAuthTime)).set({
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour out, well inside the 12h TTL
+    });
+  });
+
+  // * Verified session: the exact same requests now succeed.
+  await assertSucceeds(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).get());
+  const mfaCheckinRef = mfaCtxUnverified.firestore().collection('users').doc(mfaUid).collection('checkins').doc('c1');
+  await assertSucceeds(mfaCheckinRef.set({ createdAt: '2025', updatedAt: '2025', energyLevel: 5, focusLevel: 5, detachmentLevel: 5, stressLoad: 5, source: 'user' }));
+  await assertSucceeds(mfaCheckinRef.get());
+  await assertSucceeds(mfaCheckinRef.delete());
+
+  // * A brand-new sign-in for the SAME account (a new auth_time - e.g. an
+  //   attacker who obtained a fresh, independently-issued ID token for
+  //   this uid, or the legitimate user simply signing in again on another
+  //   device) is re-challenged, even while the earlier session's
+  //   mfa_sessions doc is still unexpired. This is the "tied to the
+  //   correct authentication session, not account-wide" requirement -
+  //   mfaEnabled alone (true for both sessions) is never sufficient.
+  const mfaCtxNewSignIn = testEnv.authenticatedContext(mfaUid, {
+    mfaEnabled: true,
+    auth_time: sessionAuthTime + 3600,
+  });
+  await assertFails(mfaCtxNewSignIn.firestore().collection('users').doc(mfaUid).get());
+  await assertFails(mfaCtxNewSignIn.firestore().collection('users').doc(mfaUid).collection('checkins').doc('c2')
+    .set({ createdAt: '2025', updatedAt: '2025', energyLevel: 5, focusLevel: 5, detachmentLevel: 5, stressLoad: 5, source: 'user' }));
+
+  // * Expired MFA session: a doc that exists for this exact auth_time but
+  //   whose expiresAt is in the past must be treated the same as missing.
+  const expiredUid = 'mfaExpiredUser';
+  const expiredAuthTime = Math.floor(Date.now() / 1000);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().collection('users').doc(expiredUid).collection('mfa_sessions').doc(String(expiredAuthTime)).set({
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() - 60 * 60 * 1000), // expired an hour ago
+    });
+  });
+  const mfaCtxExpired = testEnv.authenticatedContext(expiredUid, {
+    mfaEnabled: true,
+    auth_time: expiredAuthTime,
+  });
+  await assertFails(mfaCtxExpired.firestore().collection('users').doc(expiredUid).get());
+  await assertFails(mfaCtxExpired.firestore().collection('users').doc(expiredUid).collection('checkins').doc('c1').get());
+
+  // * Revoked/invalid: an account whose mfaEnabled claim was forced off
+  //   mid-session (revocation) is read as a plain, unverified account on
+  //   its very next token refresh - no mfa_sessions doc is needed, and
+  //   none is required to deny, since there's nothing to bypass anymore.
+  const mfaCtxRevoked = testEnv.authenticatedContext(mfaUid, {
+    mfaEnabled: false,
+    auth_time: sessionAuthTime + 7200,
+  });
+  await assertSucceeds(mfaCtxRevoked.firestore().collection('users').doc(mfaUid).get());
+
+  // * Cross-account: an unrelated signed-in user (no MFA claim at all,
+  //   like the overwhelming majority of accounts) still cannot read an
+  //   MFA-protected account's data regardless of the target's MFA state -
+  //   isOwner(uid) still has to hold first; mfaCleared() only narrows
+  //   access further, it never widens it.
+  await assertFails(userA.firestore().collection('users').doc(mfaUid).get());
+
+  // * The mfa_sessions collection itself is never client-readable or
+  //   client-writable, even by its own owner mid-verified-session - it is
+  //   the server-only enforcement handle, not user data.
+  await assertFails(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).collection('mfa_sessions').doc(String(sessionAuthTime)).get());
+  await assertFails(mfaCtxUnverified.firestore().collection('users').doc(mfaUid).collection('mfa_sessions').doc(String(sessionAuthTime))
+    .set({ expiresAt: new Date(Date.now() + 999 * 60 * 60 * 1000) }));
+
+  // * Non-MFA accounts are completely unaffected by any of the above -
+  //   userA (no mfaEnabled claim anywhere in this file) already
+  //   succeeded at every one of these same collections earlier in this
+  //   script without ever touching mfa_sessions.
+
   console.log("All rule tests passed successfully!");
   await testEnv.cleanup();
 }
 
-runTests().catch(console.error);
+runTests().catch((err) => {
+  // Without this, an assertFails/assertSucceeds rejection partway through
+  // runTests() was only ever logged - the process still exited 0, so a
+  // real regression here would have looked green in CI. Surfaced while
+  // adding the MFA Firestore-rules tests below, fixed so a future
+  // regression in any of these tests actually fails the gate.
+  console.error(err);
+  process.exitCode = 1;
+});

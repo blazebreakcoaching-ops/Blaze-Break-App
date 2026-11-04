@@ -41,7 +41,7 @@ describe('firestore.rules — reflection_patterns matches the real taxonomy', ()
   const block = extractBlock('match /reflection_patterns/{patternId} {');
 
   it('owner can delete a pattern doc outright - required for the pattern deletion cascade', () => {
-    expect(block).toMatch(/allow read, delete: if isOwner\(uid\)/);
+    expect(block).toMatch(/allow read, delete: if isOwnerVerified\(uid\)/);
   });
 
   it('accepts exactly the 27 real taxonomy dimension ids, no more, no fewer', () => {
@@ -74,7 +74,7 @@ describe('firestore.rules — the whole grounding pattern-cascade is owner-delet
   for (const collection of ['grounding_sessions', 'reflection_patterns', 'aligned_actions', 'grounding_analytics_events']) {
     it(`${collection} allows owner delete`, () => {
       const block = extractBlock(`match /${collection}/{`);
-      expect(block).toMatch(/allow read, delete: if isOwner\(uid\)/);
+      expect(block).toMatch(/allow read, delete: if isOwnerVerified\(uid\)/);
     });
   }
 });

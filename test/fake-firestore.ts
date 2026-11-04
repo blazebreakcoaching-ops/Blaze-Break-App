@@ -26,6 +26,19 @@ export const FakeFieldValue = {
   increment: (n: number): IncrementOp => ({ __increment: n }),
 };
 
+// A minimal stand-in for firebase-admin's Timestamp - only the one static
+// factory server.ts's writeMfaSessionDoc actually calls (fromMillis), plus
+// toMillis()/toDate() so a test can read the value back out. Real
+// Firestore Timestamps compare with `>`/`<` the same way two Dates do,
+// which .toDate() preserves for any test that wants that.
+export class FakeTimestamp {
+  constructor(private ms: number) {}
+  static fromMillis(ms: number): FakeTimestamp { return new FakeTimestamp(ms); }
+  static now(): FakeTimestamp { return new FakeTimestamp(Date.now()); }
+  toMillis(): number { return this.ms; }
+  toDate(): Date { return new Date(this.ms); }
+}
+
 let autoIdCounter = 0;
 const nextAutoId = () => `auto_${(++autoIdCounter).toString(36)}_${Date.now().toString(36)}`;
 

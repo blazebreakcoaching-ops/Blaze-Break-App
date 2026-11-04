@@ -24,7 +24,7 @@ import { PATTERN_DIMENSION_ORDER, PatternDimensionId, PATTERN_DIMENSIONS } from 
 import { CommunityConfig } from './community-config';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -792,9 +792,13 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
     // token itself (a custom claim is baked into every future token
     // Firebase mints for this uid, so it can't distinguish a verified
     // session from an attacker's own fresh, independently-obtained one).
+    // The token is bound to this exact sign-in's auth_time, not just the
+    // uid, so a stolen session token minted for an earlier sign-in never
+    // validates against a newer one (see verifyMfaSessionToken below and
+    // firestore.rules' matching mfaSessionVerified()).
     if (decodedToken.mfaEnabled === true && !MFA_GATE_EXEMPT_PATHS.has(req.path)) {
       const sessionToken = req.headers['x-mfa-session-token'];
-      if (typeof sessionToken !== 'string' || !verifyMfaSessionToken(sessionToken, decodedToken.uid)) {
+      if (typeof sessionToken !== 'string' || !verifyMfaSessionToken(sessionToken, decodedToken.uid, decodedToken.auth_time)) {
         return res.status(401).json({ error: 'Two-factor verification required for this session.', code: 'MFA_SESSION_REQUIRED' });
       }
     }
@@ -4621,25 +4625,43 @@ const getMfaEncryptionKey = (): Buffer => {
 // reuses MFA_ENCRYPTION_KEY as the HMAC key rather than requiring a new
 // secret, since both already carry the same "TOTP-subsystem-only, never
 // exposed to the client" sensitivity.
+//
+// CTO 2026-11-04 correction: despite the comment above, the token this
+// originally signed carried only `uid` + an expiry - nothing that
+// actually identified *which* sign-in session cleared the challenge. A
+// 12-hour-old token minted for a sign-in that has since ended (the user
+// signed out and a different party, legitimate or not, signed back in
+// with a fresh ID token carrying a new `auth_time`) would still verify,
+// because nothing here ever compared sessions. It now also binds the
+// token to the exact ID token `auth_time` it was issued for, so signing
+// in again - which always mints a new `auth_time` - immediately
+// invalidates any session token minted for the previous sign-in, even
+// if that old token hasn't hit its 12-hour expiry yet. This is the same
+// auth_time-keyed design firestore.rules' mfaSessionVerified() uses for
+// direct client SDK access (see writeMfaSessionDoc below) - the two are
+// independent enforcement points (this one gates server.ts's REST/
+// WebSocket routes, that one gates Firestore itself) but now share one
+// session-identity model instead of two different ones.
 const MFA_SESSION_TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-const signMfaSessionToken = (uid: string): string => {
+const signMfaSessionToken = (uid: string, authTime: number): string => {
   const expiresAtMs = Date.now() + MFA_SESSION_TOKEN_TTL_MS;
-  const payload = `${uid}.${expiresAtMs}`;
+  const payload = `${uid}.${authTime}.${expiresAtMs}`;
   const sig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(payload).digest('hex');
   return `${payload}.${sig}`;
 };
 
-const verifyMfaSessionToken = (token: string, uid: string): boolean => {
+const verifyMfaSessionToken = (token: string, uid: string, authTime: number): boolean => {
   const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  const [tokenUid, expiresAtStr, sig] = parts;
+  if (parts.length !== 4) return false;
+  const [tokenUid, tokenAuthTimeStr, expiresAtStr, sig] = parts;
   if (tokenUid !== uid) return false;
+  if (tokenAuthTimeStr !== String(authTime)) return false;
   const expiresAtMs = Number(expiresAtStr);
   if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) return false;
   let expectedSig: string;
   try {
-    expectedSig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(`${tokenUid}.${expiresAtStr}`).digest('hex');
+    expectedSig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(`${tokenUid}.${tokenAuthTimeStr}.${expiresAtStr}`).digest('hex');
   } catch {
     return false;
   }
@@ -4647,6 +4669,26 @@ const verifyMfaSessionToken = (token: string, uid: string): boolean => {
   const actualBuf = Buffer.from(sig, 'hex');
   if (expectedBuf.length !== actualBuf.length) return false;
   return crypto.timingSafeEqual(expectedBuf, actualBuf);
+};
+
+// users/{uid}/mfa_sessions/{authTime} - the Firestore-rules-visible proof
+// that this exact sign-in session cleared the 2FA challenge, read by
+// firestore.rules' mfaSessionVerified()/isOwnerVerified(). Written only
+// here, via the Admin SDK (which bypasses security rules), immediately
+// after a real TOTP code or recovery code verifies - never client-
+// writable. Doc id is the ID token's own `auth_time` claim (seconds since
+// epoch) so it is inherently scoped to one authentication event: signing
+// in again mints a new auth_time, for which no doc exists yet, so a
+// fresh sign-in is re-challenged by Firestore itself even if an older
+// session's doc hasn't expired. Mirrors MFA_SESSION_TOKEN_TTL_MS so the
+// two enforcement points (this Firestore doc, and the HMAC token above
+// that gates server.ts's own REST/WebSocket routes) expire together.
+const writeMfaSessionDoc = async (db: FirebaseFirestore.Firestore, uid: string, authTime: number): Promise<void> => {
+  const expiresAt = Timestamp.fromMillis(Date.now() + MFA_SESSION_TOKEN_TTL_MS);
+  await db.collection('users').doc(uid).collection('mfa_sessions').doc(String(authTime)).set({
+    createdAt: FieldValue.serverTimestamp(),
+    expiresAt,
+  });
 };
 
 // Keeps the account-level "does this uid have 2FA on" fact (used by the
@@ -4753,8 +4795,12 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
     // they aren't immediately re-challenged by the gate this same
     // request's mfaEnabled claim will start enforcing on their next call.
     // Returned once, at the moment of enrollment, and never again — the
-    // server only ever stores their hashes from this point on.
-    res.json({ recoveryCodes, mfaSessionToken: signMfaSessionToken(user.uid) });
+    // server only ever stores their hashes from this point on. Also write
+    // the matching Firestore mfa_sessions doc so direct client SDK access
+    // (gated by firestore.rules' mfaSessionVerified(), not by this token)
+    // is unblocked for this same session immediately too.
+    await writeMfaSessionDoc(db, user.uid, user.auth_time);
+    res.json({ recoveryCodes, mfaSessionToken: signMfaSessionToken(user.uid, user.auth_time) });
   } catch (error: any) {
     logger.error("[MFA] enroll/confirm error:", errorFields(error));
     res.status(500).json({ error: "Could not confirm two-factor setup right now." });
@@ -4852,7 +4898,11 @@ app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFire
       // 2FA somehow isn't enrolled — no reason to tell an attacker which.
       return res.status(401).json({ error: "That code didn't match. Please try again." });
     }
-    res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid) });
+    // Same two writes as enroll/confirm above: the HMAC token for
+    // server.ts's own routes, and the Firestore doc direct client SDK
+    // access is actually gated on.
+    await writeMfaSessionDoc(db, user.uid, user.auth_time);
+    res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid, user.auth_time) });
   } catch (error: any) {
     logger.error("[MFA] verify-at-signin error:", errorFields(error));
     res.status(500).json({ error: "Could not verify your code right now." });
@@ -18422,10 +18472,12 @@ export async function handleNovaLiveConnection(clientWs: any, req: any): Promise
   // not traverse that middleware.
   let uid: string;
   let mfaEnabled: boolean;
+  let authTime: number;
   try {
     const decoded = await getAuth().verifyIdToken(idToken, true);
     uid = decoded.uid;
     mfaEnabled = decoded.mfaEnabled === true;
+    authTime = decoded.auth_time;
   } catch (e) {
     clientWs.send(JSON.stringify({ error: "Invalid or expired session. Please refresh and try again." }));
     return clientWs.close();
@@ -18448,7 +18500,7 @@ export async function handleNovaLiveConnection(clientWs: any, req: any): Promise
       if (encoded.length > 0 && encoded.length <= 1024 && /^[A-Za-z0-9_-]+$/.test(encoded)) {
         try {
           const proof = Buffer.from(encoded, 'base64url').toString('utf8');
-          verified = verifyMfaSessionToken(proof, uid);
+          verified = verifyMfaSessionToken(proof, uid, authTime);
         } catch {
           // Malformed, expired, or incorrectly signed proof fails closed.
         }

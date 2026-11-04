@@ -12,6 +12,64 @@ Everything genuinely fixed in this pass is in
 `docs/SECURITY_HARDENING.md`, not repeated here. This file is only
 what's still open.
 
+## Resolved: Firestore rules enforced only `isOwner(uid)`, never MFA (2026-11-04)
+
+A valid Firebase ID token for an account with 2FA enabled was sufficient
+to read or write that account's protected data directly via the client
+Firestore SDK, without ever completing the TOTP/recovery-code challenge.
+`authenticateFirebaseUser`'s `X-MFA-Session-Token` gate (see
+`docs/SECURITY_ARCHITECTURE.md` §1) only ever covered `server.ts`'s own
+REST and Nova Live WebSocket routes; `firestore.rules` gated every
+owner-scoped subcollection purely on `isOwner(uid)`, which a stolen or
+simply not-yet-challenged ID token satisfies identically to a fully
+verified one. `src/lib`/`src/components` call the Firestore client SDK
+directly for check-ins, mood/body check-ins, boundary tools,
+decompression sessions, the user's own profile and most other per-user
+data — that's the app's normal, intended data path, not an edge case —
+so this was a real bypass of the second factor for every one of those
+collections, not a theoretical one.
+
+Fixed with a new `isOwnerVerified(uid)` gate (`isOwner(uid) &&
+mfaCleared(uid)`) now used in place of bare `isOwner(uid)` throughout
+`firestore.rules`. `mfaCleared()` is a no-op (`true`) for the accounts
+that don't have 2FA enabled — the overwhelming majority — and for 2FA
+accounts requires a live `users/{uid}/mfa_sessions/{authTime}` doc,
+`authTime` being the presenting ID token's own `auth_time` claim, written
+only by `server.ts`'s new `writeMfaSessionDoc()` (Admin SDK, so it's
+unreachable from any client) immediately after a real TOTP code or
+recovery code verifies. Keying the doc by `auth_time` rather than
+anything account-wide means a brand new sign-in is re-challenged by
+Firestore itself even while an earlier session's doc is still unexpired
+— the "tied to the correct authentication session, not account-wide
+custom claims" requirement this fix was scoped to.
+
+The pre-existing `X-MFA-Session-Token`/Nova Live `nova-mfa.*` mechanism
+had the same underlying gap despite its own "session-scoped" comment: it
+was signed over `uid + expiry` only, with nothing that actually
+distinguished one sign-in's session from another's. Both are now bound
+to `auth_time` the same way, so a token minted before a new sign-in can't
+outlive that sign-in even if it hasn't hit its own 12-hour expiry.
+
+Demonstrated against the real Firestore emulator (not asserted from
+reading the rules file), in `test-rules.cjs`'s "Testing MFA per-session
+Firestore enforcement..." block: missing, expired, wrong-session
+(different `auth_time`), and revoked-claim cases are each asserted
+denied; the verified-session, disabled-2FA, and non-MFA-account cases
+are each asserted to still succeed, so this is a strict narrowing with no
+regression for existing accounts or sessions. See
+`docs/FIREBASE_SECURITY.md` and `docs/SECURITY_ARCHITECTURE.md` §§1 and 4
+for the full before/after.
+
+**Still open, deliberately not addressed here (see "Not addressed" items
+below for the general pattern):** the native mobile app has no TOTP
+challenge UI yet (`mobile/src/lib/native-account-security.ts` already
+blocks native-app Firestore reads client-side for an `mfaEnabled`
+account, explicitly documented there as "not a Firestore security
+boundary" — this pass makes that true statement also a *backed* one, by
+giving it a real server-enforced boundary underneath, but building the
+native TOTP challenge UI itself remains separate future work, same as
+documented in `docs/AUTH_HARDENING_AND_SOCIAL_LOGIN.md`).
+
 ## Resolved: unexpected-error responses leaking err.message (Security Operations Batch 3)
 
 Audited every client-facing `error: err.message` site in `server.ts`

@@ -22,6 +22,49 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // MFA enforcement for direct client SDK access. A Firebase ID token
+    // proves the UID; it does NOT prove the holder has completed this
+    // account's second factor, because `mfaEnabled` is an account-level
+    // custom claim baked into every future token Firebase mints for this
+    // uid - a stolen-but-unverified ID token carries the identical claim.
+    // What a stolen token cannot carry is a server-written proof of THIS
+    // specific sign-in session. That proof is `users/{uid}/mfa_sessions/
+    // {authTime}`, written only by the Admin SDK (server.ts) once that
+    // exact session (identified by the ID token's own `auth_time`, not
+    // just its uid) clears a real TOTP/recovery-code challenge. Signing
+    // in again mints a new `auth_time`, for which no session doc exists
+    // yet, so a fresh sign-in is re-challenged even while an older
+    // session's doc (or a stolen refresh token replaying an old session)
+    // is still unexpired - this is what "tied to the correct
+    // authentication session, not account-wide" means at the data layer.
+    function mfaSessionVerified(uid) {
+      return 'auth_time' in request.auth.token
+          && request.auth.token.auth_time is int
+          && exists(/databases/$(database)/documents/users/$(uid)/mfa_sessions/$(string(request.auth.token.auth_time)))
+          && get(/databases/$(database)/documents/users/$(uid)/mfa_sessions/$(string(request.auth.token.auth_time))).data.expiresAt > request.time;
+    }
+
+    // True when this request either belongs to an account with 2FA off
+    // (no behaviour change from before this gate existed) or has a live,
+    // session-bound proof that this specific sign-in cleared the 2FA
+    // challenge. A missing, expired, or wrong-session mfa_sessions doc
+    // all fail this the same way - closed, not open.
+    function mfaCleared(uid) {
+      return !('mfaEnabled' in request.auth.token)
+          || request.auth.token.mfaEnabled != true
+          || mfaSessionVerified(uid);
+    }
+
+    // The gate every protected-data rule below uses in place of bare
+    // isOwner(uid) - see mfaCleared() above. This is the actual fix for
+    // "a valid Firebase login token lets someone read protected data
+    // without completing MFA": that bypass was a Firestore-rules gap,
+    // not a client-UI one, so it has to be closed here, not just in the
+    // app's own locked-screen logic.
+    function isOwnerVerified(uid) {
+      return isOwner(uid) && mfaCleared(uid);
+    }
+
     function hasOnly(fields) {
       return request.resource.data.keys().hasOnly(fields);
     }
@@ -46,20 +89,20 @@ service cloud.firestore {
 
     // A. users/{uid}
     match /users/{uid} {
-      allow read: if isOwner(uid);
-      allow create: if isOwner(uid) &&
+      allow read: if isOwnerVerified(uid);
+      allow create: if isOwnerVerified(uid) &&
                     request.resource.data.keys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'createdAt', 'updatedAt', 'shareAnonymizedDataWithOrg']) &&
                     (!request.resource.data.keys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
                     request.resource.data.createdAt is string;
-      allow update: if isOwner(uid) &&
+      allow update: if isOwnerVerified(uid) &&
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'preferredName', 'timezone', 'country', 'locale', 'updatedAt', 'shareAnonymizedDataWithOrg']) &&
                     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isAdmin', 'subscriptionLevel', 'organisationId'])) &&
                     request.resource.data.createdAt == resource.data.createdAt;
       
       // B. users/{uid}/preferences/ui
       match /preferences/ui {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) && 
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) && 
             request.resource.data.keys().hasOnly(['themePreference', 'novaTone', 'greetingEnabled', 'usePreferredName', 'reducedMotion', 'localePreference']);
       }
       
@@ -93,8 +136,8 @@ service cloud.firestore {
       // this codebase (grep-confirmed) - they are left allowed-but-untyped
       // rather than given an invented enum this phase has no basis for.
       match /preferences/notifications {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             request.resource.data.keys().hasOnly([
               'notificationsEnabled', 'allowedNudgeCategories', 'nudgeFrequency',
               'maxNudgesPerDay', 'maxNudgesPerWeek', 'quietHoursStart',
@@ -124,8 +167,8 @@ service cloud.firestore {
       // general nudge system above since these are genuinely scheduled
       // (interval timers, real calendar checks) rather than randomly picked.
       match /preferences/fuel_reminders {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             request.resource.data.keys().hasOnly([
               'hydrationEnabled', 'hydrationIntervalMinutes',
               'meetingEnabled', 'meetingLeadMinutes',
@@ -141,8 +184,8 @@ service cloud.firestore {
       // toggles, tomorrow's parking list, free-write) - previously pure
       // ephemeral React state that reset on every reload.
       match /preferences/sleep_builder {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             request.resource.data.keys().hasOnly([
               'bedtime', 'caffeineCutoff', 'phoneOff', 'parkingList', 'mentalUnload', 'updatedAt'
             ]) &&
@@ -157,8 +200,8 @@ service cloud.firestore {
       // values for the Recovery Intelligence Layer's interactive widgets
       // (social battery, body symptoms, focus shield, return-to-work phase).
       match /preferences/recovery_intelligence {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             request.resource.data.keys().hasOnly(['bodySymptoms', 'socialBattery', 'isFocusShieldActive', 'rtwPhase', 'meetingLimit', 'updatedAt']) &&
             (!('bodySymptoms' in request.resource.data) || (request.resource.data.bodySymptoms is list && request.resource.data.bodySymptoms.size() <= 20)) &&
             (!('socialBattery' in request.resource.data) || (request.resource.data.socialBattery is number && request.resource.data.socialBattery >= 0 && request.resource.data.socialBattery <= 100)) &&
@@ -169,8 +212,8 @@ service cloud.firestore {
       // Recovery Debt v2's sleep target - the "target" half of Sleep
       // Shortfall (target minus reported/logged hours).
       match /preferences/recovery_debt {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             request.resource.data.keys().hasOnly(['sleepTargetHours', 'updatedAt']) &&
             (!('sleepTargetHours' in request.resource.data) || (request.resource.data.sleepTargetHours is number && request.resource.data.sleepTargetHours >= 1 && request.resource.data.sleepTargetHours <= 14));
       }
@@ -179,9 +222,9 @@ service cloud.firestore {
       // night (doc id = date), upserted rather than accumulated, feeding
       // the rolling 7-day Sleep Shortfall average.
       match /sleep_logs/{date} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid) &&
             hasOnly(['date', 'hours', 'updatedAt']) &&
             hasAll(['date', 'hours', 'updatedAt']) &&
             isStringWithMax(request.resource.data.date, 10) &&
@@ -194,15 +237,15 @@ service cloud.firestore {
       // checkpoint response is given; the helpful field is added later
       // by the narrow update below, same pattern as recovery_fuel_checkins.
       match /breathing_reset_sessions/{sessionId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'practiceId', 'durationSeconds', 'checkpointResponse', 'helpful', 'createdAt'])
             && hasAll(['id', 'practiceId', 'durationSeconds', 'createdAt'])
             && request.resource.data.practiceId in ['sigh', 'extended', 'coherent', 'box', '478', 'rectangle', 'calm']
             && request.resource.data.durationSeconds is number && request.resource.data.durationSeconds >= 0
             && (!('checkpointResponse' in request.resource.data) || request.resource.data.checkpointResponse == null || request.resource.data.checkpointResponse in ['calmer', 'about_same', 'more_unsettled', 'not_sure'])
             && (!('helpful' in request.resource.data) || request.resource.data.helpful == null);
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['helpful'])
             && request.resource.data.helpful in ['yes', 'a_little', 'not_really'];
       }
@@ -213,8 +256,8 @@ service cloud.firestore {
       // answer both land on it afterwards via the narrow update below,
       // same pattern as breathing_reset_sessions.
       match /anxiety_reset_sessions/{sessionId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'notice', 'intensity', 'intervention', 'settingContext', 'pendingLaterFollowUp', 'checkResponse', 'helpful', 'laterFollowUp', 'createdAt'])
             && hasAll(['id', 'notice', 'intensity', 'intervention', 'settingContext', 'pendingLaterFollowUp', 'createdAt'])
             && request.resource.data.notice in ['racing_thoughts', 'body_tense', 'panicky', 'worried_specific', 'dreading', 'stuck_decision', 'cant_switch_off', 'dont_know']
@@ -225,7 +268,7 @@ service cloud.firestore {
             && (!('checkResponse' in request.resource.data) || request.resource.data.checkResponse == null)
             && (!('helpful' in request.resource.data) || request.resource.data.helpful == null)
             && (!('laterFollowUp' in request.resource.data) || request.resource.data.laterFollowUp == null);
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checkResponse', 'helpful', 'laterFollowUp'])
             && (!('checkResponse' in request.resource.data) || request.resource.data.checkResponse in ['steadier', 'still_anxious_continuing', 'about_same', 'more_unsettled', 'not_sure'])
             && (!('helpful' in request.resource.data) || request.resource.data.helpful in ['yes', 'a_little', 'not_really'])
@@ -235,8 +278,8 @@ service cloud.firestore {
       // Anxiety Reset's completion counter - gates how often "Did that
       // feel useful?" is asked, nothing else.
       match /preferences/anxiety_reset {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             hasOnly(['totalSessions', 'breathingPreference', 'updatedAt']) &&
             (!('totalSessions' in request.resource.data) || (request.resource.data.totalSessions is number && request.resource.data.totalSessions >= 0)) &&
             (!('breathingPreference' in request.resource.data) || request.resource.data.breathingPreference in ['usually_helps', 'sometimes_helps', 'prefer_grounding', 'dont_suggest']);
@@ -248,15 +291,15 @@ service cloud.firestore {
       // written when the user chose Save Privately or Let Nova Use This
       // to Notice Patterns - "Don't Save This" never writes here at all.
       match /anxiety_parked_worries/{itemId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'text', 'reminderDay', 'availableForPatterns', 'resolved', 'createdAt'])
             && hasAll(['id', 'text', 'reminderDay', 'availableForPatterns', 'resolved', 'createdAt'])
             && isStringWithMax(request.resource.data.text, 2000)
             && (request.resource.data.reminderDay == null || request.resource.data.reminderDay in ['later_today', 'tomorrow', 'no_reminder'])
             && request.resource.data.availableForPatterns is bool
             && request.resource.data.resolved == false;
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved'])
             && request.resource.data.resolved == true;
       }
@@ -266,8 +309,8 @@ service cloud.firestore {
       // capacity snapshot, then narrowly updated as the flow progresses -
       // never re-scoring the capacity/demand fields after creation.
       match /capacity_firewall_decisions/{decisionId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'demandDescription', 'estimatedMinutes', 'isToday', 'capacityScore', 'plannedLoad', 'squeezeAreas', 'choice', 'acceptRationale', 'conditionalYesLever', 'conditionalYesMessage', 'delegateAnswer', 'deferAnswer', 'createdAt'])
             && hasAll(['id', 'demandDescription', 'estimatedMinutes', 'isToday', 'capacityScore', 'plannedLoad', 'createdAt'])
             && isStringWithMax(request.resource.data.demandDescription, 500)
@@ -277,7 +320,7 @@ service cloud.firestore {
             && (request.resource.data.plannedLoad == null || (request.resource.data.plannedLoad is number && request.resource.data.plannedLoad >= 0 && request.resource.data.plannedLoad <= 100))
             && (!('squeezeAreas' in request.resource.data) || request.resource.data.squeezeAreas.size() == 0)
             && (!('choice' in request.resource.data) || request.resource.data.choice == null);
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['squeezeAreas', 'choice', 'acceptRationale', 'conditionalYesLever', 'conditionalYesMessage', 'delegateAnswer', 'deferAnswer'])
             && (!('squeezeAreas' in request.resource.data) || (request.resource.data.squeezeAreas is list && request.resource.data.squeezeAreas.size() <= 8))
             && (!('choice' in request.resource.data) || request.resource.data.choice in ['accept', 'conditional_yes', 'negotiate', 'delegate', 'defer', 'decline', 'need_more_info'])
@@ -293,8 +336,8 @@ service cloud.firestore {
       // than accumulating. Reusable across sessions ("should not require
       // rebuilding settings every day").
       match /boundary_profiles/{profileId} {
-        allow read, delete: if isOwner(uid);
-        allow write: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid)
             && hasOnly(['profileId', 'actions', 'updatedAt'])
             && hasAll(['profileId', 'actions', 'updatedAt'])
             && profileId == request.resource.data.profileId
@@ -305,8 +348,8 @@ service cloud.firestore {
       // "Urgent or Loud?" assessment log - the user's own answers and
       // their own final classification, never an automated verdict.
       match /urgent_or_loud_assessments/{assessmentId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'message', 'answers', 'classification', 'createdAt'])
             && hasAll(['id', 'message', 'answers', 'classification', 'createdAt'])
             && isStringWithMax(request.resource.data.message, 500)
@@ -320,8 +363,8 @@ service cloud.firestore {
       // real outcome, and the Capacity Protected link are added narrowly
       // afterwards as the loop closes - never re-scoring the action itself.
       match /boundary_outcomes/{outcomeId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'sourceAction', 'requestSource', 'fearedOutcome', 'aftercareResponse', 'waitingChoice', 'outcome', 'capacityProtectedApplied', 'linkedStressorId', 'createdAt'])
             && hasAll(['id', 'sourceAction', 'capacityProtectedApplied', 'createdAt'])
             && request.resource.data.sourceAction in ['slack_send', 'slack_dnd', 'slack_status', 'calendar_decline']
@@ -332,7 +375,7 @@ service cloud.firestore {
             && (!('waitingChoice' in request.resource.data) || request.resource.data.waitingChoice == null)
             && (!('outcome' in request.resource.data) || request.resource.data.outcome == null)
             && (!('linkedStressorId' in request.resource.data) || request.resource.data.linkedStressorId == null);
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aftercareResponse', 'waitingChoice', 'outcome', 'capacityProtectedApplied', 'linkedStressorId'])
             && (!('aftercareResponse' in request.resource.data) || request.resource.data.aftercareResponse in ['im_okay', 'second_guessing', 'feel_guilty', 'worried_about_response', 'talk_to_nova'])
             && (!('waitingChoice' in request.resource.data) || request.resource.data.waitingChoice in ['wait', 'review_what_i_sent', 'talk_to_nova'])
@@ -346,15 +389,15 @@ service cloud.firestore {
       // Keep/Make Exception/Change review, and only "change" may also
       // update defaultResponse.
       match /boundary_contracts/{contractId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'category', 'customLabel', 'defaultResponse', 'reviewHistory', 'createdAt', 'updatedAt'])
             && hasAll(['id', 'category', 'defaultResponse', 'reviewHistory', 'createdAt', 'updatedAt'])
             && request.resource.data.category in ['after_hours_messages', 'weekend_work', 'extra_meetings', 'last_minute_requests', 'scope_creep', 'other']
             && isStringWithMax(request.resource.data.defaultResponse, 300)
             && isOptionalStringWithMax(request.resource.data, 'customLabel', 80)
             && request.resource.data.reviewHistory is list && request.resource.data.reviewHistory.size() == 0;
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['defaultResponse', 'reviewHistory', 'updatedAt'])
             && isStringWithMax(request.resource.data.defaultResponse, 300)
             && request.resource.data.reviewHistory is list && request.resource.data.reviewHistory.size() <= 50
@@ -364,8 +407,8 @@ service cloud.firestore {
       // Breathing & Guided Reset's completion counter - gates how often
       // "Did it help?" is asked, nothing else.
       match /preferences/breathing_reset {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             hasOnly(['totalSessions', 'updatedAt']) &&
             (!('totalSessions' in request.resource.data) || (request.resource.data.totalSessions is number && request.resource.data.totalSessions >= 0));
       }
@@ -374,8 +417,8 @@ service cloud.firestore {
       // just enough real history for the repeat-pattern Quick Support
       // offer - never a mood score.
       match /preferences/spark_check {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             hasOnly(['recentAnswers', 'updatedAt']) &&
             (!('recentAnswers' in request.resource.data) || (request.resource.data.recentAnswers is list && request.resource.data.recentAnswers.size() <= 5));
       }
@@ -383,8 +426,8 @@ service cloud.firestore {
       // Rediscovery Layer: gates how often One Less Thing asks "Why was
       // this on your plate?" - a simple completion counter, nothing else.
       match /preferences/one_less_thing {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             hasOnly(['totalCompletions', 'updatedAt']) &&
             (!('totalCompletions' in request.resource.data) || (request.resource.data.totalCompletions is number && request.resource.data.totalCompletions >= 0));
       }
@@ -395,8 +438,8 @@ service cloud.firestore {
       // it rather than the default "nothing survives the session"
       // promise every other path there keeps.
       match /rumination_saved_entries/{entryId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'text', 'createdAt'])
             && hasAll(['id', 'text', 'createdAt'])
             && isStringWithMax(request.resource.data.text, 2000);
@@ -406,9 +449,9 @@ service cloud.firestore {
       // per day (doc id = date) - just enough real history for the
       // recurring-Must-Do pattern reflection to work from.
       match /workload_reality_check_history/{date} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid) &&
             hasOnly(['date', 'mustDoTitles', 'createdAt']) &&
             hasAll(['date', 'mustDoTitles', 'createdAt']) &&
             isStringWithMax(request.resource.data.date, 10) &&
@@ -421,8 +464,8 @@ service cloud.firestore {
       // detection. Always written as a full replace via merge, so
       // create and update share the same shape check.
       match /decompression_thresholds/{pairKey} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['pairKey', 'leaving', 'arriving', 'preferredArrivalQuality', 'transitionAnchor', 'nudgeConsent', 'totalCrossings', 'totalPrompted', 'totalSkipped', 'capacityHistory', 'createdAt', 'updatedAt'])
             && hasAll(['pairKey', 'leaving', 'arriving', 'nudgeConsent', 'totalCrossings', 'totalPrompted', 'totalSkipped', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.leaving, 60)
@@ -441,15 +484,15 @@ service cloud.firestore {
       // only aside from the one allowed field (resolved) once it's been
       // retrieved.
       match /decompression_parked_items/{itemId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'text', 'disposition', 'reminderDay', 'resolved', 'createdAt'])
             && hasAll(['id', 'text', 'disposition', 'resolved', 'createdAt'])
             && isStringWithMax(request.resource.data.text, 300)
             && request.resource.data.disposition in ['park', 'schedule']
             && request.resource.data.resolved == false
             && (!('reminderDay' in request.resource.data) || request.resource.data.reminderDay == null || isStringWithMax(request.resource.data.reminderDay, 20));
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved'])
             && request.resource.data.resolved == true;
       }
@@ -459,8 +502,8 @@ service cloud.firestore {
       // followed through both land on the same record via the narrow
       // update below, same pattern as breathing_reset_sessions.
       match /decompression_sessions/{sessionId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'pairKey', 'leaving', 'arriving', 'depth', 'capacityAtEntry', 'arrivalQuality', 'anchorUsed', 'arrivalCheck', 'followedThrough', 'pendingArrivalCheck', 'createdAt'])
             && hasAll(['id', 'pairKey', 'leaving', 'arriving', 'depth', 'pendingArrivalCheck', 'createdAt'])
             && request.resource.data.depth in ['quick', 'standard', 'deeper']
@@ -470,7 +513,7 @@ service cloud.firestore {
             && (!('anchorUsed' in request.resource.data) || request.resource.data.anchorUsed == null || isStringWithMax(request.resource.data.anchorUsed, 100))
             && (!('arrivalCheck' in request.resource.data) || request.resource.data.arrivalCheck == null)
             && (!('followedThrough' in request.resource.data) || request.resource.data.followedThrough == null);
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['arrivalCheck', 'followedThrough'])
             && (!('arrivalCheck' in request.resource.data) || request.resource.data.arrivalCheck in ['yes', 'mostly', 'not_really', 'not_sure'])
             && (!('followedThrough' in request.resource.data) || request.resource.data.followedThrough in ['the_conversation', 'something_unfinished', 'anger', 'worry', 'work_notifications', 'reopened_work', 'couldnt_switch_off', 'not_sure']);
@@ -478,8 +521,8 @@ service cloud.firestore {
 
       // D. users/{uid}/consents/current
       match /consents/current {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid) &&
             request.resource.data.keys().hasOnly(['privacyNoticeVersion', 'termsVersion', 'aiPersonalisationEnabled', 'regionContextEnabled', 'preferredNameGreetingEnabled', 'anonymousOrganisationContributionEnabled', 'acceptedAt', 'updatedAt']);
       }
       
@@ -490,7 +533,7 @@ service cloud.firestore {
       // and role changes can only come from the backend (see
       // entitlements.ts and GET/POST /api/entitlements* in server.ts).
       match /entitlements/status {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false; // Backend/Admin only
       }
 
@@ -574,9 +617,29 @@ service cloud.firestore {
       match /security/{docId} {
         allow read, write: if false;
       }
+
+      // mfa_sessions/{authTime} - the per-sign-in-session MFA proof read
+      // by mfaSessionVerified()/isOwnerVerified() above. Doc id is the
+      // ID token's own `auth_time` claim (string of the Unix seconds),
+      // so it is inherently scoped to one authentication event, never
+      // the account as a whole. Written only by server.ts via the Admin
+      // SDK immediately after a real TOTP code or recovery code is
+      // verified (enroll/confirm and verify-at-signin) - never
+      // client-readable or client-writable, same reasoning as security/
+      // above: even a client that could merely read "does a valid
+      // session doc exist" would learn whether its own stolen-but-
+      // unverified token could pass, which is exactly the information
+      // this is meant to withhold. exists()/get() calls made from inside
+      // a rule's own condition (mfaSessionVerified above) are not
+      // subject to this "if false" - they read the raw document to
+      // evaluate the rule, which is the only intended access path.
+      match /mfa_sessions/{authTime} {
+        allow read, write: if false;
+      }
+
       // integrations holds redacted connection status only (no secrets) — safe to read.
       match /integrations/{serviceName} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false; // Backend/Admin only
       }
 
@@ -602,7 +665,7 @@ service cloud.firestore {
       // the owner directly since transparency about "what did this do for me"
       // matters here, but only the backend (Admin SDK) ever writes to it.
       match /autopilot_actions/{actionId} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false;
       }
 
@@ -652,13 +715,13 @@ service cloud.firestore {
       
       // A. recovery/fingerprint
       match /recovery/fingerprint {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create: if isOwner(uid) 
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid) 
             && hasOnly(['archetype', 'identifiedAt', 'version', 'source', 'updatedAt'])
             && hasAll(['archetype', 'identifiedAt', 'version', 'source'])
             && request.resource.data.archetype in ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && hasOnly(['archetype', 'identifiedAt', 'version', 'source', 'updatedAt'])
             && request.resource.data.archetype in ['High-Functioning Exhausted', 'Over-Giver', 'Silent Resenter', 'Founder on Fire', 'Manager in the Middle'];
       }
@@ -668,9 +731,9 @@ service cloud.firestore {
       // fields ConnectedDailyCheckIn.tsx writes: four 0-10 sliders, an
       // optional note, and a fixed 'user' source.
       match /checkins/{checkinId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'energyLevel', 'focusLevel', 'detachmentLevel', 'stressLoad', 'note', 'source'])
             && hasAll(['createdAt', 'updatedAt', 'energyLevel', 'focusLevel', 'detachmentLevel', 'stressLoad', 'source'])
             && request.resource.data.energyLevel is number && request.resource.data.energyLevel >= 0 && request.resource.data.energyLevel <= 10
@@ -684,9 +747,9 @@ service cloud.firestore {
       
       // C. energy_budgets
       match /energy_budgets/{budgetId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'periodType', 'totalCapacity', 'allocatedCapacity', 'remainingCapacity', 'categories', 'note'])
             && hasAll(['createdAt', 'updatedAt', 'periodType', 'totalCapacity', 'allocatedCapacity', 'remainingCapacity', 'categories'])
             && request.resource.data.periodType in ['day', 'week']
@@ -700,9 +763,9 @@ service cloud.firestore {
       
       // D. mood_pulses
       match /mood_pulses/{entryId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'moodLabel', 'intensity', 'note', 'source'])
             && hasAll(['createdAt', 'updatedAt', 'moodLabel', 'intensity', 'source'])
             && request.resource.data.moodLabel in ['calm', 'tired', 'pressured', 'frustrated', 'hopeful', 'flat', 'focused', 'overwhelmed']
@@ -714,9 +777,9 @@ service cloud.firestore {
       
       // E. body_checkins
       match /body_checkins/{entryId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'signals', 'note', 'source'])
             && hasAll(['createdAt', 'updatedAt', 'signals', 'source'])
             && request.resource.data.signals is list && request.resource.data.signals.size() <= 10
@@ -731,9 +794,9 @@ service cloud.firestore {
       // percentage. Append-only, same reasoning as mood_pulses/
       // body_checkins - each check-in is its own history entry.)
       match /relational_load_signals/{entryId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'value'])
             && hasAll(['createdAt', 'value'])
             && request.resource.data.value in ['more_drained', 'about_the_same', 'more_restored'];
@@ -741,9 +804,9 @@ service cloud.firestore {
 
       // F. wins
       match /wins/{winId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'title', 'content', 'category', 'sharedToWall'])
             && hasAll(['createdAt', 'updatedAt', 'title', 'content', 'category'])
             && isStringWithMax(request.resource.data.title, 80)
@@ -756,9 +819,9 @@ service cloud.firestore {
       // blame_resets - BLAME Reset Tool completion log (Breathe, Locate,
       // Accept, Manage, Empower). Matches BLAMEResetOverlay.tsx's write.
       match /blame_resets/{resetId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'speed', 'durationSeconds', 'manageChoice', 'source', 'exchangeMode', 'exchangeTurns'])
             && hasAll(['createdAt', 'updatedAt', 'speed', 'durationSeconds', 'source'])
             && request.resource.data.speed in ['mini', 'full']
@@ -784,9 +847,9 @@ service cloud.firestore {
       // and never persisted, so this log can never become a record of
       // what someone actually said they did wrong.
       match /responsibility_resets/{resetId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'durationSeconds', 'turnCount', 'reachedClose'])
             && hasAll(['createdAt', 'updatedAt', 'durationSeconds', 'turnCount', 'reachedClose'])
             && request.resource.data.durationSeconds is number && request.resource.data.durationSeconds >= 0 && request.resource.data.durationSeconds <= 1800
@@ -807,9 +870,9 @@ service cloud.firestore {
       // new entry rather than overwriting the last one, so the day's full
       // history is retained - no update allowed, only create/read/delete.
       match /capacity_checkins/{checkInId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['physical', 'mental', 'emotional', 'score', 'createdAt'])
             && hasAll(['physical', 'mental', 'emotional', 'score', 'createdAt'])
             && request.resource.data.physical in ['very_low', 'low', 'okay', 'good', 'strong']
@@ -826,9 +889,9 @@ service cloud.firestore {
       // time") - updating it in place keeps computeStressorCurrentValue's
       // "most recent report" contract exact.
       match /energy_stressors/{stressorId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['name', 'category', 'severity', 'persistence', 'reduction', 'action', 'status', 'createdAt', 'updatedAt', 'capacityAtLogging'])
             && hasAll(['name', 'category', 'severity', 'persistence', 'status', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.name, 120)
@@ -851,9 +914,9 @@ service cloud.firestore {
       // zero), grossLoad/netLoad/capacityProtected always have a real
       // computed value since they default to 0 with no stressors logged.
       match /energy_daily_snapshots/{date} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['date', 'capacity', 'grossLoad', 'netLoad', 'capacityProtected', 'energyDelta', 'updatedAt'])
             && hasAll(['date', 'grossLoad', 'netLoad', 'capacityProtected', 'updatedAt'])
             && isStringWithMax(request.resource.data.date, 10)
@@ -869,9 +932,9 @@ service cloud.firestore {
       // learned preference (computePreferredRecoveryAction) - never a fake
       // point value and never applied back to load.
       match /energy_recovery_feedback/{feedbackId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['actionType', 'helpfulness', 'createdAt'])
             && hasAll(['actionType', 'helpfulness', 'createdAt'])
             && request.resource.data.actionType in ['somatic_reset', 'recovery_tour', 'guardian_ping', 'movement_snack', 'recovery_recipe', 'other']
@@ -881,9 +944,9 @@ service cloud.firestore {
       // spark_checks - SPARK Check daily scan (Sleep, Performance, Aches,
       // Reactions, Kindness). Matches ConnectedSparkCheck's write.
       match /spark_checks/{checkId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'sleep', 'performance', 'aches', 'reactions', 'kindness', 'offCount', 'source'])
             && hasAll(['createdAt', 'updatedAt', 'sleep', 'performance', 'aches', 'reactions', 'kindness', 'offCount', 'source'])
             && request.resource.data.sleep is number && request.resource.data.sleep >= 1 && request.resource.data.sleep <= 5
@@ -898,9 +961,9 @@ service cloud.firestore {
 
       // G. weekly_reviews
       match /weekly_reviews/{reviewId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'weekStart', 'weekEnd', 'helped', 'drained', 'nextSmallStep', 'gratitude'])
             && hasAll(['createdAt', 'updatedAt', 'weekStart', 'weekEnd', 'helped', 'drained', 'nextSmallStep'])
             && isStringWithMax(request.resource.data.helped, 300)
@@ -912,9 +975,9 @@ service cloud.firestore {
       
       // H. boundary_scripts
       match /boundary_scripts/{scriptId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'title', 'scenarioType', 'scriptText', 'status'])
             && hasAll(['createdAt', 'updatedAt', 'title', 'scenarioType', 'scriptText', 'status'])
             && isStringWithMax(request.resource.data.title, 80)
@@ -926,9 +989,9 @@ service cloud.firestore {
       
       // I. goals
       match /goals/{goalId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'title', 'description', 'status', 'targetDate', 'category'])
             && hasAll(['createdAt', 'updatedAt', 'title', 'status', 'category'])
             && isStringWithMax(request.resource.data.title, 100)
@@ -946,8 +1009,8 @@ service cloud.firestore {
       // collection was silently failing in production, making the feature
       // completely non-functional despite looking fully built.
       match /weekly_habit_cycles/{weekId} {
-        allow read: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['weekId', 'startedAt', 'goals'])
             && hasAll(['weekId', 'startedAt', 'goals'])
             && request.resource.data.weekId.matches('^[0-9]{4}-W[0-9]{2}$')
@@ -961,8 +1024,8 @@ service cloud.firestore {
       // "Connected to Nova". Keyed by date so each day naturally has at
       // most one entry, matching the original per-day localStorage key.
       match /recovery_fuel_logs/{dateId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'hasEaten', 'skippedBreakfast', 'caffeineCount', 'caffeineTiming', 'caffeineEmptyStomach', 'hydrationGlasses', 'morningLight', 'alcoholLogged', 'shakyIrritable'])
             && hasAll(['createdAt', 'updatedAt'])
             && (!('caffeineCount' in request.resource.data) || (request.resource.data.caffeineCount is number && request.resource.data.caffeineCount >= 0 && request.resource.data.caffeineCount <= 20))
@@ -975,13 +1038,13 @@ service cloud.firestore {
       // help?" update. Append-only by design (never overwritten beyond
       // adding `helpful`), feeding My Patterns' "what tends to help".
       match /recovery_fuel_checkins/{checkinId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['trigger', 'action', 'helpful', 'createdAt'])
             && hasAll(['trigger', 'action', 'createdAt'])
             && request.resource.data.trigger in ['running_low', 'not_eaten', 'need_drink', 'running_on_caffeine', 'no_sleep', 'overloaded', 'okay', 'proactive']
             && request.resource.data.action in ['eat', 'drink', 'daylight', 'take_break', 'somatic_reset', 'check_capacity', 'one_less_thing', 'reduce_load', 'wind_down'];
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['helpful'])
             && request.resource.data.helpful in ['yes', 'a_little', 'not_really'];
       }
@@ -993,8 +1056,8 @@ service cloud.firestore {
       // observation, so it's append-only: no update, no reinterpretation
       // after the fact.
       match /rediscovery_clues/{clueId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'source', 'prompt', 'answer', 'createdAt'])
             && hasAll(['id', 'source', 'prompt', 'answer', 'createdAt'])
             && request.resource.data.source in ['one_less_thing_why', 'workload_recurring_must_do', 'one_less_thing_category_imbalance', 'energy_delta_mismatch', 'recovery_fuel_pattern', 'quiet_question', 'rumination_furnace', 'pressure_valve', 'make_it_smaller', 'decompression_doorway', 'friction_finder_log']
@@ -1009,8 +1072,8 @@ service cloud.firestore {
       // 'nova_noticed', never created already-confirmed), everything else
       // added narrowly afterwards as the flow progresses.
       match /rediscovery_insights/{insightId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'section', 'text', 'state', 'source', 'controllability', 'sharedResponsibilityPlan', 'outsideControlChoice', 'nothingNeedsFixingChoice', 'createdAt', 'updatedAt'])
             && hasAll(['id', 'section', 'text', 'state', 'source', 'createdAt', 'updatedAt'])
             && request.resource.data.section in ['what_matters', 'what_drains', 'what_restores', 'what_carrying', 'what_relearning', 'what_want_back', 'what_leave_behind', 'experiments']
@@ -1020,7 +1083,7 @@ service cloud.firestore {
             && (!('sharedResponsibilityPlan' in request.resource.data) || request.resource.data.sharedResponsibilityPlan == null)
             && (!('outsideControlChoice' in request.resource.data) || request.resource.data.outsideControlChoice == null)
             && (!('nothingNeedsFixingChoice' in request.resource.data) || request.resource.data.nothingNeedsFixingChoice == null);
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'controllability', 'sharedResponsibilityPlan', 'outsideControlChoice', 'nothingNeedsFixingChoice', 'updatedAt'])
             && (!('state' in request.resource.data) || request.resource.data.state in ['nova_noticed', 'user_confirmed', 'still_exploring', 'rejected', 'archived'])
             && (!('controllability' in request.resource.data) || request.resource.data.controllability in ['mine_to_change', 'can_influence', 'depends_on_someone_else', 'mostly_outside_control', 'not_sure'])
@@ -1034,8 +1097,8 @@ service cloud.firestore {
       // re-scored after the fact), only its status narrows afterwards as
       // the one-active-experiment rule and review flow progress it.
       match /action_experiments/{experimentId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['id', 'insightId', 'text', 'ladderLevel', 'duration', 'momentOfTruth', 'friction', 'minimumViableChange', 'status', 'lastMomentChoice', 'prediction', 'reality', 'reviewChoice', 'changeReason', 'autopsyReason', 'keepFollowUp', 'usualResponseCount', 'triedDifferentCount', 'createdAt', 'updatedAt'])
             && hasAll(['id', 'insightId', 'text', 'ladderLevel', 'status', 'usualResponseCount', 'triedDifferentCount', 'createdAt', 'updatedAt'])
             && request.resource.data.usualResponseCount == 0
@@ -1054,7 +1117,7 @@ service cloud.firestore {
             && (!('changeReason' in request.resource.data) || request.resource.data.changeReason == null)
             && (!('autopsyReason' in request.resource.data) || request.resource.data.autopsyReason == null)
             && (!('keepFollowUp' in request.resource.data) || request.resource.data.keepFollowUp == null);
-        allow update: if isOwner(uid)
+        allow update: if isOwnerVerified(uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'lastMomentChoice', 'prediction', 'reality', 'reviewChoice', 'changeReason', 'autopsyReason', 'keepFollowUp', 'usualResponseCount', 'triedDifferentCount', 'updatedAt'])
             && (!('status' in request.resource.data) || request.resource.data.status in ['active', 'completed', 'abandoned'])
             && (!('lastMomentChoice' in request.resource.data) || request.resource.data.lastMomentChoice in ['usual_response', 'try_something_different'])
@@ -1088,8 +1151,8 @@ service cloud.firestore {
       // precedent for dead schema fields (see the removed
       // autoAlertEnabled field).
       match /nova_permissions/current {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
         // allowNheiReflectionStorage/allowNheiLongitudinalTracking/
         // allowNheiRoutingInsights: NHEI Phase 2's three independently
         // enforceable consent purposes, added to this same document per
@@ -1101,7 +1164,7 @@ service cloud.firestore {
         // only, deliberately NOT to hasAll, so every existing write path
         // that has never heard of NHEI (onboarding, the memory-consent
         // toggle, Settings) keeps working unchanged.
-        allow create, update: if isOwner(uid)
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowNheiReflectionStorage', 'allowNheiLongitudinalTracking', 'allowNheiRoutingInsights', 'allowCalendarActions', 'allowCalendarActionsGrantedAt', 'allowCalendarActionsWithdrawnAt', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
@@ -1192,7 +1255,7 @@ service cloud.firestore {
 
       // K. derived summaries
       match /derived/{summaryId} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false; // Derived summaries are server-only written
       }
 
@@ -1201,7 +1264,7 @@ service cloud.firestore {
       // example rows as if they were real audit evidence. Server-write-only
       // so it's a genuine, tamper-resistant record.
       match /recommendation_ledger/{entryId} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false;
       }
 
@@ -1210,11 +1273,11 @@ service cloud.firestore {
       // server-computed only (POST /api/recovery/routing-decision), never
       // client-written, same reasoning as recommendation_ledger above.
       match /recovery_routing/{docId} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false;
       }
       match /recovery_routing_decisions/{entryId} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false;
       }
 
@@ -1225,7 +1288,7 @@ service cloud.firestore {
       // user can read their own acceptance history but can never write
       // or forge one, for themselves or anyone else.
       match /legal_acceptances/{docType} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         allow write: if false;
       }
 
@@ -1245,14 +1308,14 @@ service cloud.firestore {
       // application code, not here, since it's about what one particular
       // caller is allowed to claim, not what the collection can hold.
       match /nova_memories/{memoryId} {
-        allow read: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
         // canEdit:false marks a system-derived record (e.g. Safety Engine
         // memories) the UI deliberately won't offer a delete button for -
         // this must hold that same line at the data layer too, or it's not
         // a real protection, just a UI suggestion bypassable from the
         // console or any other direct Firestore client.
-        allow delete: if isOwner(uid) && resource.data.canEdit == true;
-        allow create, update: if isOwner(uid)
+        allow delete: if isOwnerVerified(uid) && resource.data.canEdit == true;
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
             && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
             && request.resource.data.type in ['profile', 'trigger', 'state', 'rule', 'preference']
@@ -1264,8 +1327,8 @@ service cloud.firestore {
 
       // M. nudge_history
       match /nudge_history/{nudgeId} {
-        allow read: if isOwner(uid);
-        allow create, update: if isOwner(uid) &&
+        allow read: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid) &&
             hasOnly(['category', 'message', 'createdAt', 'shownAt', 'dismissedAt', 'actionTakenAt', 'status', 'reasonCategory', 'source', 'expiresAt', 'updatedAt']) &&
             request.resource.data.category in ['check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection', 'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up', 'climate_survey_reminder', 'fuel_pattern_reminder'] &&
             request.resource.data.source == 'in_app_nova' &&
@@ -1274,9 +1337,9 @@ service cloud.firestore {
 
       // N. energy_commitments (EnergyBudgetMatrix widget's task list)
       match /energy_commitments/{commitmentId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'name', 'energyDrain', 'type', 'status'])
             && hasAll(['createdAt', 'updatedAt', 'name', 'energyDrain', 'type', 'status'])
             && isStringWithMax(request.resource.data.name, 100)
@@ -1288,9 +1351,9 @@ service cloud.firestore {
 
       // O. energy_credits (EnergyBudgetTool page's task list)
       match /energy_credits/{creditId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'task', 'cost', 'priority', 'type', 'shipStage', 'action'])
             && hasAll(['createdAt', 'updatedAt', 'task', 'cost', 'priority', 'type'])
             && isStringWithMax(request.resource.data.task, 100)
@@ -1308,21 +1371,21 @@ service cloud.firestore {
       // Energy Delta source EnergyBudgetMatrix.tsx uses). Left in place
       // untouched so any existing value stays readable.
       match /energy_credits_settings/current {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid)
             && hasOnly(['budget', 'updatedAt'])
             && request.resource.data.budget is number && request.resource.data.budget >= 0 && request.resource.data.budget <= 200;
       }
 
       // Q. stress_triggers (the "Quick Note" floating trigger logger)
       match /stress_triggers/{triggerId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
         // 'source' was added to the real write path (RecoveryIntelligenceLayer.tsx's
         // saveTriggers, and PressurePatternCapture.tsx) so Recovery Routing
         // Engine's repeated-source pattern detection has something real to
         // group by - must be allowed here or every real write is denied.
-        allow create, update: if isOwner(uid)
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel', 'source'])
             && hasAll(['createdAt', 'updatedAt', 'text', 'date', 'severity', 'energyLevel', 'source'])
             && isStringWithMax(request.resource.data.text, 300)
@@ -1337,9 +1400,9 @@ service cloud.firestore {
       // moodLabel enum, since this tracks arbitrary self-described words for
       // word-frequency analysis)
       match /emotional_patterns/{entryId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'word', 'intensity', 'category'])
             && hasAll(['createdAt', 'updatedAt', 'word', 'intensity', 'category'])
             && isStringWithMax(request.resource.data.word, 40)
@@ -1354,9 +1417,9 @@ service cloud.firestore {
       // mood_pulses/body_checkins, never by giving an admin direct read
       // access to this subcollection.)
       match /climate_survey_responses/{responseId} {
-        allow read: if isOwner(uid);
-        allow delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'demands', 'control', 'support', 'relationships', 'role', 'change'])
             && hasAll(['createdAt', 'updatedAt', 'demands', 'control', 'support', 'relationships', 'role', 'change'])
             && request.resource.data.demands is number && request.resource.data.demands >= 1 && request.resource.data.demands <= 5
@@ -1374,8 +1437,8 @@ service cloud.firestore {
       // token-based public endpoint using the Admin SDK), so a user can
       // never fabricate a message and attribute it to their own ally.
       match /recovery_ally/state {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && request.resource.data.keys().hasOnly(['isInvited', 'allyName', 'allyEmail', 'permissions', 'shareToken', 'invitedAt', 'updatedAt', 'supportHelps', 'supportDoesNotHelp', 'supportVisibleToAlly', 'consentStatus', 'consentRespondedAt', 'inviteExpiresAt', 'sharingPaused', 'lastViewedAt'])
             && (!('allyEmail' in request.resource.data) || isStringWithMax(request.resource.data.allyEmail, 200))
             && (!('allyName' in request.resource.data) || isStringWithMax(request.resource.data.allyName, 100))
@@ -1412,8 +1475,8 @@ service cloud.firestore {
       // what the client can write - only the server-side scheduler sets it,
       // so a client can't spoof "already sent" and can't fake a send history.
       match /nudge_schedules/{scheduleId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && request.resource.data.keys().hasOnly(['contactId', 'contactName', 'contactMethod', 'notificationPreference', 'message', 'frequency', 'daysOfWeek', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'quietHoursAcknowledged', 'createdAt', 'updatedAt'])
             && request.resource.data.keys().hasAll(['contactId', 'contactMethod', 'message', 'frequency', 'time', 'timezone', 'enabled', 'contactAcknowledged', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.message, 300)
@@ -1443,8 +1506,8 @@ service cloud.firestore {
       // level nudge_schedules' time/timezone fields already get; the
       // category/expiryType enums are what rules can and do enforce.
       match /support_capsules/{category} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['category', 'expiryType', 'startAt', 'expiresAt', 'createdAt', 'updatedAt'])
             && hasAll(['category', 'expiryType', 'startAt', 'expiresAt'])
             && request.resource.data.category in ['viewGoals', 'viewMilestones', 'viewEnergyStats', 'sendPings']
@@ -1455,8 +1518,8 @@ service cloud.firestore {
       }
 
       match /ally_shared_goals/{goalId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'text', 'category', 'completedDates'])
             && hasAll(['createdAt', 'updatedAt', 'text', 'category'])
             && isStringWithMax(request.resource.data.text, 200)
@@ -1464,11 +1527,11 @@ service cloud.firestore {
       }
 
       match /ally_encouragements/{id} {
-        allow read, delete: if isOwner(uid);
+        allow read, delete: if isOwnerVerified(uid);
         // Only system-generated (client-computed milestone) messages can be
         // written by the owner. Personal messages - the actual point of
         // this feature - only ever arrive via the server endpoint below.
-        allow create: if isOwner(uid)
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'type', 'message'])
             && request.resource.data.type == 'system'
             && isStringWithMax(request.resource.data.message, 300);
@@ -1479,8 +1542,8 @@ service cloud.firestore {
       // and analyzes the memo server-side; the client only ever writes back
       // the exact response it received, never edits transcription/analysis).
       match /voice_journal_entries/{entryId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'date', 'transcription', 'themes', 'analysis', 'advice', 'emotionalTone'])
             && hasAll(['createdAt', 'date', 'transcription', 'themes', 'analysis', 'advice', 'emotionalTone'])
             && isStringWithMax(request.resource.data.transcription, 4000)
@@ -1493,8 +1556,8 @@ service cloud.firestore {
       // Resentment Tracker's raw venting log + Nova's structured analysis of
       // it - equally sensitive personal content, same owner-only pattern.
       match /resentment_logs/{entryId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'log', 'yesMeantNo', 'unclear', 'unappreciated', 'missingBoundary'])
             && hasAll(['createdAt', 'updatedAt', 'log'])
             && isStringWithMax(request.resource.data.log, 3000)
@@ -1510,8 +1573,8 @@ service cloud.firestore {
       // profile since retaking with a different profile gets its own
       // tracked progress.
       match /diagnosis_progress/{profileId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['completedActions', 'committedBoundaries', 'allActionIds', 'allBoundaryIds', 'reflections', 'awardedReflections', 'updatedAt'])
             && (!('completedActions' in request.resource.data) || request.resource.data.completedActions is list)
             && (!('committedBoundaries' in request.resource.data) || request.resource.data.committedBoundaries is list)
@@ -1527,8 +1590,8 @@ service cloud.firestore {
 
       // W. recovery_plan_progress/state
       match /recovery_plan_progress/state {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['completedIds', 'allActionIds', 'submittedJournals', 'nickname', 'leaderboardOptIn', 'updatedAt'])
             && (!('completedIds' in request.resource.data) || request.resource.data.completedIds is list)
             // allActionIds: the full set of this plan's action ids, written
@@ -1546,8 +1609,8 @@ service cloud.firestore {
 
       // X. workload_reality_check/state
       match /workload_reality_check/state {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['answers', 'completed', 'tasks', 'updatedAt'])
             && (!('answers' in request.resource.data) || request.resource.data.answers is map)
             && (!('completed' in request.resource.data) || request.resource.data.completed is bool)
@@ -1556,8 +1619,8 @@ service cloud.firestore {
 
       // Y. focus_sessions
       match /focus_sessions/{sessionId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'durationMinutes', 'completed', 'stage'])
             && hasAll(['createdAt', 'updatedAt', 'durationMinutes', 'completed'])
             && request.resource.data.durationMinutes is number
@@ -1569,8 +1632,8 @@ service cloud.firestore {
       // rather than living only in local component state, since this is
       // safety-relevant data.
       match /support_circle/{contactId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod', 'relation', 'notificationPreference', 'lastTestPingAt'])
             && hasAll(['createdAt', 'updatedAt', 'name', 'role', 'isGuardian', 'contactMethod'])
             && isStringWithMax(request.resource.data.name, 100)
@@ -1602,8 +1665,8 @@ service cloud.firestore {
       // forged value here can't mislead anything. See
       // docs/FREE_PREMIUM_ENTITLEMENTS.md.
       match /user_stats/core {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && request.resource.data.keys().hasOnly([
               'points', 'streak', 'rehearsalCount', 'lastEngagementDate',
               'unlockedBadges', 'supportCircle', 'committedActionIds',
@@ -1642,8 +1705,8 @@ service cloud.firestore {
       // session, read back into Nova's context so a completed reset is
       // actually visible to future conversations.
       match /micro_recovery/latest {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['duration', 'time', 'description', 'details', 'completedAt'])
             && isStringWithMax(request.resource.data.description, 300)
             && request.resource.data.details is list && request.resource.data.details.size() <= 20;
@@ -1651,8 +1714,8 @@ service cloud.firestore {
 
       // AC. somatic_reset_sessions - completed 60s somatic reset sessions.
       match /somatic_reset_sessions/{sessionId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['createdAt', 'updatedAt', 'durationSeconds'])
             && hasAll(['createdAt', 'updatedAt', 'durationSeconds'])
             && request.resource.data.durationSeconds is number
@@ -1663,8 +1726,8 @@ service cloud.firestore {
       // Nova Coach Pulse modal. Write-once from the client; no update since
       // submitted feedback isn't meant to be edited after the fact.
       match /nova_feedback/{feedbackId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['rating', 'feedbackText', 'createdAt'])
             && hasAll(['rating', 'createdAt'])
             && request.resource.data.rating is number
@@ -1687,8 +1750,8 @@ service cloud.firestore {
       // own flow) to keep free-text storage minimal, per the feature's
       // explicit "minimise unnecessary sensitive free-text" requirement.
       match /grounding_sessions/{sessionId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['lens', 'burdenIds', 'customBurden', 'intensity', 'controllableItems', 'uncontrollableItems', 'islamicThemeId', 'reflectionAnswers', 'detectedThemes', 'nextAction', 'sessionDepth', 'capacityState', 'createdAt', 'updatedAt'])
             && hasAll(['lens', 'createdAt', 'updatedAt'])
             && request.resource.data.lens in ['secular', 'values', 'faith', 'islamic']
@@ -1729,8 +1792,8 @@ service cloud.firestore {
       // still one doc, not a new collection, since these are all just
       // more facets of the same "how Grounding behaves for me" settings.
       match /preferences/grounding {
-        allow read: if isOwner(uid);
-        allow write: if isOwner(uid)
+        allow read: if isOwnerVerified(uid);
+        allow write: if isOwnerVerified(uid)
             && hasOnly(['patternAnalysisEnabled', 'preferredLens', 'communitySuggestionsEnabled', 'monthlyReflectionEnabled', 'patternHistoryVisible', 'updatedAt'])
             && (!('patternAnalysisEnabled' in request.resource.data) || request.resource.data.patternAnalysisEnabled is bool)
             && (!('preferredLens' in request.resource.data) || request.resource.data.preferredLens in ['secular', 'values', 'faith', 'islamic'])
@@ -1747,8 +1810,8 @@ service cloud.firestore {
       // "derived pattern data" section 20 requires get removed when
       // pattern history is cleared.
       match /reflection_patterns/{patternId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['patternKey', 'category', 'firstSeenAt', 'lastSeenAt', 'occurrenceCount', 'status', 'userFeedback', 'userFeedbackNote', 'lensAssociations', 'relatedValues', 'helpfulApproaches', 'paused', 'suppressed', 'resolved', 'resolvedAtOccurrenceCount', 'createdAt', 'updatedAt'])
             && hasAll(['patternKey', 'category', 'firstSeenAt', 'lastSeenAt', 'occurrenceCount', 'status', 'createdAt', 'updatedAt'])
             && request.resource.data.patternKey in ['control', 'uncertainty', 'over_responsibility', 'perfectionism', 'guilt_about_rest', 'boundary_difficulty', 'fear_of_disappointing', 'people_pleasing', 'isolation', 'reluctance_to_ask_for_support', 'excessive_self_expectation', 'work_identity', 'financial_pressure', 'family_responsibility', 'conflict_avoidance', 'overcommitment', 'comparison', 'self_criticism', 'difficulty_accepting_unfinished_work', 'difficulty_accepting_outcomes', 'gratitude', 'patience', 'trust', 'compassion', 'connection', 'purpose', 'values_conflict']
@@ -1778,8 +1841,8 @@ service cloud.firestore {
       // FaithValuesMode.tsx's follow-up logic for the recency/dismissal
       // rules that live in application code, not here).
       match /aligned_actions/{actionId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['chosenValue', 'nextAlignedAction', 'patternKey', 'followUpStatus', 'followedUpAt', 'createdAt', 'updatedAt'])
             && hasAll(['chosenValue', 'nextAlignedAction', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.chosenValue, 40)
@@ -1794,8 +1857,8 @@ service cloud.firestore {
       // standalone exercise (section 7) distinct from a full grounding
       // session: one doc per burden the person classified.
       match /carrying_items/{itemId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['burdenText', 'classification', 'genuinelyMineText', 'notMineText', 'releaseWithoutAbandoningText', 'createdAt', 'updatedAt'])
             && hasAll(['burdenText', 'classification', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.burdenText, 80)
@@ -1811,8 +1874,8 @@ service cloud.firestore {
       // category/lens, never reflection text. Mirrors guardian_support_
       // events' write-once, no-free-text shape.
       match /grounding_analytics_events/{eventId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['eventType', 'category', 'lens', 'createdAt'])
             && hasAll(['eventType', 'createdAt'])
             && request.resource.data.eventType in ['grounding_session_completed', 'pattern_explored', 'pattern_feedback_given', 'community_connection_opened', 'carrying_exercise_completed', 'monthly_reflection_viewed', 'aligned_action_created', 'aligned_action_followed_up', 'routine_completed', 'routine_created']
@@ -1829,8 +1892,8 @@ service cloud.firestore {
       // REFLECTION in grounding-patterns-taxonomy.ts gates when the
       // client even offers this.
       match /monthly_reflections/{monthId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['heaviestTheme', 'recurringThemes', 'whatChanged', 'whatHelped', 'carryForwardValue', 'createdAt', 'updatedAt'])
             && hasAll(['createdAt', 'updatedAt'])
             && isOptionalStringWithMax(request.resource.data, 'heaviestTheme', 300)
@@ -1848,8 +1911,8 @@ service cloud.firestore {
       // src/lib/grounding-personalisation.ts, never containing raw
       // reflection text.
       match /groundingProfile/{docId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && docId == 'main'
             && hasOnly(['personalisationEnabled', 'useHistoryForPersonalisation', 'followUpOnPreviousActions', 'usePreferredLens', 'voiceGuidanceEnabled', 'preferredSessionDepth', 'commonCapacityState', 'helpfulPromptFamilies', 'unhelpfulPromptFamilies', 'helpfulGroundingThemes', 'preferredLens', 'preferredClosingStyle', 'frequentlySkippedElements', 'updatedAt'])
             && hasAll(['updatedAt'])
@@ -1872,8 +1935,8 @@ service cloud.firestore {
       // (section 5). Doc id is the promptKey itself, so a repeat write is
       // always an update to the same doc rather than an ever-growing log.
       match /groundingPromptHistory/{promptId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['promptKey', 'patternKey', 'lastShownAt', 'timesShown', 'userEngaged', 'userSkipped', 'helpfulRating', 'createdAt', 'updatedAt'])
             && hasAll(['promptKey', 'lastShownAt', 'timesShown', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.promptKey, 80)
@@ -1890,8 +1953,8 @@ service cloud.firestore {
       // no free-text field beyond one short optional note, so this can
       // never carry raw reflection content either.
       match /groundingFeedback/{feedbackId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['selectedOptions', 'helpfulNote', 'sessionDepth', 'createdAt'])
             && hasAll(['selectedOptions', 'createdAt'])
             && request.resource.data.selectedOptions is list && request.resource.data.selectedOptions.size() <= 8
@@ -1903,8 +1966,8 @@ service cloud.firestore {
       // (sections 8-9): Morning Grounding, End-of-Day Release, Before/
       // After Something Difficult, or a fully custom one.
       match /groundingRoutines/{routineId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['name', 'type', 'sessionDepth', 'lens', 'closingStyle', 'preferredPromptKeys', 'reminderEnabled', 'reminderTime', 'reminderDays', 'lastCompletedAt', 'createdAt', 'updatedAt'])
             && hasAll(['name', 'type', 'createdAt', 'updatedAt'])
             && isStringWithMax(request.resource.data.name, 60)
@@ -1935,8 +1998,8 @@ service cloud.firestore {
       // (e.g. a curated Islamic reflection), so the UI never mislabels
       // user-written text as verified religious content.
       match /savedReflections/{reflectionId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['type', 'text', 'sourceLens', 'isUserCreated', 'createdAt'])
             && hasAll(['type', 'text', 'isUserCreated', 'createdAt'])
             && request.resource.data.type in ['question', 'insight', 'value', 'aligned_action', 'grounding_statement', 'faith_reflection']
@@ -1950,8 +2013,8 @@ service cloud.firestore {
       // same reasoning as groundingProfile/main - one small preference
       // record, never containing movement history itself.
       match /movementPreferences/{docId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && docId == 'main'
             && hasOnly(['favourites', 'seatedPreference', 'audioPreference', 'postMovementFeedbackEnabled', 'preferredAfterWorkCue', 'updatedAt'])
             && hasAll(['updatedAt'])
@@ -1968,8 +2031,8 @@ service cloud.firestore {
       // 5) - never reflection text, location, or anything beyond what the
       // recommendation engine and favourites screen need.
       match /movementHistory/{entryId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['movementId', 'context', 'skipped', 'feedback', 'createdAt'])
             && hasAll(['movementId', 'skipped', 'createdAt'])
             && isStringWithMax(request.resource.data.movementId, 60)
@@ -1983,8 +2046,8 @@ service cloud.firestore {
       // id/category, never feedback value or free text. Mirrors
       // grounding_analytics_events' write-once, no-free-text shape.
       match /movement_analytics_events/{eventId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['eventType', 'movementId', 'category', 'createdAt'])
             && hasAll(['eventType', 'createdAt'])
             && request.resource.data.eventType in ['movement_started', 'movement_completed', 'movement_skipped', 'movement_feedback_selected']
@@ -1996,8 +2059,8 @@ service cloud.firestore {
       // (Recovery Recipes upgrade, Batch 1, section 26). Single fixed doc
       // id, same reasoning as movementPreferences/main.
       match /recipePreferences/{docId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && docId == 'main'
             && hasOnly(['preferredDurationCategory', 'helpfulStepTypes', 'skippedStepTypes', 'preferredLens', 'favouriteRecipeIds', 'feedbackEnabled', 'adaptSavedRecipes', 'updatedAt'])
             && hasAll(['updatedAt'])
@@ -2016,8 +2079,8 @@ service cloud.firestore {
       // it faithfully while "Adapt for today" rebuilds fresh from the
       // deterministic engine (section 20).
       match /recoveryRecipes/{recipeId} {
-        allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create, update: if isOwnerVerified(uid)
             && hasOnly(['name', 'situationKey', 'capacity', 'stepIds', 'createdAt', 'lastUsedAt'])
             && hasAll(['name', 'situationKey', 'stepIds', 'createdAt'])
             && isStringWithMax(request.resource.data.name, 60)
@@ -2039,8 +2102,8 @@ service cloud.firestore {
       // step) - raw private text stays governed by the existing Nova-memory
       // mechanism, never written here.
       match /recipeHistory/{entryId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['situationKey', 'capacity', 'durationMinutes', 'completedStepTypes', 'skippedStepTypes', 'feedback', 'helpfulPart', 'saved', 'createdAt'])
             && hasAll(['situationKey', 'createdAt'])
             && request.resource.data.situationKey in [
@@ -2063,8 +2126,8 @@ service cloud.firestore {
       // situation/step type, never feedback value or free text. Mirrors
       // movement_analytics_events' write-once, no-free-text shape.
       match /recovery_recipes_analytics_events/{eventId} {
-        allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid)
+        allow read, delete: if isOwnerVerified(uid);
+        allow create: if isOwnerVerified(uid)
             && hasOnly(['eventType', 'situationKey', 'stepType', 'createdAt'])
             && hasAll(['eventType', 'createdAt'])
             && request.resource.data.eventType in ['recipe_started', 'recipe_completed', 'recipe_abandoned', 'recipe_step_skipped', 'recipe_saved', 'recipe_feedback']

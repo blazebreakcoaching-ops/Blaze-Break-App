@@ -75,6 +75,21 @@ let an attacker's own, independently-obtained fresh token inherit a
 legitimate session's past verification. The session token is scoped to
 the one session that actually did the verifying.
 
+**2026-11-04 correction:** that token was signed over `uid + expiry` only
+— nothing in it actually identified *which* sign-in session cleared the
+challenge, despite the name. A 12-hour-old token was still valid against
+*any* current ID token for that uid, including one minted by a brand new
+sign-in that happened after the token was issued. It's now additionally
+bound to the presenting ID token's own `auth_time` claim
+(`signMfaSessionToken`/`verifyMfaSessionToken`, `server.ts`): signing in
+again always mints a fresh `auth_time`, which immediately invalidates any
+session token minted for the earlier sign-in, even one that hasn't hit
+its 12-hour expiry yet. The Nova Live WebSocket's own `nova-mfa.*`
+subprotocol proof (§Authentication's REST token has no WebSocket
+equivalent, so this is a separate check reaching the same conclusion) is
+bound the same way. See §4 below for the matching, and more serious, gap
+this pass found and fixed in `firestore.rules` itself.
+
 ## 2. Is this even our app — App Check
 
 Every state-changing/data-reading API route (155 of 157 total — the 2
@@ -120,6 +135,28 @@ ownership — see `docs/FIREBASE_SECURITY.md` for the full model and what
 was tightened in this pass (`anxiety_reset_events` closed to server-write-
 only, `weekly_habit_cycles` given a rule at all — it had none, silently
 non-functional in production — `checkins` given real field validation).
+
+**2026-11-04: the MFA bypass this pass was for lived here, not in §1.**
+`authenticateFirebaseUser`'s `X-MFA-Session-Token` gate in §1 above only
+ever covered `server.ts`'s own REST/WebSocket routes. It never touched
+`firestore.rules`, which gated every owner-scoped subcollection purely on
+`isOwner(uid)` — true for any valid Firebase ID token for that uid,
+2FA-verified or not. `src/lib`/`src/components` call the Firestore client
+SDK directly for this data in dozens of places (check-ins, mood/body
+check-ins, boundary tools, decompression sessions, the user's own profile,
+etc. — this is the normal, intended way the app reads/writes its own
+data, not an edge case), so a stolen-but-unverified ID token could read
+or write all of it without ever completing the second factor, entirely
+outside server.ts's gate. Fixed by `isOwnerVerified(uid)` (= `isOwner(uid)
+&& mfaCleared(uid)`), which every one of those rules now uses in place of
+bare `isOwner(uid)` — see `docs/FIREBASE_SECURITY.md`'s §Firestore
+security rules for exactly how `mfaCleared()` works and why it's bound to
+the ID token's `auth_time` rather than the account-wide `mfaEnabled`
+claim alone. Zero behaviour change for the accounts that don't enable
+2FA, which is nearly all of them. Demonstrated end-to-end against the
+real Firestore emulator in `test-rules.cjs`'s "Testing MFA per-session
+Firestore enforcement..." block — missing, expired, wrong-session, and
+revoked cases are each asserted denied, not just the happy path.
 
 ## 5. What this account is entitled to do — tier capabilities
 

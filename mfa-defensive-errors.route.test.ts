@@ -29,7 +29,7 @@ vi.mock('firebase-admin/auth', () => ({
 }));
 vi.mock('firebase-admin/firestore', async () => {
   const fake = await import('./test/fake-firestore');
-  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue };
+  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue, Timestamp: fake.FakeTimestamp };
 });
 
 import request from 'supertest';

@@ -75,14 +75,42 @@ Two structural regions:
 1. **`match /users/{uid}/...`** — every subcollection under a user's own
    document (mood pulses, check-ins, goals, energy budgets, nova
    memories, etc.). The consistent pattern per subcollection:
-   `allow read: if isOwner(uid)`, then `create`/`update` gated by
-   `isOwner(uid)` **and** `hasOnly([...])`/`hasAll([...])` field
+   `allow read: if isOwnerVerified(uid)`, then `create`/`update` gated by
+   `isOwnerVerified(uid)` **and** `hasOnly([...])`/`hasAll([...])` field
    allowlisting plus type/range/enum checks on every field — not just an
    ownership check. `checkCreatedAtUnchanged()` prevents backdating a
    record through a later update. A handful of subcollections are
    server-write-only (`allow write: if false`) where the Admin SDK is the
    only legitimate writer — `entitlements/status`, `usage_counters`,
-   `security/mfa_totp`, `derived/*` summaries.
+   `security/mfa_totp`, `mfa_sessions/*`, `derived/*` summaries.
+
+   **`isOwnerVerified(uid)` vs. `isOwner(uid)`:** `isOwnerVerified(uid)` is
+   `isOwner(uid) && mfaCleared(uid)` — a strict narrowing, never a wider
+   grant. For the overwhelming majority of accounts (no 2FA enabled)
+   `mfaCleared()` is `true` unconditionally and behaviour is identical to
+   the old bare `isOwner(uid)`. For an account with 2FA enabled,
+   `mfaCleared()` additionally requires a live
+   `users/{uid}/mfa_sessions/{authTime}` doc — `authTime` being the
+   presenting ID token's own `auth_time` claim — written only by
+   `server.ts`'s `writeMfaSessionDoc()` (Admin SDK, so it bypasses these
+   rules) immediately after a real TOTP code or recovery code verifies.
+   **This closes the exact gap this security pass was for:** before this
+   change, a Firebase ID token alone (the thing a stolen session or a
+   not-yet-2FA-challenged sign-in both produce) was sufficient to read or
+   write this data directly via the client SDK — `authenticateFirebaseUser`'s
+   X-MFA-Session-Token gate in §Authentication above only ever covered
+   `server.ts`'s own REST/WebSocket routes, never a direct
+   `firebase/firestore` client call, and every list of direct Firestore
+   usage in `src/lib`/`src/components` (dozens of files) confirmed real
+   production code takes that direct path routinely. Binding the session
+   doc's id to `auth_time` (rather than, say, a device id or nothing at
+   all) means a brand new sign-in — which always mints a fresh
+   `auth_time` — is re-challenged by Firestore itself even if an earlier
+   session's doc hasn't hit its 12-hour expiry; see
+   `docs/SECURITY_ARCHITECTURE.md` §1 for the full before/after and the
+   emulator tests (`test-rules.cjs`, "Testing MFA per-session Firestore
+   enforcement...") that demonstrate missing/expired/wrong-session/
+   revoked cases are all denied.
 2. **Top-level collections** (`public_feature_flags`, `audit_logs`,
    `anxiety_reset_events`, `admin_users`, `admin_audit_logs`,
    `app_config`) — each gets its own `match` block at the top of the

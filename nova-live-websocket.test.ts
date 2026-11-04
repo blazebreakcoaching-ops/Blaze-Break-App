@@ -32,6 +32,10 @@ const h = vi.hoisted(() => {
     lastCallbacks: null as any,
     fakeLiveSession: null as any,
     liveConnect: null as any,
+    // Fixed stand-in for 'mfa_user''s ID token auth_time, shared between
+    // the verifyIdToken mock below and the tests' signedMfaProof() calls -
+    // an MFA proof is only valid when it's bound to this exact value.
+    MFA_USER_AUTH_TIME: 1700000000,
   };
   // Schedules onopen via a REAL setTimeout rather than calling it
   // synchronously inside this async function - `liveSession = await
@@ -61,7 +65,14 @@ vi.mock('firebase-admin/auth', () => ({
       if (token === 'bad-token' || (token === 'revoked-token' && checkRevoked === true)) {
         throw new Error('invalid or revoked token');
       }
-      return { uid: token, email: `${token}@test.dev`, mfaEnabled: token === 'mfa_user' };
+      return {
+        uid: token,
+        email: `${token}@test.dev`,
+        mfaEnabled: token === 'mfa_user',
+        // Fixed stand-in for this sign-in's ID token auth_time - the MFA
+        // proof must be bound to this exact value, not just the uid.
+        auth_time: token === 'mfa_user' ? h.MFA_USER_AUTH_TIME : undefined,
+      };
     },
   }),
 }));
@@ -106,8 +117,8 @@ const fakeReq = (query: string, encodedMfaProof?: string) => ({
   },
 });
 
-const signedMfaProof = (uid: string, expiresAt: number): string => {
-  const payload = `${uid}.${expiresAt}`;
+const signedMfaProof = (uid: string, authTime: number | undefined, expiresAt: number): string => {
+  const payload = `${uid}.${authTime}.${expiresAt}`;
   const signature = crypto.createHmac('sha256', Buffer.from(process.env.MFA_ENCRYPTION_KEY!, 'base64'))
     .update(payload).digest('hex');
   return Buffer.from(`${payload}.${signature}`).toString('base64url');
@@ -183,7 +194,7 @@ describe('handleNovaLiveConnection - auth and configuration gates', () => {
 
   it('rejects expired MFA proof', async () => {
     const ws = new FakeClientSocket();
-    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', Date.now() - 60_000)));
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', h.MFA_USER_AUTH_TIME, Date.now() - 60_000)));
     expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
     expect(ws.closed).toBe(true);
     expect(h.liveConnect).not.toHaveBeenCalled();
@@ -191,7 +202,20 @@ describe('handleNovaLiveConnection - auth and configuration gates', () => {
 
   it('rejects MFA proof signed for another account', async () => {
     const ws = new FakeClientSocket();
-    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('another_user', Date.now() + 120_000)));
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('another_user', h.MFA_USER_AUTH_TIME, Date.now() + 120_000)));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  // New: a proof correctly signed for this uid, unexpired, but minted for
+  // a DIFFERENT sign-in session (a stale auth_time) must also be
+  // rejected - this is the "tied to the correct authentication session,
+  // not account-wide" requirement, and the one dimension the pre-existing
+  // uid/expiry tests above never exercised.
+  it('rejects MFA proof bound to a different sign-in session (stale auth_time)', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', h.MFA_USER_AUTH_TIME - 1, Date.now() + 120_000)));
     expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
     expect(ws.closed).toBe(true);
     expect(h.liveConnect).not.toHaveBeenCalled();
@@ -199,7 +223,7 @@ describe('handleNovaLiveConnection - auth and configuration gates', () => {
 
   it('accepts correctly signed, unexpired MFA proof for the authenticated account', async () => {
     const ws = new FakeClientSocket();
-    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', Date.now() + 120_000)));
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', h.MFA_USER_AUTH_TIME, Date.now() + 120_000)));
     await flush();
     expect(h.liveConnect).toHaveBeenCalledTimes(1);
     expect(ws.sent).toContainEqual({ ready: true });

@@ -50,7 +50,7 @@ describe('organisation_privacy_isolation', () => {
     const nextSubcollection = firestoreRules.indexOf('users/{uid}/', startIdx + 10);
     expect(nextSubcollection).toBeGreaterThan(startIdx);
     const block = firestoreRules.slice(startIdx, nextSubcollection);
-    expect(block).toMatch(/allow read: if isOwner\(uid\);/);
+    expect(block).toMatch(/allow read: if isOwnerVerified\(uid\);/);
     // Nothing in this rule block should grant read access based on an
     // organisation/manager/admin role - that would reintroduce exactly
     // the leak this invariant exists to prevent.
