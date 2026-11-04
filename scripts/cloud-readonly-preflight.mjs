@@ -26,7 +26,8 @@ if (!['production', 'staging'].includes(target) ||
 const load = path => JSON.parse(readFileSync(resolve(root, path), 'utf8'));
 const aliases = load('.firebaserc').projects;
 const firebase = load('firebase.json');
-const project = target === 'production' ? aliases.production || aliases.default : aliases.staging;
+const productionProject = aliases.production || aliases.default;
+const project = target === 'production' ? productionProject : aliases.staging;
 const database = firebase.firestore?.database;
 const service = 'blaze-break';
 const region = 'europe-west2';
@@ -53,9 +54,14 @@ if (!configFile) {
 } else {
   try {
     const web = load(configFile);
-    record('Matching web config', web.projectId === project && web.firestoreDatabaseId === database
-      ? 'PASS' : 'FAIL', web.projectId === project && web.firestoreDatabaseId === database
-        ? 'Project/database match' : 'Web Firebase project/database mismatch');
+    const productionWeb = target === 'staging' ? load('firebase-applet-config.json') : null;
+    const appIdentityValid = typeof web.appId === 'string' && web.appId.length > 0 &&
+      (target !== 'staging' || (project !== productionProject && web.appId !== productionWeb.appId));
+    const webMatches = web.projectId === project &&
+      web.firestoreDatabaseId === database && appIdentityValid;
+    record('Matching web config', webMatches ? 'PASS' : 'FAIL',
+      webMatches ? 'Project/database/app identity match' :
+        'Web config missing or mismatches target project, database or isolated app identity');
   } catch {
     record('Matching web config', 'FAIL', 'Firebase web config unavailable or invalid');
   }
@@ -81,7 +87,7 @@ record('GCP project visible', projectInfo?.projectId === project ? 'PASS' : 'CHE
 const dbInfo = run(['firestore','databases','describe',
   '--database='+database,'--project='+project,'--format=json']);
 const dbMatch = dbInfo && typeof dbInfo.name === 'string' &&
-  dbInfo.name.endsWith('/databases/' + database);
+  dbInfo.name === 'projects/' + project + '/databases/' + database;
 record('Firestore named database', dbMatch ? 'PASS' : 'FAIL',
   dbMatch ? 'Target database exists in expected project' :
     'Database could not be verified (may be absent or lack permission)');
@@ -101,15 +107,24 @@ if (live) {
   record('Production security mode', nodeEnv === 'production' ? 'PASS' : 'FAIL',
     nodeEnv === 'production' ? 'NODE_ENV production' :
       'NODE_ENV is not explicitly production; verify App Check/CSP enforcement');
-  record('Runtime Firebase identity', explicitProject === project ? 'PASS' : 'CHECK',
-    explicitProject === project ? 'Explicit project matches' :
-      'FIREBASE_PROJECT_ID absent or not matching; inspect runtime identity without exposing secrets');
+  record('Runtime Firebase identity',
+    explicitProject === project ? 'PASS' : (explicitProject ? 'FAIL' : 'CHECK'),
+    explicitProject === project ? 'Explicit project matches' : explicitProject
+      ? 'FIREBASE_PROJECT_ID explicitly mismatches intended project'
+      : 'FIREBASE_PROJECT_ID absent; inspect runtime identity without exposing secrets');
   const ready = live.status?.conditions?.find(item => item.type === 'Ready');
   const revision = live.status?.latestReadyRevisionName || live.latestReadyRevision || null;
   record('Serving revision', revision ? 'PASS' : 'CHECK',
     revision ? 'A ready revision is reported' : 'No ready revision reported');
   record('Service readiness', ready?.status === 'True' ? 'PASS' : 'CHECK',
     ready?.status === 'True' ? 'Cloud Run Ready=True' : 'Ready condition needs verification');
+  const traffic = live.status?.traffic || live.traffic || [];
+  const totalTraffic = traffic.reduce((sum, item) => sum + (Number(item.percent) || 0), 0);
+  const validTraffic = traffic.length > 0 && totalTraffic === 100 &&
+    traffic.every(item => typeof item.revisionName === 'string' && item.revisionName.length > 0);
+  record('Serving traffic', validTraffic ? 'PASS' : 'CHECK',
+    validTraffic ? '100% of service traffic assigned to named revision(s)' :
+      'Cannot confirm ready revision traffic split; check Cloud Run console');
 }
 const bad = results.filter(item => item.state === 'FAIL').length;
 const unclear = results.filter(item => item.state === 'CHECK').length;
