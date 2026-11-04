@@ -20,6 +20,12 @@ const h = vi.hoisted(() => {
     // sees it. Must live inside vi.hoisted (not a plain top-level const)
     // since the vi.mock factory below runs before ordinary module code.
     claimsStore: new Map<string, Record<string, unknown>>(),
+    // When true, setCustomUserClaims throws - simulating the exact
+    // best-effort claim-sync failure setMfaEnabledClaim's own comment
+    // (server.ts) already anticipates, so a test can prove the account's
+    // REAL security gating (the authoritative Firestore enrollment record)
+    // still works correctly even when this claim never syncs at all.
+    claimsSyncShouldFail: false,
   };
 });
 
@@ -31,11 +37,24 @@ vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
-    verifyIdToken: async (token: string) => ({ uid: token, email: `${token}@test.dev`, ...(h.claimsStore.get(token) || {}) }),
+    // A token of the plain form "<uid>" always carries the same fixed
+    // auth_time, matching a single continuous session across calls (the
+    // overwhelming majority of tests here). "<uid>::<authTime>" (see the
+    // authAs() helper below) simulates a DIFFERENT, independent sign-in
+    // session for the SAME account - a second device, or the same device
+    // signing in again later - carrying its own distinct auth_time, for
+    // the concurrent-sessions/proof-reuse tests that need to tell two
+    // sessions on one uid apart.
+    verifyIdToken: async (token: string) => {
+      const [uid, authTimeSuffix] = token.split('::');
+      const auth_time = authTimeSuffix ? Number(authTimeSuffix) : 1700000000;
+      return { uid, email: `${uid}@test.dev`, auth_time, ...(h.claimsStore.get(uid) || {}) };
+    },
     generateEmailVerificationLink: h.generateEmailVerificationLink,
     generatePasswordResetLink: h.generatePasswordResetLink,
     getUser: async (uid: string) => ({ customClaims: h.claimsStore.get(uid) || {} }),
     setCustomUserClaims: async (uid: string, claims: Record<string, unknown>) => {
+      if (h.claimsSyncShouldFail) throw new Error('simulated custom-claims sync outage');
       h.claimsStore.set(uid, claims);
     },
     revokeRefreshTokens: vi.fn(async () => {}),
@@ -43,7 +62,7 @@ vi.mock('firebase-admin/auth', () => ({
 }));
 vi.mock('firebase-admin/firestore', async () => {
   const fake = await import('./test/fake-firestore');
-  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue };
+  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue, Timestamp: fake.FakeTimestamp };
 });
 
 import request from 'supertest';
@@ -52,12 +71,16 @@ import { app } from './server';
 import { resetStore, seedDoc, getDocRaw } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
+// A distinct, independent "session" on the same uid - see the mock
+// verifyIdToken's own comment above for why this is encoded in the token.
+const authAs = (uid: string, authTime: number) => ({ Authorization: `Bearer ${uid}::${authTime}` });
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   resetStore();
   h.claimsStore.clear();
+  h.claimsSyncShouldFail = false;
   h.generateEmailVerificationLink.mockClear();
   h.generateEmailVerificationLink.mockImplementation(
     async (email: string) => `https://app.blazebreak.example/auth/action?mode=verifyEmail&oobCode=fake-code-for-${email}`
@@ -297,11 +320,12 @@ describe('POST /api/auth/mfa/totp/enroll/confirm', () => {
 
 // Enrolls a fresh user end-to-end via the real routes and returns the
 // secret (for generating live codes), the one-time recovery codes, and the
-// session token issued on confirm — once an account has MFA enabled, the
-// account-level mfaEnabled claim gates every further authenticated call
-// (other than status/verify-at-signin) behind a proven-this-session token,
-// so callers that need to hit another gated route afterwards (e.g. disable)
-// must attach it.
+// session token issued on confirm — once an account has MFA enabled (per
+// the authoritative users/{uid}/security/mfa_totp.enabled record, not any
+// token claim - see isMfaEnrollmentActive's own comment in server.ts),
+// every further authenticated call (other than status/verify-at-signin)
+// is gated behind a proven-this-session token, so callers that need to
+// hit another gated route afterwards (e.g. disable) must attach it.
 async function enrollUser(uid: string): Promise<{ secret: string; recoveryCodes: string[]; mfaSessionToken: string }> {
   const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth(uid));
   const secret = startRes.body.secretForManualEntry;
@@ -397,8 +421,12 @@ describe('POST /api/auth/mfa/totp/disable', () => {
     expect(stored?.enabled).toBe(false);
     expect(stored?.secretEncrypted).toBeNull();
     expect(stored?.recoveryCodesHashed).toEqual([]);
-    // The mfaEnabled claim is synced off, so a plain (no session-token)
-    // request from here on is no longer gated.
+    // The mfaEnabled claim is still synced off (kept only as a non-
+    // authoritative UX hint from this point on - see setMfaEnabledClaim's
+    // own comment in server.ts), and - the part that actually matters for
+    // security - the authoritative enrollment doc above is enabled:false,
+    // so a plain (no session-token) request from here on is correctly no
+    // longer gated either way.
     expect(h.claimsStore.get('disable_user')?.mfaEnabled).toBe(false);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -469,6 +497,106 @@ describe('POST /api/auth/mfa/totp/disable', () => {
       .set('X-MFA-Session-Token', tampered)
       .send({ code });
 
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('MFA_SESSION_REQUIRED');
+  });
+});
+
+// INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): the gate used to trust the
+// mfaEnabled token claim as proof an account needed 2FA at all - stale or
+// entirely absent on an otherwise-valid token (a token minted before
+// enrollment, or one from before/instead of a failed claims-sync write),
+// that silently skipped the whole check for a genuinely 2FA-enabled
+// account. isMfaEnrollmentActive now reads the authoritative Firestore
+// enrollment record directly instead - these tests prove that holds
+// regardless of what the token claim says, or whether it was ever written
+// at all.
+describe('Authoritative enrollment state - the gate never trusts the mfaEnabled token claim', () => {
+  it('still requires an MFA session even when the token carries NO mfaEnabled claim at all (a token minted before enrollment)', async () => {
+    seedDoc('users/claimless_user/security/mfa_totp', { enabled: true, secretEncrypted: 'irrelevant-to-this-test' });
+    // h.claimsStore has nothing for this uid - verifyIdToken's mock spread
+    // contributes no mfaEnabled field whatsoever, exactly like a cached ID
+    // token issued moments before enrollment completed.
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('claimless_user'));
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('MFA_SESSION_REQUIRED');
+  });
+
+  it('still requires an MFA session even when the token carries a STALE mfaEnabled:false claim', async () => {
+    seedDoc('users/staleclaim_user/security/mfa_totp', { enabled: true, secretEncrypted: 'irrelevant-to-this-test' });
+    h.claimsStore.set('staleclaim_user', { mfaEnabled: false }); // claim never caught up with reality
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('staleclaim_user'));
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('MFA_SESSION_REQUIRED');
+  });
+
+  it('enforces 2FA correctly even when setCustomUserClaims (the claim-sync write) fails outright during enrollment', async () => {
+    h.claimsSyncShouldFail = true;
+    const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('claimsync_fail_user'));
+    const code = await generateOtp({ secret: startRes.body.secretForManualEntry });
+    const confirmRes = await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('claimsync_fail_user')).send({ code });
+
+    // Enrollment itself must still succeed - the claim is non-authoritative
+    // UX-only at this point, so its own write failing must not block the
+    // real, Firestore-backed enrollment.
+    expect(confirmRes.status).toBe(200);
+    const stored = getDocRaw('users/claimsync_fail_user/security/mfa_totp');
+    expect(stored?.enabled).toBe(true);
+    // And the gate must still correctly demand a session token on the very
+    // next call, proving it never depended on that failed claim write.
+    h.claimsSyncShouldFail = false;
+    const noTokenRes = await request(app).post('/api/auth/mfa/totp/disable').set(auth('claimsync_fail_user')).send({ code });
+    expect(noTokenRes.status).toBe(401);
+    expect(noTokenRes.body.code).toBe('MFA_SESSION_REQUIRED');
+  });
+
+  it('a non-MFA account is completely unaffected by any of the above - no claim, no enrollment doc, no gating', async () => {
+    const res = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('plain_unaffected_user'));
+    expect(res.status).toBe(200);
+  });
+});
+
+// INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): session binding. The REST
+// X-MFA-Session-Token used to sign only uid+expiry - any request bearing
+// ANY valid ID token for that uid could present it, including a different,
+// never-itself-verified session. It's now also bound to the specific
+// auth_time of the session that earned it.
+describe('Session binding - concurrent devices and cross-session proof reuse', () => {
+  it('concurrent legitimate sessions on different devices both stay independently verified', async () => {
+    const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('multidevice_user'));
+    const secret = startRes.body.secretForManualEntry;
+    const enrollCode = await generateOtp({ secret });
+    // "Device 1" enrolls - this is the base auth('multidevice_user') session.
+    const device1Token = (await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('multidevice_user')).send({ code: enrollCode })).body.mfaSessionToken;
+
+    // "Device 2" is a genuinely separate sign-in on the SAME account, with
+    // its own distinct auth_time, independently clearing its own challenge.
+    const device2AuthTime = 1800000000;
+    const device2Code = await generateOtp({ secret });
+    const device2Res = await request(app).post('/api/auth/mfa/totp/verify-at-signin').set(authAs('multidevice_user', device2AuthTime)).send({ code: device2Code });
+    expect(device2Res.status).toBe(200);
+    const device2Token = device2Res.body.mfaSessionToken;
+
+    // Both sessions' own tokens must still work for a device-1-gated call -
+    // neither device's verification silently overwrote the other's.
+    const device1Check = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('multidevice_user')).set('X-MFA-Session-Token', device1Token);
+    expect(device1Check.status).toBe(200);
+    const device2Check = await request(app).post('/api/auth/mfa/totp/enroll/start').set(authAs('multidevice_user', device2AuthTime)).set('X-MFA-Session-Token', device2Token);
+    expect(device2Check.status).toBe(200);
+  });
+
+  it('a session proof earned by one session cannot be reused by a different, never-itself-verified session on the same account', async () => {
+    const startRes = await request(app).post('/api/auth/mfa/totp/enroll/start').set(auth('reuse_user'));
+    const enrollCode = await generateOtp({ secret: startRes.body.secretForManualEntry });
+    const { mfaSessionToken } = (await request(app).post('/api/auth/mfa/totp/enroll/confirm').set(auth('reuse_user')).send({ code: enrollCode })).body;
+
+    // A different session on the same uid (never itself verified) tries to
+    // present the FIRST session's genuinely-valid token - must be rejected.
+    const otherSessionAuthTime = 1900000000;
+    const res = await request(app)
+      .post('/api/auth/mfa/totp/enroll/start')
+      .set(authAs('reuse_user', otherSessionAuthTime))
+      .set('X-MFA-Session-Token', mfaSessionToken);
     expect(res.status).toBe(401);
     expect(res.body.code).toBe('MFA_SESSION_REQUIRED');
   });

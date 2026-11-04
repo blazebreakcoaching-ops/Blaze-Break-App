@@ -44,28 +44,88 @@ service cloud.firestore {
     // credential presentation that produced the CURRENT token, which stays
     // fixed across token refreshes within one continuous session but
     // changes on every fresh sign-in - against a server-written record of
-    // which auth_time last cleared a real TOTP/recovery-code challenge for
-    // this uid (users/{uid}/security/mfa_session_state, written only by the
-    // Admin SDK in server.ts's /api/auth/mfa/totp/verify-at-signin and
+    // which auth_time(s) last cleared a real TOTP/recovery-code challenge
+    // for this uid (users/{uid}/security/mfa_session_state, written only by
+    // the Admin SDK in server.ts's /api/auth/mfa/totp/verify-at-signin and
     // /enroll/confirm routes - see MFA_DOC below for why that whole
     // sub-collection is already locked to `allow read, write: if false`,
     // so this never needs - or gets - its own separate rule).
+    //
+    // 2026-11-04 INDEPENDENT REVIEW FOLLOW-UP - two further fixes folded in:
+    //
+    // 1. "IS MFA MANDATORY" must not depend on the mfaEnabled token claim
+    //    either. Custom claims are embedded in an ID token only at MINT
+    //    time - a token issued moments before this very enrollment, or one
+    //    that's simply still valid from before setCustomUserClaims ran (or
+    //    didn't run, since setMfaEnabledClaim treats its own failure as
+    //    best-effort/non-fatal - see that function's own comment), would
+    //    read `mfaEnabled` as absent/false for up to its remaining ~1h
+    //    lifetime regardless of the account's REAL, current enrollment
+    //    state. isMfaEnrolledAuthoritative(uid) reads the one place that
+    //    can never be stale this way - the actual enrollment record itself
+    //    - via get(), which always reflects the current document, with zero
+    //    propagation delay. (The mfaEnabled claim is kept only as a cheap,
+    //    non-authoritative hint for client-side UX, e.g. the native app's
+    //    "mfa_required" UI gate - never as a security decision anywhere in
+    //    this file or in server.ts from this point on.)
+    //
+    // 2. mfa_session_state used to store a SINGLE {verifiedAuthTime,
+    //    expiresAt} pair, so a second device completing its own real 2FA
+    //    challenge would silently OVERWRITE - and thereby revoke - a first
+    //    device's still-valid, still-within-its-12h-window verified
+    //    session, even though neither device did anything wrong. It now
+    //    stores verifiedSessions, a map keyed by each distinct auth_time
+    //    that has independently cleared a challenge, each with its own
+    //    expiry - so concurrent, legitimate multi-device sessions coexist
+    //    correctly, and a session that was never itself verified (a
+    //    different, newer auth_time) can never piggyback on another
+    //    session's entry.
+    //
+    // KNOWN, DELIBERATELY DISCLOSED RESIDUAL LIMITATION: auth_time has
+    // one-second resolution (it's the standard OIDC claim, not something
+    // this app controls), so two GENUINELY DIFFERENT sign-ins that happen
+    // to land in the exact same wall-clock second would be indistinguishable
+    // to this check - a coincidental collision would let one borrow the
+    // other's verified entry. Closing this completely would need a Firebase
+    // Identity Platform `beforeSignIn` blocking Cloud Function to mint a
+    // genuinely unique, non-account-wide per-sign-in claim at the identity
+    // provider level - new infrastructure requiring its own deployment and
+    // GCIP configuration, which is out of scope to deploy unilaterally here.
+    // This residual risk also requires the attacker to already hold valid
+    // primary credentials (password) for the account - 2FA's own first line
+    // of defence - and to win a sub-second timing race against a genuine
+    // concurrent sign-in, which is why it's accepted and documented rather
+    // than silently left unexamined. See
+    // mfa-firestore-session-gate.emulator.test.ts's own "same auth_time"
+    // test for a concrete demonstration of exactly this boundary.
     function mfaSessionDoc(uid) {
       return get(/databases/$(database)/documents/users/$(uid)/security/mfa_session_state);
     }
 
+    function mfaEnrollmentDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)/security/mfa_totp);
+    }
+
+    function isMfaEnrolledAuthoritative(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid)/security/mfa_totp) &&
+        mfaEnrollmentDoc(uid).data.enabled == true;
+    }
+
     function mfaSessionSatisfied(uid) {
-      // .get('mfaEnabled', false), not dot access: an account that has
-      // never enabled 2FA has no mfaEnabled claim on its token AT ALL
-      // (not even `false`), and in the Firestore Rules language - unlike
-      // plain JS - reading a genuinely absent map key via dot notation
-      // throws rather than evaluating to null/undefined, which would deny
-      // every single non-2FA account instead of leaving them unaffected.
-      return request.auth.token.get('mfaEnabled', false) != true ||
+      // .get('auth_time', 0), not dot access: a REAL Firebase ID token
+      // always carries auth_time (it's a mandatory standard claim, never
+      // client-omittable on a validly-signed token), but a defensively
+      // absent value must still not crash rule evaluation the same way a
+      // genuinely missing mfaEnabled claim could have - see this file's
+      // own history for exactly that lesson with mfaEnabled above. 0 can
+      // never match a real verifiedSessions key (always a real epoch
+      // second), so this fails closed, not open, if it's ever absent.
+      let authTimeKey = string(request.auth.token.get('auth_time', 0));
+      return !isMfaEnrolledAuthoritative(uid) ||
         (
           exists(/databases/$(database)/documents/users/$(uid)/security/mfa_session_state) &&
-          mfaSessionDoc(uid).data.verifiedAuthTime == request.auth.token.auth_time &&
-          mfaSessionDoc(uid).data.expiresAt > request.time
+          (authTimeKey in mfaSessionDoc(uid).data.verifiedSessions) &&
+          mfaSessionDoc(uid).data.verifiedSessions[authTimeKey] > request.time
         );
     }
 
@@ -622,11 +682,12 @@ service cloud.firestore {
       // GET /api/auth/mfa/status endpoint, never direct Firestore access,
       // so the encrypted secret can never reach the client outside the
       // one-time enrollment response. Also holds mfa_session_state (the
-      // server-written "which auth_time last cleared a real 2FA challenge"
-      // record mfaSessionSatisfied() above reads via get()/exists() -
-      // those calls read the raw document for rule evaluation and are not
-      // themselves subject to this `if false`, so no separate rule is
-      // needed or wanted here for it) — same "server/Admin SDK only" shape.
+      // server-written "which auth_time(s) last cleared a real 2FA
+      // challenge" record mfaSessionSatisfied() above reads via
+      // get()/exists()) and is itself the doc isMfaEnrolledAuthoritative()
+      // reads for the live "enabled" flag - those calls read the raw
+      // document for rule evaluation and are not themselves subject to this
+      // `if false`, so no separate rule is needed or wanted here for either.
       match /security/{docId} {
         allow read, write: if false;
       }

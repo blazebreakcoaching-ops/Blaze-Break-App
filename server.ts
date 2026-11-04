@@ -784,18 +784,27 @@ const authenticateFirebaseUser = async (req: express.Request, res: express.Respo
     const decodedToken = await getAuth().verifyIdToken(token, true);
     (req as any).user = decodedToken;
 
-    // mfaEnabled is an account-level custom claim (kept in sync by the
-    // enroll/confirm and disable routes) — cheap to check on every
-    // request with no extra Firestore read. Whether *this session* has
-    // actually cleared that challenge is a separate, session-scoped fact
-    // proven by the signed X-MFA-Session-Token header, never by the ID
-    // token itself (a custom claim is baked into every future token
-    // Firebase mints for this uid, so it can't distinguish a verified
-    // session from an attacker's own fresh, independently-obtained one).
-    if (decodedToken.mfaEnabled === true && !MFA_GATE_EXEMPT_PATHS.has(req.path)) {
-      const sessionToken = req.headers['x-mfa-session-token'];
-      if (typeof sessionToken !== 'string' || !verifyMfaSessionToken(sessionToken, decodedToken.uid)) {
-        return res.status(401).json({ error: 'Two-factor verification required for this session.', code: 'MFA_SESSION_REQUIRED' });
+    // Whether 2FA is mandatory for this account is decided by
+    // isMfaEnrollmentActive's fresh, authoritative Firestore read, never
+    // by the mfaEnabled token claim (see that function's own comment —
+    // INDEPENDENT REVIEW FOLLOW-UP, 2026-11-04: a stale/absent claim on an
+    // otherwise-valid token used to silently skip this entire check for a
+    // genuinely 2FA-enabled account). Whether *this session* has actually
+    // cleared that challenge is then a separate, session-scoped fact
+    // proven by the signed X-MFA-Session-Token header, bound to this exact
+    // token's own auth_time, never to the uid alone (a custom claim, or an
+    // unbound token, would be baked into/replayable by every future
+    // session Firebase mints for this uid, so neither can distinguish a
+    // verified session from an attacker's own fresh, independently-
+    // obtained one).
+    if (!MFA_GATE_EXEMPT_PATHS.has(req.path)) {
+      const db = getDb();
+      const mfaRequired = await isMfaEnrollmentActive(db, decodedToken.uid);
+      if (mfaRequired) {
+        const sessionToken = req.headers['x-mfa-session-token'];
+        if (typeof sessionToken !== 'string' || !verifyMfaSessionToken(sessionToken, decodedToken.uid, decodedToken.auth_time)) {
+          return res.status(401).json({ error: 'Two-factor verification required for this session.', code: 'MFA_SESSION_REQUIRED' });
+        }
       }
     }
 
@@ -4598,6 +4607,26 @@ const MFA_DOC = 'mfa_totp';
 const getMfaDocRef = (db: FirebaseFirestore.Firestore, uid: string) =>
   db.collection('users').doc(uid).collection('security').doc(MFA_DOC);
 
+// INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): the authoritative,
+// server-controlled MFA enrollment state - the live mfa_totp.enabled flag
+// itself - never the mfaEnabled custom claim. A custom claim is only
+// embedded in an ID token at MINT time: a token issued moments before
+// enrollment completed (or any token still valid from before
+// setCustomUserClaims ran - including if that best-effort write simply
+// failed, see setMfaEnabledClaim's own comment below) would read
+// mfaEnabled as absent/false for up to its remaining ~1h lifetime
+// regardless of the account's real, current enrollment state - a silent
+// bypass of the gate this function closes by reading the real record
+// directly instead, at the disclosed cost of one Firestore read per
+// authenticated request. The claim is kept only as a non-authoritative,
+// cheap client-side UX hint from this point on (e.g. the native app's own
+// "mfa_required" gate, which already documents itself as not a security
+// boundary) - never again as a security decision anywhere server-side.
+const isMfaEnrollmentActive = async (db: FirebaseFirestore.Firestore, uid: string): Promise<boolean> => {
+  const snap = await getMfaDocRef(db, uid).get();
+  return snap.exists && snap.data()?.enabled === true;
+};
+
 // MFA_ENCRYPTION_KEY must be 32 random bytes, base64-encoded (e.g.
 // `openssl rand -base64 32`), set on the Cloud Run service. Deliberately a
 // hard failure (unlike Brevo's soft-fail) — silently storing an
@@ -4621,25 +4650,46 @@ const getMfaEncryptionKey = (): Buffer => {
 // reuses MFA_ENCRYPTION_KEY as the HMAC key rather than requiring a new
 // secret, since both already carry the same "TOTP-subsystem-only, never
 // exposed to the client" sensitivity.
+//
+// INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): this token used to sign only
+// uid+expiry, with NO session binding at all - any request bearing any
+// valid ID token for that uid could present it, including one from a
+// different, never-itself-verified session (a replay across sessions, not
+// just across token refreshes of the same one). It is now also signed
+// over authTimeSeconds, the auth_time of the SPECIFIC token that earned
+// it, and verifyMfaSessionToken requires the CALLER's own current
+// auth_time to match - exactly mirroring firestore.rules' own
+// auth_time-keyed verifiedSessions check, so both layers share one
+// session-binding model instead of the REST layer having none at all.
+// Known, disclosed residual limitation shared with the Firestore-rules
+// side: auth_time has one-second resolution, so two genuinely different
+// sign-ins landing in the exact same wall-clock second are
+// indistinguishable to this check - see firestore.rules' own
+// mfaSessionSatisfied() comment for why this is accepted rather than
+// silently unexamined.
 const MFA_SESSION_TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-const signMfaSessionToken = (uid: string): string => {
+const signMfaSessionToken = (uid: string, authTimeSeconds: number): string => {
   const expiresAtMs = Date.now() + MFA_SESSION_TOKEN_TTL_MS;
-  const payload = `${uid}.${expiresAtMs}`;
+  const payload = `${uid}.${authTimeSeconds}.${expiresAtMs}`;
   const sig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(payload).digest('hex');
   return `${payload}.${sig}`;
 };
 
-const verifyMfaSessionToken = (token: string, uid: string): boolean => {
+const verifyMfaSessionToken = (token: string, uid: string, authTimeSeconds: number): boolean => {
   const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  const [tokenUid, expiresAtStr, sig] = parts;
+  if (parts.length !== 4) return false;
+  const [tokenUid, tokenAuthTimeStr, expiresAtStr, sig] = parts;
   if (tokenUid !== uid) return false;
+  // Number(...) rather than a weaker == comparison: authTimeSeconds is
+  // always a real number from a decoded ID token, so this can only ever
+  // match a token signed for that exact same auth_time.
+  if (Number(tokenAuthTimeStr) !== authTimeSeconds) return false;
   const expiresAtMs = Number(expiresAtStr);
   if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) return false;
   let expectedSig: string;
   try {
-    expectedSig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(`${tokenUid}.${expiresAtStr}`).digest('hex');
+    expectedSig = crypto.createHmac('sha256', getMfaEncryptionKey()).update(`${tokenUid}.${tokenAuthTimeStr}.${expiresAtStr}`).digest('hex');
   } catch {
     return false;
   }
@@ -4660,7 +4710,19 @@ const verifyMfaSessionToken = (token: string, uid: string): boolean => {
 // firestore.rules' mfaSessionSatisfied() via get()/exists() - see that
 // function's own comment in firestore.rules for why it's keyed on
 // auth_time rather than the account-wide mfaEnabled claim.
+//
+// INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): this used to store a SINGLE
+// {verifiedAuthTime, expiresAt} pair, so a second device completing its
+// own real 2FA challenge would silently overwrite - and thereby revoke -
+// a first device's still-valid, still-within-window session. It now
+// stores verifiedSessions, a map of EVERY distinct auth_time that has
+// independently cleared a challenge to its own expiry, so legitimate
+// concurrent multi-device sessions coexist correctly. Expired entries are
+// pruned on every write (bounded to MAX_CONCURRENT_MFA_SESSIONS most
+// recent) so a long-lived account's history doesn't grow this document
+// without bound.
 const MFA_SESSION_STATE_DOC = 'mfa_session_state';
+const MAX_CONCURRENT_MFA_SESSIONS = 10;
 
 const getMfaSessionStateDocRef = (db: FirebaseFirestore.Firestore, uid: string) =>
   db.collection('users').doc(uid).collection('security').doc(MFA_SESSION_STATE_DOC);
@@ -4669,41 +4731,78 @@ const getMfaSessionStateDocRef = (db: FirebaseFirestore.Firestore, uid: string) 
 // request authenticated with (never recomputed, never "now") - it is the
 // one fact firestore.rules checks a future request's own auth_time against,
 // so recording anything else would verify the wrong session.
+//
+// Returns whether the write genuinely persisted. INDEPENDENT REVIEW
+// FOLLOW-UP (2026-11-04): this used to be best-effort/swallow-and-log,
+// which let enroll/confirm and verify-at-signin report `verified: true`
+// to the user even when this essential security record never actually
+// landed - a real account left silently unprotected while being told the
+// opposite. Every caller of this function now MUST check the returned
+// boolean and refuse to report success if it's false (see both call
+// sites' own comments) - retried up to 3 times first, so a single
+// transient Firestore blip doesn't need a user-visible retry at all.
 const markFirestoreMfaSessionVerified = async (
   db: FirebaseFirestore.Firestore, uid: string, authTimeSeconds: number,
-): Promise<void> => {
-  try {
-    await getMfaSessionStateDocRef(db, uid).set({
-      verifiedAuthTime: authTimeSeconds,
-      expiresAt: Timestamp.fromMillis(Date.now() + MFA_SESSION_TOKEN_TTL_MS),
-      updatedAt: new Date().toISOString(),
+): Promise<boolean> => {
+  const docRef = getMfaSessionStateDocRef(db, uid);
+  const authTimeKey = String(authTimeSeconds);
+  const attemptOnce = async (): Promise<void> => {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(docRef);
+      const nowMs = Date.now();
+      const existing: Record<string, unknown> = (snap.exists ? snap.data()?.verifiedSessions : null) || {};
+      const stillValid: Array<[string, Timestamp]> = [];
+      for (const [authTime, expiresAt] of Object.entries(existing)) {
+        if (expiresAt instanceof Timestamp && expiresAt.toMillis() > nowMs) {
+          stillValid.push([authTime, expiresAt]);
+        }
+      }
+      const newExpiresAt = Timestamp.fromMillis(nowMs + MFA_SESSION_TOKEN_TTL_MS);
+      const merged = [...stillValid.filter(([authTime]) => authTime !== authTimeKey), [authTimeKey, newExpiresAt] as [string, Timestamp]]
+        .sort((a, b) => b[1].toMillis() - a[1].toMillis())
+        .slice(0, MAX_CONCURRENT_MFA_SESSIONS);
+      tx.set(docRef, {
+        verifiedSessions: Object.fromEntries(merged),
+        updatedAt: new Date().toISOString(),
+      });
     });
-  } catch (error) {
-    // Best-effort, logged the same way setMfaEnabledClaim below is: a
-    // failure here must not fail the enroll/verify request itself (the
-    // user did genuinely clear their 2FA challenge), but a stuck/missing
-    // record would wrongly keep blocking this session's own direct
-    // Firestore reads until it's retried, so it's never allowed to fail
-    // silently.
-    logger.error(`[MFA] Failed to write Firestore session-verified record for ${uid}:`, errorFields(error));
+  };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await attemptOnce();
+      return true;
+    } catch (error) {
+      logger.error(`[MFA] Attempt ${attempt}/3 to write Firestore session-verified record for ${uid} failed:`, errorFields(error));
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+    }
   }
+  return false;
 };
 
 const clearFirestoreMfaSessionVerified = async (db: FirebaseFirestore.Firestore, uid: string): Promise<void> => {
   try {
     await getMfaSessionStateDocRef(db, uid).delete();
   } catch (error) {
+    // Best-effort/non-fatal is still correct here, unlike the write above:
+    // disabling 2FA already makes mfa_totp.enabled=false authoritative
+    // (that write is NOT best-effort - see /disable below), which alone
+    // makes firestore.rules' isMfaEnrolledAuthoritative() false and skips
+    // this record entirely. A stale leftover verifiedSessions map after a
+    // failed cleanup can never grant access on its own.
     logger.error(`[MFA] Failed to clear Firestore session-verified record for ${uid}:`, errorFields(error));
   }
 };
 
-// Keeps the account-level "does this uid have 2FA on" fact (used by the
-// cheap per-request gate check in authenticateFirebaseUser) in sync with
-// the Firestore record that's the actual source of truth. Best-effort: a
-// failure here shouldn't fail the enroll/disable request itself, since the
-// Firestore write is what actually matters — it's logged so a stuck claim
-// (which would either wrongly gate or wrongly not-gate future requests
-// until it's retried) doesn't fail silently.
+// Keeps the account-level "does this uid have 2FA on" fact in sync with
+// the Firestore record that's the actual source of truth. INDEPENDENT
+// REVIEW FOLLOW-UP (2026-11-04): no longer used for any security decision
+// server-side (see isMfaEnrollmentActive's own comment above) - kept only
+// as a cheap, non-authoritative hint for client-side UX (e.g. a settings
+// screen's own "2FA is on" badge, or the native app's UI-only gate).
+// Best-effort: a failure here must never fail the enroll/disable request
+// itself, since the Firestore write is what actually matters and nothing
+// security-relevant depends on this claim being in sync anymore - it's
+// still logged so a stuck claim doesn't go unnoticed and confuse a UI.
 const setMfaEnabledClaim = async (uid: string, enabled: boolean) => {
   try {
     const existing = await getAuth().getUser(uid);
@@ -4775,6 +4874,20 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
       return res.status(400).json({ error: "That code didn't match. Please try again." });
     }
 
+    // INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): establish the
+    // Firestore-rules-visible session record FIRST, before any
+    // irreversible enrollment state below - and genuinely fail the
+    // request (never report success) if it doesn't persist. Ordered this
+    // way specifically so a transient failure here is safely retryable
+    // with the exact same still-pending enrollment (pendingSecretEncrypted
+    // untouched) rather than leaving the user told "verified" while this
+    // essential record silently never landed, or stuck re-entering a
+    // 6-digit code against an enrollment that's already been finalised.
+    const sessionRecorded = await markFirestoreMfaSessionVerified(db, user.uid, user.auth_time);
+    if (!sessionRecorded) {
+      return res.status(503).json({ error: "Your code was correct, but we couldn't finish securing this session. Please try again in a moment." });
+    }
+
     const recoveryCodes = generateRecoveryCodes();
     const now = new Date().toISOString();
     await docRef.set({
@@ -4790,7 +4903,6 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
     }, { merge: true });
 
     await setMfaEnabledClaim(user.uid, true);
-    await markFirestoreMfaSessionVerified(db, user.uid, user.auth_time);
 
     if (user.email) {
       const { subject, html } = buildMfaEnabledEmail();
@@ -4800,10 +4912,10 @@ app.post("/api/auth/mfa/totp/enroll/confirm", verifyAppCheck, authenticateFireba
     // Enrolling proves the user just cleared a real 2FA challenge (the
     // code from their new authenticator) — issue a session token now so
     // they aren't immediately re-challenged by the gate this same
-    // request's mfaEnabled claim will start enforcing on their next call.
+    // request's enrollment will start enforcing on their next call.
     // Returned once, at the moment of enrollment, and never again — the
     // server only ever stores their hashes from this point on.
-    res.json({ recoveryCodes, mfaSessionToken: signMfaSessionToken(user.uid) });
+    res.json({ recoveryCodes, mfaSessionToken: signMfaSessionToken(user.uid, user.auth_time) });
   } catch (error: any) {
     logger.error("[MFA] enroll/confirm error:", errorFields(error));
     res.status(500).json({ error: "Could not confirm two-factor setup right now." });
@@ -4901,8 +5013,21 @@ app.post("/api/auth/mfa/totp/verify-at-signin", verifyAppCheck, authenticateFire
       // 2FA somehow isn't enrolled — no reason to tell an attacker which.
       return res.status(401).json({ error: "That code didn't match. Please try again." });
     }
-    await markFirestoreMfaSessionVerified(db, user.uid, user.auth_time);
-    res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid) });
+    // INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): must not report
+    // verified:true unless this essential record genuinely persisted -
+    // see markFirestoreMfaSessionVerified's own comment. Disclosed
+    // residual edge case: if the code just used was a one-time recovery
+    // code, verifyMfaAttempt above has already durably marked it used
+    // even though this request now reports failure - retrying with a
+    // fresh authenticator-app code (not single-use) is the clean recovery
+    // path; re-engineering an atomic rollback of a burned recovery code
+    // for this rare, transient-infra-failure case was judged
+    // disproportionate to the risk it closes.
+    const sessionRecorded = await markFirestoreMfaSessionVerified(db, user.uid, user.auth_time);
+    if (!sessionRecorded) {
+      return res.status(503).json({ error: "Your code was correct, but we couldn't finish securing this session. Please try again in a moment." });
+    }
+    res.json({ verified: true, mfaSessionToken: signMfaSessionToken(user.uid, user.auth_time) });
   } catch (error: any) {
     logger.error("[MFA] verify-at-signin error:", errorFields(error));
     res.status(500).json({ error: "Could not verify your code right now." });
@@ -18472,15 +18597,20 @@ export async function handleNovaLiveConnection(clientWs: any, req: any): Promise
   // as authenticateFirebaseUser for REST API calls. WebSocket upgrades do
   // not traverse that middleware.
   let uid: string;
-  let mfaEnabled: boolean;
+  let authTimeSeconds: number;
   try {
     const decoded = await getAuth().verifyIdToken(idToken, true);
     uid = decoded.uid;
-    mfaEnabled = decoded.mfaEnabled === true;
+    authTimeSeconds = decoded.auth_time;
   } catch (e) {
     clientWs.send(JSON.stringify({ error: "Invalid or expired session. Please refresh and try again." }));
     return clientWs.close();
   }
+
+  // INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): whether 2FA is mandatory is
+  // decided by a fresh, authoritative Firestore read, never the mfaEnabled
+  // token claim - same reasoning as authenticateFirebaseUser's own gate.
+  const mfaEnabled = await isMfaEnrollmentActive(getDb(), uid);
 
   if (mfaEnabled) {
     // A browser WebSocket cannot set X-MFA-Session-Token. The client
@@ -18499,7 +18629,7 @@ export async function handleNovaLiveConnection(clientWs: any, req: any): Promise
       if (encoded.length > 0 && encoded.length <= 1024 && /^[A-Za-z0-9_-]+$/.test(encoded)) {
         try {
           const proof = Buffer.from(encoded, 'base64url').toString('utf8');
-          verified = verifyMfaSessionToken(proof, uid);
+          verified = verifyMfaSessionToken(proof, uid, authTimeSeconds);
         } catch {
           // Malformed, expired, or incorrectly signed proof fails closed.
         }

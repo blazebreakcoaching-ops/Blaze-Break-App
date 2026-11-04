@@ -554,6 +554,19 @@ async function runTests() {
     'users/userA/security/mfa_totp',
     { secretEncrypted: 'enc', enabled: true, enrolledAt: '2026-01-01T00:00:00.000Z', recoveryCodesHashed: [], failedAttempts: 0, lockedUntil: null, updatedAt: '2026-01-01T00:00:00.000Z' },
   );
+  // Clean up immediately: the line above seeded a REAL enabled:true
+  // enrollment record for userA (needed to prove even the owner can't
+  // read their own 2FA secret doc directly). Left in place, every
+  // isOwner(uid)-gated assertion for userA for the REST of this script
+  // would now correctly require a verified MFA session per
+  // mfaSessionSatisfied() (PRIORITY ZERO MFA FIX, firestore.rules) - which
+  // userA's plain testEnv.authenticatedContext('userA') never has. That's
+  // the gate genuinely doing its job, not a bug - but every assertion
+  // below this point assumes userA is a normal, non-MFA account, so this
+  // fixture must not outlive the one test it was for.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc('users/userA/security/mfa_totp').delete();
+  });
 
   // * calendar_protection_proposals: server-authoritative proposal state
   //   (directive's own "secrets AND server-authoritative action records

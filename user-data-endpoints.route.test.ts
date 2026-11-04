@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import crypto from 'crypto';
 
 // Same harness as guardian-alert.route.test.ts (see the comments there for
 // why env + mocks live in vi.hoisted / vi.mock). This file exercises the
@@ -6,6 +7,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const h = vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
+  // 32 random bytes, base64 - needed below because this file's own
+  // seedSecrets() fixture (for the redaction tests) seeds a real
+  // mfa_totp.enabled:true doc for USER - since authenticateFirebaseUser
+  // now reads that authoritative record directly (INDEPENDENT REVIEW
+  // FOLLOW-UP, 2026-11-04), those specific requests genuinely need a
+  // valid signed MFA session proof, same as a real 2FA-enabled account
+  // would - see mfaSessionHeaderFor below.
+  process.env.MFA_ENCRYPTION_KEY = Buffer.alloc(32, 3).toString('base64');
   return {
     deleteUser: vi.fn(async () => {}),
   };
@@ -16,13 +25,13 @@ vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
-    verifyIdToken: async (token: string) => ({ uid: token, email: `${token}@test.dev` }),
+    verifyIdToken: async (token: string) => ({ uid: token, email: `${token}@test.dev`, auth_time: FIXED_AUTH_TIME }),
     deleteUser: h.deleteUser,
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
   const fake = await import('./test/fake-firestore');
-  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue };
+  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue, Timestamp: fake.FakeTimestamp };
 });
 vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) }));
 
@@ -33,6 +42,19 @@ import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError } f
 const USER = 'user_owner';
 const OTHER = 'user_other';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
+
+const FIXED_AUTH_TIME = 1700000000;
+
+// Mirrors server.ts's own signMfaSessionToken exactly (uid.authTime.expiry,
+// HMAC-SHA256 over that payload with MFA_ENCRYPTION_KEY) - this file has no
+// legitimate way to call the real, private function, and every other test
+// file that needs a genuine signed MFA session proof (e.g.
+// nova-live-websocket.test.ts's signedMfaProof) builds it the same way.
+function mfaSessionHeaderFor(uid: string, authTime: number = FIXED_AUTH_TIME): string {
+  const payload = `${uid}.${authTime}.${Date.now() + 60_000}`;
+  const sig = crypto.createHmac('sha256', Buffer.from(process.env.MFA_ENCRYPTION_KEY!, 'base64')).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
 
 beforeEach(() => {
   resetStore();
@@ -248,7 +270,7 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     it('never returns the sentinel secret anywhere in the response body', async () => {
       seedFullUser();
       seedSecrets();
-      const res = await request(app).get('/api/user/export').set(auth(USER));
+      const res = await request(app).get('/api/user/export').set(auth(USER)).set('X-MFA-Session-Token', mfaSessionHeaderFor(USER));
       expect(res.status).toBe(200);
       expect(JSON.stringify(res.body)).not.toContain(SENTINEL);
     });
@@ -256,7 +278,7 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     it('still includes safe, non-secret metadata for each of those collections', async () => {
       seedFullUser();
       seedSecrets();
-      const res = await request(app).get('/api/user/export').set(auth(USER));
+      const res = await request(app).get('/api/user/export').set(auth(USER)).set('X-MFA-Session-Token', mfaSessionHeaderFor(USER));
 
       expect(res.body.collections.integration_tokens[0]).toMatchObject({ id: 'slack', expiresAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', redactedForSecurity: true });
       expect(res.body.collections.integration_tokens[0].accessToken).toBeUndefined();
@@ -276,7 +298,7 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
     it('a collection with nothing secret in it is completely unaffected (no redactedForSecurity marker)', async () => {
       seedFullUser();
       seedSecrets();
-      const res = await request(app).get('/api/user/export').set(auth(USER));
+      const res = await request(app).get('/api/user/export').set(auth(USER)).set('X-MFA-Session-Token', mfaSessionHeaderFor(USER));
       expect(res.body.collections.mood_pulses[0].redactedForSecurity).toBeUndefined();
       expect(res.body.collections.guardian_alerts[0].redactedForSecurity).toBeUndefined();
     });
@@ -353,7 +375,7 @@ describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
       seedSecrets();
       seedDoc(`users/${OTHER}/integration_tokens/slack`, { accessToken: SENTINEL, refreshToken: SENTINEL, expiresAt: '2099-01-01T00:00:00Z', updatedAt: '2099-01-01T00:00:00Z' });
       seedDoc(`users/${OTHER}/recovery_ally/state`, { isInvited: true, allyName: 'Other Ally', allyEmail: 'other-ally@example.com', shareToken: SENTINEL, invitedAt: '2099-01-01T00:00:00Z', consentStatus: 'pending', inviteExpiresAt: '2099-01-08T00:00:00Z' });
-      const res = await request(app).get('/api/user/export').set(auth(USER));
+      const res = await request(app).get('/api/user/export').set(auth(USER)).set('X-MFA-Session-Token', mfaSessionHeaderFor(USER));
       expect(res.status).toBe(200);
       // OTHER's data genuinely exists in the store (so this is a real
       // isolation check), but none of it - secret or otherwise - appears
