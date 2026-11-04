@@ -3263,7 +3263,9 @@ export default function App() {
         </Suspense>
       )}
       <InAppNudge />
-      {user && (
+      {/* Changelog is for existing registered accounts, not anonymous demos.
+          Avoid interrupting a first-time visitor's Nova or onboarding flow. */}
+      {user && !user.isAnonymous && (
         <Suspense fallback={null}>
           <WhatsNewModal
             lastSeenVersion={stats.lastSeenChangelogVersion}

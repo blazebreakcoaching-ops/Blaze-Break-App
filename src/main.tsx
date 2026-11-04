@@ -16,7 +16,8 @@ if (typeof window !== 'undefined') {
   const originalRemove = localStorage.removeItem;
 
   const ALLOWED_AUTHED_KEYS = [
-    'blaze_dark_mode',
+    'blaze_dark_mode', // Legacy boolean, migrated once by useAppearanceTheme.
+    'blaze_theme_mode', // Light / Dark / System: a device preference, not demo profile data.
     'blaze_notification_preferences',
     'blaze_feature_flags',
     // Phase 5M (directive §4/§5) - a real signed-in (non-anonymous)
