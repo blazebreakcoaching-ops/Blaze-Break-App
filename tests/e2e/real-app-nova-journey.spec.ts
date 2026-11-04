@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { mockAvatarRequests } from './test-helpers';
 
 // Phase 5M (directive §2/§4/§8) - browser-level tests against the REAL,
@@ -58,6 +58,27 @@ async function dismissWhatsNewModalIfOpen(page: Page) {
   if (await gotIt.isVisible({ timeout: 500 }).catch(() => false)) {
     await gotIt.click({ timeout: 2_000 }).catch(() => {});
   }
+}
+
+// A dismiss check immediately before a click still races WhatsNewModal's
+// own 3s-delayed timer: on a long-running test, the modal can pop up in
+// the gap between that check and the click itself, not just before it -
+// confirmed by a real failure where the click retried against the "Got
+// it" backdrop for the test's full remaining budget. Mirrors
+// real-app-account-continuity.spec.ts's own clickRobustly: retry the
+// click, dismissing whatever actually got in the way, rather than
+// guessing a wait long enough to outlast a timer outside this test's
+// control.
+async function clickRobustlyPastWhatsNew(page: Page, locator: Locator, attempts = 5) {
+  for (let i = 0; i < attempts - 1; i++) {
+    try {
+      await locator.click({ timeout: 4_000 });
+      return;
+    } catch {
+      await dismissWhatsNewModalIfOpen(page);
+    }
+  }
+  await locator.click();
 }
 
 test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
@@ -318,7 +339,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
           await input.scrollIntoViewIfNeeded();
           await input.fill(`Testing ${viewport.width}x${viewport.height} ${colorScheme}`);
           await dismissWhatsNewModalIfOpen(page);
-          await sendButton.click();
+          await clickRobustlyPastWhatsNew(page, sendButton);
           await expect(page.getByText(replyText)).toBeVisible({ timeout: 10_000 });
         });
       }
