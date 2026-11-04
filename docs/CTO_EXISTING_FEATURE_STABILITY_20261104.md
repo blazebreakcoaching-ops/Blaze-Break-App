@@ -11,3 +11,12 @@
 Run \`EXPECTED_RELEASE_SHA=<candidate-head-sha> npm run verify:web:offline\` and \`EXPECTED_RELEASE_SHA=<candidate-head-sha> npm run verify:integration:offline\` on a clean checkout with the required Firebase emulators. Record exact SHA and all exit codes. Test real web login on one registered account: choose Dark, reload, choose System, toggle OS mode and verify automatic changes, and ensure no demo profile data leaks. Verify anonymous onboarding/Nova is never obstructed by WhatsNew, registered users receive it on quiet visit and it never interrupts an active task.
 
 **Security/release boundaries:** Existing Firestore/MFA enforcement gap, staging verification, PR #140, and real production smoke/rollback remain OPEN. Code source changes do not authorise merging or deployment. Production main remains untouched.
+
+## Existing Settings photo reliability (added this batch)
+- The existing Profile Details photo picker had no file-size limit, used a fixed width of 200px even for tiny pictures, and let the canvas height scale without a bound on tall images. Large or malformed images could consume excessive browser memory or result in silent errors.
+- src/lib/profile-image-safety.ts limits input to supported raster photo types, at most 5MB and at most 40MP decoded; resizing is bounded to 200px on BOTH axes and does not upscale tiny images.
+- src/components/SettingsModal.tsx now handles decode/read/canvas failures with an accessible inline error, ignores obsolete asynchronous uploads when a later photo is chosen, and lets a person retry the same file.
+- src/lib/profile-image-safety.test.ts covers supported/unsupported types, size, dimensions and no upscaling. No photo-storage provider or backend was added.
+
+## Verification note
+The previous 30faeb2 candidate had a reported green offline gate, but these fixes are NEW commits. Their own lint/TypeScript/Vitest/browser results are pending and must be rerun on the exact latest SHA. The present branch is not approved for main or production. The external-integration workstreams remain deliberately untouched.
