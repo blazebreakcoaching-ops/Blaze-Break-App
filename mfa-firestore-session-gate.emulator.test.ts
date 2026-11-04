@@ -348,3 +348,59 @@ describe('Concurrent multi-device sessions and session-specific revocation', () 
     await assertSucceeds(secondNeverVerifiedSession.firestore().collection('users').doc('collision').get());
   });
 });
+
+
+// Independent release review: admin claims and the operator's own roster
+// entry must not bypass MFA when it is enabled on that account.
+describe('Administrator Firestore reads require a verified MFA session when enrolled', () => {
+  const administrativePaths = [
+    'admin_users/administrator',
+    'admin_audit_logs/entry',
+    'app_config/entry',
+    'platform_feature_registry/entry',
+    'nhei_knowledge_entries/entry',
+    'platform_protected_core/entry',
+    'platform_change_proposals/entry',
+    'platform_rollout_plans/entry',
+    'platform_incidents/entry',
+  ];
+
+  it('blocks direct reads of every admin collection until this login completes MFA', async () => {
+    const authTime = Math.floor(Date.now() / 1000);
+    await seedEnrollment('administrator', true);
+    for (const path of administrativePaths) {
+      await adminDb.doc(path).set({ label: 'operator data' });
+    }
+    const administrator = testEnv.authenticatedContext('administrator', {
+      admin: true, auth_time: authTime,
+    });
+    for (const path of administrativePaths) {
+      await assertFails(administrator.firestore().doc(path).get());
+    }
+
+    await seedVerifiedSession('administrator', authTime, 12 * SECONDS_PER_HOUR);
+    for (const path of administrativePaths) {
+      await assertSucceeds(administrator.firestore().doc(path).get());
+    }
+  });
+
+  it('retains ordinary admin access without MFA and still denies non-admin access', async () => {
+    await adminDb.doc('admin_audit_logs/entry').set({ label: 'operator data' });
+    await adminDb.doc('admin_users/administrator').set({ label: 'operator profile' });
+    const adminWithoutMfa = testEnv.authenticatedContext('administrator', { admin: true });
+    await assertSucceeds(adminWithoutMfa.firestore().doc('admin_audit_logs/entry').get());
+    const ordinaryAccount = testEnv.authenticatedContext('other-user');
+    await assertFails(ordinaryAccount.firestore().doc('admin_audit_logs/entry').get());
+    await assertFails(ordinaryAccount.firestore().doc('admin_users/administrator').get());
+  });
+
+  it('protects a self-readable admin roster record when the user is enrolled in MFA', async () => {
+    const authTime = Math.floor(Date.now() / 1000);
+    await adminDb.doc('admin_users/operator').set({ label: 'own roster entry' });
+    await seedEnrollment('operator', true);
+    const operator = testEnv.authenticatedContext('operator', { auth_time: authTime });
+    await assertFails(operator.firestore().doc('admin_users/operator').get());
+    await seedVerifiedSession('operator', authTime, 12 * SECONDS_PER_HOUR);
+    await assertSucceeds(operator.firestore().doc('admin_users/operator').get());
+  });
+});
