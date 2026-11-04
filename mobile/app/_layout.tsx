@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'rea
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/lib/auth-context';
-import { useNativeTheme } from '../src/lib/native-theme';
 import { NativeThemeProvider, useNativeTheme } from '../src/lib/native-theme';
 
 // The anonymous-first pattern means `user` is set as soon as loading
