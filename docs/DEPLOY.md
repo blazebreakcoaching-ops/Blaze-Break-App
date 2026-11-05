@@ -33,12 +33,23 @@ source test does not authorise publishing changes or moving customer traffic.
   the selected project, named Firestore database and service before every
   command. A rollback of Cloud Run traffic alone does not revert Firestore
   security rules.
-- The manual GitHub workflow in this repository currently uses the
-  legacy `GCP_SA_KEY` service-account JSON secret. It is **not** the
-  recommended default. Do not create/upload new long-lived service-account
-  keys or grant project-wide `Editor` merely to enable deployments.
-  If a future GitHub workflow is authorised, migrate authentication to
-  short-lived Workload Identity Federation and narrowly scoped roles first.
+- This candidate's manual workflow uses short-lived Workload Identity
+  Federation instead of `GCP_SA_KEY`. It defaults to `auth_only=true`:
+  authenticate and verify token issuance without deployment. Every deployment
+  step requires `auth_only=false`. There is no push trigger.
+- This combines PR #149's authentication change with the launch branch's
+  manual-only release control. PR #149 alone retains automatic deployment
+  for application changes; do not restore that trigger when reconciling.
+- Cloud identity remains unverified. Before an authorised authentication test,
+  independently confirm the provider restricts access to this repository and
+  `refs/heads/main`, and the deployment service account grants only the
+  intended repository principal `roles/iam.workloadIdentityUser`. The configured
+  provider is `projects/220686314556/locations/global/workloadIdentityPools/blaze-break-github/providers/blaze-break-github-actions`;
+  the account is `github-actions-deploy@gen-lang-client-0537893432.iam.gserviceaccount.com`.
+- Do not invoke GitHub Actions to validate this candidate. No cloud IAM, keys
+  or secrets were changed by the source update. Keep the legacy key until an
+  explicitly approved keyless deployment and rollback check succeed. Do not
+  create new long-lived keys or grant project-wide `Editor`.
 
 See `docs/CTO_SATURDAY_LAUNCH_20261107.md` for the release checklist and
 `docs/CTO_FIREBASE_GCLOUD_DEPLOY_HANDOFF.md` for the separate cloud handoff.

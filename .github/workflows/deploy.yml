@@ -1,7 +1,7 @@
 name: Deploy
 
 # Ships the app to the already-running Cloud Run service (see docs/DEPLOY.md)
-# only when a trusted operator explicitly invokes the manual workflow - so
+# only on demand via the "Run workflow" button - so
 # "going live" never again means running gcloud/firebase commands by hand in
 # Cloud Shell. Builds straight from source using Cloud Run's own buildpacks
 # support (no Dockerfile needed - Node.js is auto-detected from
@@ -13,17 +13,18 @@ name: Deploy
 # docs/DEPLOY.md sections 1-3) and are left exactly as they are on every
 # redeploy. This workflow only ever ships new code.
 #
-# One-time setup required before this can run (see docs/DEPLOY.md section 0
-# for the full walkthrough): a GCP service account with deploy permissions,
-# with its JSON key pasted into this repo's GCP_SA_KEY secret
-# (Settings -> Secrets and variables -> Actions).
+# Uses GitHub OpenID Connect and Google Workload Identity Federation to
+# obtain temporary credentials; no long-lived service-account key is needed.
+# All production runs are manual. Use auth_only=true (the default) to
+# validate access without changing Cloud Run or Firestore.
 
-# Production deployment is an explicit release operation. Merging into
-# main no longer automatically deploys Cloud Run or Firestore. Keep this
-# workflow as a manual fallback; the approved operator normally deploys
-# via authenticated Firebase/GCloud tooling after staging verification.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      auth_only:
+        description: 'Verify Google Cloud identity only; do not deploy'
+        type: boolean
+        default: true
 
 env:
   GCP_PROJECT_ID: gen-lang-client-0537893432
@@ -36,23 +37,34 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud with OIDC
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: projects/220686314556/locations/global/workloadIdentityPools/blaze-break-github/providers/blaze-break-github-actions
+          service_account: github-actions-deploy@gen-lang-client-0537893432.iam.gserviceaccount.com
+          create_credentials_file: true
+          export_environment_variables: true
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
+      - name: Verify federated authentication (no deployment)
+        run: |
+          gcloud auth print-access-token > /dev/null
+          echo 'Google Cloud federated authentication succeeded.'
+
       # --source builds the container via Cloud Build + Buildpacks on
       # Google's side - nothing to build or push locally in this job.
       - name: Deploy to Cloud Run
+        if: ${{ inputs.auth_only == false }}
         run: |
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             --source . \
@@ -61,13 +73,13 @@ jobs:
             --quiet
 
       - name: Set up Node.js (for the Firebase CLI)
+        if: ${{ inputs.auth_only == false }}
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      # Authenticates via the same service-account credentials from the
-      # "Authenticate to Google Cloud" step above (firebase-tools picks up
-      # GOOGLE_APPLICATION_CREDENTIALS automatically) - no separate Firebase
-      # login/token needed.
+      # firebase-tools reads the temporary GOOGLE_APPLICATION_CREDENTIALS
+      # exported by the auth action, not a long-lived JSON key.
       - name: Deploy Firestore rules + indexes
+        if: ${{ inputs.auth_only == false }}
         run: npx firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project "$GCP_PROJECT_ID" --non-interactive
