@@ -346,7 +346,10 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
         aria-labelledby="blaze-first-step-title"
         className="ember-hero ember-landing-hero px-5 sm:px-10 lg:px-16 max-w-7xl mx-auto relative z-10 flex items-center"
       >
-        <div className="ember-hero-content text-left space-y-6 py-20 sm:py-24">
+        <div className="ember-landing-orb" aria-hidden="true">
+          <span>Nova Blaze</span>
+        </div>
+        <div className="ember-hero-content text-left space-y-6 pt-32 pb-20 sm:pt-36 sm:pb-24">
           <p className="text-xs font-semibold tracking-[0.18em] uppercase text-primary">
             A quieter way forward
           </p>
