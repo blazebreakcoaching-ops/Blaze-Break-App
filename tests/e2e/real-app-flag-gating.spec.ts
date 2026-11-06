@@ -17,12 +17,12 @@ import { mockAvatarRequests } from './test-helpers';
 async function gotoAppAsAnonymousUser(page: Page) {
   await mockAvatarRequests(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'See a live demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
+  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
 }
 
 async function openNovaTab(page: Page) {
-  await page.getByRole('button', { name: 'Nova Coach' }).click();
+  await page.getByRole('button', { name: 'Nova' }).click();
 }
 
 async function mockChatOnce(page: Page, body: { text: string; planTrace?: unknown[] }) {
