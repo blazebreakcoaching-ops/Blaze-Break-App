@@ -31,14 +31,14 @@ async function gotoAppAsAnonymousUser(page: Page) {
   await page.goto('/');
   // auth.tsx's AuthProvider signs this brand-new visitor in anonymously
   // the moment the page loads (against the local Auth emulator, never a
-  // real project) - "See a live demo" is the real, unauthenticated-looking
+  // real project) - "Prefer to look around first? View a demo" is the real, unauthenticated-looking
   // entry point real visitors use, requiring no password of any kind.
-  await page.getByRole('button', { name: 'See a live demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
+  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
 }
 
 async function openNovaTab(page: Page) {
-  await page.getByRole('button', { name: 'Nova Coach' }).click();
+  await page.getByRole('button', { name: 'Nova' }).click();
 }
 
 async function mockChatOnce(page: Page, body: { text: string; planTrace?: unknown[] }) {
@@ -82,7 +82,7 @@ async function clickRobustlyPastWhatsNew(page: Page, locator: Locator, attempts 
 }
 
 test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
-  test('the real landing page, "See a live demo", and sidebar/nav render with no horizontal overflow', async ({ page }) => {
+  test('the real landing page, "Prefer to look around first? View a demo", and sidebar/nav render with no horizontal overflow', async ({ page }) => {
     await gotoAppAsAnonymousUser(page);
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -197,7 +197,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
   // never-onboarded demo session has no saved profile.fullName to
   // auto-skip it with - see App.tsx's own flowRef effect) - that is
   // real, intentional behaviour for a stranger reloading a tab with
-  // nothing identifying saved, not a defect. "See a live demo" once
+  // nothing identifying saved, not a defect. "Prefer to look around first? View a demo" once
   // more is the real path back in; the conversation itself survives
   // underneath that, in localStorage, independent of `flow`.
   test('a real page reload preserves a real anonymous account\'s Nova conversation', async ({ page }) => {
@@ -209,8 +209,8 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
     await expect(page.getByText('Got it, noted.')).toBeVisible();
 
     await page.reload();
-    await page.getByRole('button', { name: 'See a live demo' }).click();
-    await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
+    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
     await openNovaTab(page);
     await expect(page.getByText('Remember this exact sentence please.')).toBeVisible();
     await expect(page.getByText('Got it, noted.')).toBeVisible();
