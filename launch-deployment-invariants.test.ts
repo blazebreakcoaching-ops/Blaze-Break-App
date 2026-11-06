@@ -19,7 +19,7 @@ describe('staging and production release invariants', () => {
     const deploy = read('.github/workflows/deploy.yml');
     const triggers = deploy.split('\nenv:')[0];
     expect(triggers).toContain('  workflow_dispatch:');
-    expect(triggers).not.toMatch(/^  push:/m);
+    expect(triggers).not.toMatch(/^ {2}push:/m);
     expect(deploy).toContain('default: true');
     expect(deploy).toContain('id-token: write');
     expect(deploy).not.toContain('credentials_json:');
