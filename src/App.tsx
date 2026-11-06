@@ -962,7 +962,7 @@ const Header = ({
             aria-label="Guided tour: explain this page"
           >
             <Compass className="w-3.5 h-3.5" aria-hidden="true" />
-            <span className="sr-only">Recovery Tour</span>
+            <span>Guide</span>
           </button>
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
             Not sure where to start? Get guided to the right recovery action.
