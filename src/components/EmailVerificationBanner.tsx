@@ -33,6 +33,15 @@ export const EmailVerificationBanner = () => {
     };
   }, [user, emailVerified, refreshEmailVerified]);
 
+  // A verified customer who explicitly opted into email updates may now be
+  // synced into the marketing list. The server rechecks consent and verified
+  // email authoritatively; unsigned users and declined contacts are ignored.
+  // This never grants marketing permission by itself.
+  useEffect(() => {
+    if (!user || user.isAnonymous || !user.email || !emailVerified) return;
+    secureApiFetch('/api/marketing/preferences/sync', { method: 'POST' }).catch(() => {});
+  }, [user?.uid, emailVerified]);
+
   if (!user || user.isAnonymous || !user.email || emailVerified) return null;
 
   const handleResend = async () => {

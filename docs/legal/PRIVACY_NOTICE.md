@@ -230,3 +230,18 @@ anything material — see `TERMS_OF_SERVICE.md` §16.
 review of the actual Blaze Break codebase. It is not legal advice and
 must not be published or relied upon until reviewed by a qualified UK
 solicitor. See `LEGAL_REVIEW_REQUIRED.md`.*
+
+
+## Optional product emails
+
+Creating an account does **not** subscribe you to marketing. You can separately
+choose to receive Blaze Break news, practical tips and offers using an unchecked
+checkbox during registration, or enable and disable this later under Settings →
+Consent & Privacy. We record your choice and its date against your account.
+Your account, recovery support and necessary security messages work without
+marketing consent. We use only your verified email address for a dedicated
+Brevo marketing list where the service is configured; we do not send Nova
+conversations, journal entries, burnout scores or assessment details to the
+marketing list. Marketing subscription can be withdrawn in Settings at any
+time; account/security emails are managed separately. Our marketing-list
+operation is enabled only when the relevant secure configuration is present.

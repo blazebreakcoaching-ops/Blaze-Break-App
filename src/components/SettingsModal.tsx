@@ -21,7 +21,7 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }: SettingsModalProps) => {
-  const { logOut } = useAuth();
+  const { logOut, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'experiments' | 'consent' | 'feedback'>('profile');
   const [formData, setFormData] = useState<UserProfileData>(profile || {
     fullName: '',
@@ -36,6 +36,49 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string }>({});
   const [deletionRequestStatus, setDeletionRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [marketingChoice, setMarketingChoice] = useState<boolean | null>(null);
+  const [marketingStatus, setMarketingStatus] = useState<string | null>(null);
+  const [marketingSaving, setMarketingSaving] = useState(false);
+  const [marketingError, setMarketingError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== 'consent' || !user || user.isAnonymous) return;
+    let cancelled = false;
+    secureApiFetch('/api/marketing/preferences')
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Unavailable');
+        return res.json();
+      }).then((data) => {
+        if (!cancelled) {
+          setMarketingChoice(data.optedIn === true);
+          setMarketingStatus(data.syncStatus ?? null);
+          setMarketingError(null);
+        }
+      }).catch(() => {
+        if (!cancelled) setMarketingError('Email preferences cannot be loaded right now.');
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, user?.uid]);
+
+  const toggleMarketing = async () => {
+    if (marketingChoice === null || marketingSaving) return;
+    setMarketingSaving(true);
+    setMarketingError(null);
+    try {
+      const res = await secureApiFetch('/api/marketing/preferences', {
+        method: 'POST',
+        data: { optedIn: !marketingChoice, source: 'settings' },
+      });
+      if (!res.ok) throw new Error('Could not save preference');
+      const data = await res.json();
+      setMarketingChoice(data.optedIn === true);
+      setMarketingStatus(data.syncStatus ?? null);
+    } catch {
+      setMarketingError('Could not save your choice. Please try again or contact support.');
+    } finally {
+      setMarketingSaving(false);
+    }
+  };
   const dialogRef = useFocusTrap(true);
 
   useEffect(() => {
@@ -419,6 +462,36 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                   >
                     Open full Privacy Centre &rarr;
                   </button>
+                )}
+              </div>
+
+              <div className="border border-border rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-text-main">Optional email updates</h4>
+                    <p className="text-xs text-text-muted mt-1">
+                      News, practical tips and offers. Separate from account and security emails.
+                    </p>
+                  </div>
+                  <button type="button" role="switch" aria-label="Optional marketing emails"
+                    aria-checked={marketingChoice === true}
+                    disabled={marketingChoice === null || marketingSaving}
+                    onClick={() => { void toggleMarketing(); }}
+                    className={cn("w-12 h-7 rounded-full relative shrink-0 disabled:opacity-50", marketingChoice ? "bg-success" : "bg-surface border border-border")}>
+                    <span className={cn("block absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all", marketingChoice ? "left-6" : "left-1")} />
+                  </button>
+                </div>
+                {marketingError && <p role="alert" className="text-xs text-destructive">{marketingError}</p>}
+                {marketingStatus && marketingChoice === true && marketingStatus !== 'synced' && (
+                  <p role="status" className="text-xs text-text-muted">
+                    Preference saved; email updates will start after verification and list activation.
+                  </p>
+                )}
+                {marketingChoice === false && marketingStatus &&
+                  !['unsubscribed', 'not_subscribed'].includes(marketingStatus) && (
+                  <p role="status" className="text-xs text-text-muted">
+                    Opt-out recorded. List removal needs confirmation before sending campaigns.
+                  </p>
                 )}
               </div>
 

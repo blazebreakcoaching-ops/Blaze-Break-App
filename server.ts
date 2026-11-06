@@ -1,4 +1,5 @@
 import express from "express";
+import { marketingListId, shouldJoinMarketingList } from './marketing-consent';
 import helmet from "helmet";
 import path from "path";
 import fs from "fs";
@@ -4494,6 +4495,125 @@ const authActionUrl = (): string => {
 // so this is a real, separate IAM grant that can't be verified from inside
 // this codebase. Logged distinctly so it's diagnosable in Cloud Run logs
 // rather than surfacing as an unexplained generic failure.
+// Marketing subscriptions are a completely separate purpose from Firebase
+// registration and Brevo transactional/security email. No coaching, health,
+// Nova conversation or recovery data crosses this boundary.
+const MarketingPreferenceSchema = z.object({
+  optedIn: z.boolean(),
+  source: z.enum(['signup', 'settings']),
+}).strict();
+
+const marketingPreferencesRef = (uid: string) =>
+  getDb().collection('users').doc(uid).collection('marketing').doc('preferences');
+
+const brevoMarketingListId = () => marketingListId(process.env.BREVO_MARKETING_LIST_ID);
+
+// Only a verified email with explicit opt-in may be added to this list.
+// Opt-out removes just this marketing-list membership, NOT the contact's
+// transactional email identity (used for login/security notices).
+const syncBrevoMarketingList = async (email: string, optedIn: boolean):
+  Promise<'synced' | 'unsubscribed' | 'not_configured' | 'retry_needed'> => {
+  const key = process.env.BREVO_API_KEY;
+  const id = brevoMarketingListId();
+  if (!key || !id) return 'not_configured';
+  const url = optedIn
+    ? 'https://api.brevo.com/v3/contacts'
+    : 'https://api.brevo.com/v3/contacts/lists/' + id + '/contacts/remove';
+  const body = optedIn
+    ? { email, listIds: [id], updateEnabled: true }
+    : { emails: [email] };
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'api-key': key, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      // Do not log request bodies, email addresses, or provider response text.
+      logger.warning('[MARKETING] Brevo marketing-list operation failed', { status: response.status });
+      return 'retry_needed';
+    }
+    return optedIn ? 'synced' : 'unsubscribed';
+  } catch {
+    logger.warning('[MARKETING] Brevo marketing-list request could not be completed');
+    return 'retry_needed';
+  }
+};
+
+app.get('/api/marketing/preferences', verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (!user.email || user.firebase?.sign_in_provider === 'anonymous') {
+      return res.status(403).json({ error: 'Register an account to manage email updates.' });
+    }
+    const snap = await marketingPreferencesRef(user.uid).get();
+    const data = snap.exists ? snap.data() : undefined;
+    return res.json({ optedIn: data?.optedIn === true, syncStatus: data?.syncStatus || 'not_subscribed' });
+  } catch {
+    return res.status(500).json({ error: 'Marketing preferences are unavailable.' });
+  }
+});
+
+app.post('/api/marketing/preferences', verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  const parsed = MarketingPreferenceSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid marketing preference.' });
+  try {
+    const user = requireAuth(req);
+    if (!user.email || user.firebase?.sign_in_provider === 'anonymous') {
+      return res.status(403).json({ error: 'Register an account to manage email updates.' });
+    }
+    const { optedIn, source } = parsed.data;
+    const ref = marketingPreferencesRef(user.uid);
+    const previousSnap = await ref.get();
+    const previous = previousSnap.exists ? previousSnap.data() : undefined;
+    const when = new Date().toISOString();
+    const verified = (await getAuth().getUser(user.uid)).emailVerified === true;
+    // Write the preference BEFORE any provider request. We never treat a
+    // missing/failed consent record as permission to send campaigns.
+    await ref.set({
+      optedIn,
+      source,
+      updatedAt: when,
+      consentedAt: optedIn ? (previous?.optedIn === true ? previous?.consentedAt || when : when) : null,
+      withdrawnAt: optedIn ? null : when,
+      consentVersion: '2026-11-06',
+      syncStatus: optedIn ? (verified ? 'pending_sync' : 'pending_verification') : 'withdrawal_pending',
+    }, { merge: true });
+
+    let syncStatus: string = optedIn ? 'pending_verification' : 'withdrawal_pending';
+    if (!optedIn || shouldJoinMarketingList(optedIn, verified, user.email)) {
+      syncStatus = await syncBrevoMarketingList(user.email, optedIn);
+      await ref.set({ syncStatus }, { merge: true });
+    }
+    return res.json({ optedIn, syncStatus });
+  } catch {
+    return res.status(500).json({ error: 'Could not save marketing preference. No subscription was confirmed.' });
+  }
+});
+
+app.post('/api/marketing/preferences/sync', verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (!user.email || user.firebase?.sign_in_provider === 'anonymous') {
+      return res.status(403).json({ error: 'A registered account is required.' });
+    }
+    const ref = marketingPreferencesRef(user.uid);
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()?.optedIn !== true) return res.json({ optedIn: false });
+    const authRecord = await getAuth().getUser(user.uid);
+    if (!authRecord.email || !authRecord.emailVerified) {
+      return res.json({ optedIn: true, syncStatus: 'pending_verification' });
+    }
+    // Never add a contact from an unverified email even if the caller
+    // passes a forged ID token claim or edited request body.
+    const syncStatus = await syncBrevoMarketingList(authRecord.email, true);
+    await ref.set({ syncStatus }, { merge: true });
+    return res.json({ optedIn: true, syncStatus });
+  } catch {
+    return res.status(500).json({ error: 'Could not sync marketing preference.' });
+  }
+});
+
 const ACCOUNT_LINK_PERMISSION_HINT =
   'If this is a permission error, the Cloud Run runtime service account likely needs roles/iam.serviceAccountTokenCreator (self-bound) granted — see docs/DEPLOY.md.';
 

@@ -8,3 +8,5 @@
 - Marketing signup is recorded through a server-side consent API; sending marketing requires verified email, a dedicated Brevo marketing list and API key.
 - Do not send burnout assessment details, journal entries or Nova conversations to marketing services.
 - Do not deploy to production until real staging sign-in, App Check, MFA and privacy checks pass.
+
+- Registered accounts have a server-side marketing preference with a verified-email gate, Brevo marketing-only list, and withdrawal in Settings. It uses BREVO_API_KEY and BREVO_MARKETING_LIST_ID; without them, subscription is not active.
