@@ -64,13 +64,13 @@ async function clickRobustly(page: Page, locator: ReturnType<Page['getByRole']>,
 async function gotoFlagOnApp(page: Page) {
   await mockAvatarRequests(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'See a live demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
+  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
   await dismissAnyOpenModal(page);
 }
 
 async function openNovaTab(page: Page) {
-  await clickRobustly(page, page.getByRole('button', { name: 'Nova Coach' }));
+  await clickRobustly(page, page.getByRole('button', { name: 'Nova' }));
 }
 
 async function mockChatOnce(page: Page, body: { text: string; planTrace?: unknown[] }) {
@@ -213,8 +213,8 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     await expect(page.getByText('Got it, noted for the agentic journey.')).toBeVisible();
 
     await page.reload();
-    await page.getByRole('button', { name: 'See a live demo' }).click();
-    await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
+    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
     await dismissAnyOpenModal(page);
     await openNovaTab(page);
     await expect(page.getByText('Remember this exact sentence in the agentic journey.')).toBeVisible();
@@ -235,7 +235,7 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
 
   test('sign-out then a fresh identity on the same flag-on server: a real session resumes, the journey re-enables, and nothing leaks from the old identity', async ({ page }) => {
     // ROOT CAUSE, found by tracing Firebase auth events and component
-    // mounting (Report 21's open finding): "See a live demo" (App.tsx's
+    // mounting (Report 21's open finding): "Prefer to look around first? View a demo" (App.tsx's
     // onViewDemo) only ever called setFlow("app") - a local view-state
     // flip, never a Firebase call. The automatic anonymous sign-in that
     // gives a brand-new visitor a session lives entirely in auth.tsx's
@@ -244,7 +244,7 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     // on purpose, so a person who just signed out lands on a genuinely
     // signed-out page instead of an instant, confusing new guest session.
     // But nothing else ever re-triggered it afterwards either: clicking
-    // "See a live demo" again left `flow` as "app" with `auth.currentUser`
+    // "Prefer to look around first? View a demo" again left `flow` as "app" with `auth.currentUser`
     // still null for the rest of the tab's life. App.tsx's own
     // `flow === "app" && !user` branch then rendered the OmniNova
     // floating-widget fallback instead of the real signed-in Nova tab -
@@ -269,14 +269,14 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     // continuity.spec.ts uses, not a synthetic logOut() call.
     await clickRobustly(page, page.getByRole('button', { name: /settings/i }).first());
     await clickRobustly(page, page.getByRole('button', { name: /sign out/i }));
-    await expect(page.getByRole('button', { name: 'See a live demo' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Prefer to look around first? View a demo' })).toBeVisible({ timeout: 15_000 });
 
     // A fresh anonymous identity on the SAME flag-on server: a real
     // Firebase session must now exist (continueAsGuest), its own fetch
     // must independently re-enable the journey, and it must start on a
     // clean Invisible Load with no trace of the first identity's item.
-    await clickRobustly(page, page.getByRole('button', { name: 'See a live demo' }));
-    await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 15_000 });
+    await clickRobustly(page, page.getByRole('button', { name: 'Prefer to look around first? View a demo' }));
+    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
     await dismissAnyOpenModal(page);
     await openNovaTab(page);
     await expect(page.getByLabel('Journey stage')).toBeVisible({ timeout: 15_000 });
