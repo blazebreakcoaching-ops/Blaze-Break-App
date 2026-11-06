@@ -72,29 +72,7 @@ jobs:
         if: ${{ inputs.auth_only == false }}
         run: |
           test -f .gcloudignore
-          if gcloud meta list-files-for-upload | grep -E '(^|/)gha-creds-[^/]+\.json      # Google's side - nothing to build or push locally in this job.
-      - name: Deploy to Cloud Run
-        if: ${{ inputs.auth_only == false }}
-        run: |
-          gcloud run deploy "$CLOUD_RUN_SERVICE" \
-            --source . \
-            --region "$CLOUD_RUN_REGION" \
-            --project "$GCP_PROJECT_ID" \
-            --update-env-vars "FIREBASE_PROJECT_ID=$GCP_PROJECT_ID" \
-            --quiet
-
-      - name: Set up Node.js (for the Firebase CLI)
-        if: ${{ inputs.auth_only == false }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      # firebase-tools reads the temporary GOOGLE_APPLICATION_CREDENTIALS
-      # exported by the auth action, not a long-lived JSON key.
-      - name: Deploy Firestore rules + indexes
-        if: ${{ inputs.auth_only == false }}
-        run: npx firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project "$GCP_PROJECT_ID" --non-interactive
-; then
+          if gcloud meta list-files-for-upload | grep -E '(^|/)gha-creds-[^/]+\.json$'; then
             echo "::error::Temporary Google credentials would be included in the Cloud Run upload."
             exit 1
           fi
