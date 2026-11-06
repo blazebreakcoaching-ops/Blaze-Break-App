@@ -199,13 +199,13 @@ export const ALL_TABS: {
   {
     id: "home",
     icon: Home,
-    label: "Pulse",
+    label: "Today",
     roles: ["individual", "employee", "executive"],
   },
   {
     id: "plan",
     icon: Sparkles,
-    label: "Recovery Plan",
+    label: "My Plan",
     roles: ["individual", "employee", "executive"],
   },
   {
@@ -277,7 +277,7 @@ export const ALL_TABS: {
   {
     id: "nova",
     icon: Sparkles,
-    label: "Nova Coach",
+    label: "Nova",
     roles: ["individual", "employee", "executive"],
     featureId: "nova_text_coach",
   },
