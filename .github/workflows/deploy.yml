@@ -8,10 +8,8 @@ name: Deploy
 # package.json's "engines"/"scripts" fields), then deploys the current
 # Firestore rules and indexes alongside it.
 #
-# Deliberately does NOT touch the Cloud Run service's env vars/secrets/IAM -
-# those were configured once during the original manual setup (see
-# docs/DEPLOY.md sections 1-3) and are left exactly as they are on every
-# redeploy. This workflow only ever ships new code.
+# Set the runtime Firebase project from the deployment target.
+# Preserve other environment settings and existing secret bindings.
 #
 # Uses GitHub OpenID Connect and Google Workload Identity Federation to
 # obtain temporary credentials; no long-lived service-account key is needed.
@@ -70,6 +68,7 @@ jobs:
             --source . \
             --region "$CLOUD_RUN_REGION" \
             --project "$GCP_PROJECT_ID" \
+            --update-env-vars "FIREBASE_PROJECT_ID=$GCP_PROJECT_ID" \
             --quiet
 
       - name: Set up Node.js (for the Firebase CLI)

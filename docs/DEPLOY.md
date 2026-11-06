@@ -425,7 +425,7 @@ gcloud run deploy blaze-break-staging \
   --project=blaze-break-staging \
   --region=europe-west2 \
   --source=. \
-  --set-env-vars=NODE_ENV=production \
+  --update-env-vars=NODE_ENV=production,FIREBASE_PROJECT_ID=blaze-break-staging \
   --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest,...  # every secret from step 7
 ```
 
