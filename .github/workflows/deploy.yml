@@ -34,6 +34,7 @@ env:
   GCP_PROJECT_ID: gen-lang-client-0537893432
   CLOUD_RUN_SERVICE: blaze-break
   CLOUD_RUN_REGION: europe-west2
+  FIRESTORE_DATABASE: ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
 
 jobs:
   deploy:
@@ -60,10 +61,12 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
-      - name: Verify federated authentication (no deployment)
+      - name: Verify federated authentication and read-only service access
         run: |
           gcloud auth print-access-token > /dev/null
-          echo 'Google Cloud federated authentication succeeded.'
+          gcloud run services describe "$CLOUD_RUN_SERVICE" --region "$CLOUD_RUN_REGION" --project "$GCP_PROJECT_ID" --format='value(metadata.name)' > /dev/null
+          gcloud firestore databases describe --database="$FIRESTORE_DATABASE" --project="$GCP_PROJECT_ID" --format='value(name)' > /dev/null
+          echo 'Google Cloud, Cloud Run, and Firestore read access verified; no deployment performed.'
 
       # The auth action creates a short-lived credential file in the workspace.
       # Never upload that file as Cloud Build source. The temporary ignore file
