@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, ShieldCheck, BatteryLow, LogIn, ArrowLeft, Loader2, Mail, Lock, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
+import { ArrowRight, LogIn, ArrowLeft, Loader2, Mail, Lock, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { BlazeBrandLogo } from './BlazeBrandLogo';
 import { AppearanceMenu } from './AppearanceMenu';
@@ -323,63 +323,49 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
             <AppearanceMenu mode={themeMode ?? 'system'} onChange={setThemeMode} compact />
           )}
           <button
-            onClick={onOpenTrustCentre}
-            className="text-xs sm:text-xs uppercase tracking-widest font-bold text-text-muted hover:text-text-main transition-colors hidden sm:flex items-center gap-2"
-          >
-            <ShieldCheck className="w-4 h-4" /> Trust Centre
-          </button>
-          <button
             onClick={handleStartRequest}
             className="text-sm text-text-main underline underline-offset-4 px-3 py-3"
           >
-            {user ? 'Enter Suite' : 'Access Account'}
+            {user ? 'Continue' : 'Sign in'}
           </button>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="ember-hero ember-landing-hero pt-36 sm:pt-44 pb-16 sm:pb-20 px-5 sm:px-10 lg:px-16 max-w-7xl mx-auto flex flex-col items-center text-center md:text-left relative z-10">
-        <div className="ember-hero-content space-y-6">
-          <h1 className="ember-title ember-hero-title text-text-main max-w-5xl">
+      {/* One decision first: begin a check-in. The existing demo and auth
+          paths stay available without competing with the primary action. */}
+      <section
+        aria-labelledby="blaze-first-step-title"
+        className="ember-hero ember-landing-hero px-5 sm:px-10 lg:px-16 max-w-7xl mx-auto relative z-10 flex items-center"
+      >
+        <div className="ember-hero-content text-left space-y-6 py-20 sm:py-24">
+          <p className="text-xs font-semibold tracking-[0.18em] uppercase text-primary">
+            A quieter way forward
+          </p>
+          <h1 id="blaze-first-step-title" className="ember-title ember-hero-title text-text-main max-w-4xl">
             High performance <br className="hidden sm:block" />
             without the <em>burnout.</em>
           </h1>
-          <p className="ember-hero-subtitle max-w-2xl mx-auto md:mx-0 text-base sm:text-lg font-medium">
-            Take a moment to check in with yourself. Your Burnout Fingerprint starts with a short self-assessment.
+          <p className="ember-hero-subtitle max-w-lg text-base sm:text-lg">
+            You don't have to figure everything out today. Start with a short check-in,
+            then decide what would help.
           </p>
-          <div className="ember-hero-actions pt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-3 sm:gap-4">
+          <div className="ember-hero-actions pt-3 flex flex-col items-start gap-4">
             <button
               onClick={handleStartRequest}
-              className="btn-primary ember-orbit w-full sm:w-auto justify-center px-6 sm:px-10 py-4 sm:py-5 rounded-xl font-semibold text-base flex items-center gap-3 sm:gap-4 group"
+              className="btn-primary ember-orbit w-full sm:w-auto justify-center px-8 sm:px-10 py-4 sm:py-5 rounded-xl font-semibold text-base flex items-center gap-3 group"
             >
-              Get Burnout Fingerprint
+              Start my check-in
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
+            <p className="text-sm text-text-muted">
+              One question at a time. At your own pace.
+            </p>
             <button
               onClick={onViewDemo}
-              className="w-full sm:w-auto justify-center px-4 py-4 text-sm font-medium underline underline-offset-4 flex items-center gap-2 group"
+              className="text-sm font-medium text-text-main underline underline-offset-4 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             >
-              See a live demo
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              Prefer to look around first? View a demo
             </button>
-          </div>
-          <div className="ember-feature-band rounded-2xl mt-8 text-left overflow-hidden">
-            <div className="p-3 sm:p-4">
-              <BatteryLow className="h-5 w-5 mb-2" aria-hidden="true" />
-              <strong>Reset</strong><span>Recover your energy</span>
-            </div>
-            <div className="p-3 sm:p-4">
-              <ShieldCheck className="h-5 w-5 mb-2" aria-hidden="true" />
-              <strong>Refocus</strong><span>Find clarity</span>
-            </div>
-            <div className="p-3 sm:p-4">
-              <TrendingUp className="h-5 w-5 mb-2" aria-hidden="true" />
-              <strong>Perform</strong><span>Work sustainably</span>
-            </div>
-            <div className="p-3 sm:p-4">
-              <Users className="h-5 w-5 mb-2" aria-hidden="true" />
-              <strong>Rejuvenate</strong><span>Make room to recover</span>
-            </div>
           </div>
         </div>
       </section>

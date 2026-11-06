@@ -394,6 +394,12 @@ export const ALL_TABS: {
 const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, tier: SubscriptionTier) =>
   resolveTabVisibility(t, role, tier, hasSubscriptionEntitlement).visible;
 
+// A calmer default for individual customers. Every existing tab is retained;
+// choosing "Explore all tools" reveals the full role/entitlement-gated list.
+const CUSTOMER_STARTER_TABS = new Set(["home", "nova", "plan"]);
+const isCustomerRole = (role: string | undefined) =>
+  ["individual", "employee", "executive"].includes(role ?? "individual");
+
 const Sidebar = ({
   activeTab,
   setActiveTab,
@@ -408,6 +414,8 @@ const Sidebar = ({
   hasManagedTeam,
   isHrViewer,
   isOrgAdmin,
+  showAllTools,
+  setShowAllTools,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -422,6 +430,8 @@ const Sidebar = ({
   hasManagedTeam: boolean;
   isHrViewer: boolean;
   isOrgAdmin: boolean;
+  showAllTools: boolean;
+  setShowAllTools: (show: boolean) => void;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -466,7 +476,11 @@ const Sidebar = ({
     return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
-  const tabs = ALL_TABS.filter((t) => isTabVisible(t, authRole, currentTier));
+  const simplified = isCustomerRole(authRole) && !showAllTools;
+  const tabs = ALL_TABS.filter((t) =>
+    isTabVisible(t, authRole, currentTier) &&
+    (!simplified || CUSTOMER_STARTER_TABS.has(t.id) || t.id === activeTab)
+  );
   // "My Team" is gated on a real, admin-assigned backend fact (teamManagers),
   // not the authRole self-selection every other tab above uses - so it's
   // appended here rather than folded into ALL_TABS' static role list.
@@ -710,7 +724,23 @@ const Sidebar = ({
         })()}
       </nav>
 
-      <div className="pt-6 border-t border-border/50 shrink-0 w-full">
+      <div className="pt-4 border-t border-border/50 shrink-0 w-full space-y-3">
+        {isCustomerRole(authRole) && (
+          <button
+            type="button"
+            onClick={() => setShowAllTools(!showAllTools)}
+            aria-expanded={showAllTools}
+            aria-label={showAllTools ? "Show the simpler navigation" : "Explore all available tools"}
+            className={cn(
+              "flex items-center w-full rounded-xl px-3 py-2.5 text-text-muted hover:text-text-main hover:bg-primary/10 transition-colors",
+              isCollapsed ? "justify-center" : "gap-2 text-sm"
+            )}
+            title={isCollapsed ? (showAllTools ? "Keep it simple" : "Explore all tools") : undefined}
+          >
+            <Compass className="w-4 h-4 shrink-0" />
+            {!isCollapsed && (showAllTools ? "Keep it simple" : "Explore all tools")}
+          </button>
+        )}
         <AppearanceMenu mode={themeMode} onChange={setThemeMode} compact={isCollapsed} above />
       </div>
     </motion.aside>
@@ -1113,6 +1143,9 @@ export default function App() {
 
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
+  // Intentionally starts simple on each visit. The user may reveal all
+  // available tools explicitly without affecting their data or entitlements.
+  const [showAllTools, setShowAllTools] = useState(false);
   // The Nova check-in nudge (NovaCheckinNudge.tsx) explicitly promises
   // voice - "A couple of minutes by voice, whenever you're ready" - but
   // switching to the nova tab alone only opens the text chat; the live
@@ -2375,6 +2408,8 @@ export default function App() {
         hasManagedTeam={managedTeams.length > 0}
         isHrViewer={isHrViewer}
         isOrgAdmin={isOrgAdmin}
+        showAllTools={showAllTools}
+        setShowAllTools={setShowAllTools}
       />
 
       <motion.main
@@ -2507,6 +2542,7 @@ export default function App() {
             {activeTab === "home" && (
               <section aria-labelledby="today-question" className="mx-auto max-w-4xl">
                 <h2 id="today-question" className="font-display text-3xl sm:text-4xl text-text-main">What would help right now?</h2>
+                <p className="text-text-muted mt-3 max-w-xl">Start with one small step. The rest can wait.</p>
                 <div className="flex flex-col sm:flex-row gap-3 mt-6 mb-10">
                   <button className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
                   <button className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
@@ -3103,7 +3139,11 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="absolute bottom-full left-2 right-2 mb-2 p-3 rounded-2xl bg-card border border-border shadow-2xl grid grid-cols-3 gap-2"
               >
-                {ALL_TABS.filter((t) => t.group === "recovery_tools").map((tab) => (
+                {ALL_TABS.filter((t) =>
+                  t.group === "recovery_tools" &&
+                  isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
+                  (showAllTools || !isCustomerRole(effectiveRole) || t.id === activeTab)
+                ).map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => {
@@ -3124,8 +3164,10 @@ export default function App() {
           </AnimatePresence>
           <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-2 gap-2">
             {(() => {
+              const simplified = isCustomerRole(effectiveRole) && !showAllTools;
               const visibleTabs = ALL_TABS.filter((t) =>
-                isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery"),
+                isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
+                (!simplified || CUSTOMER_STARTER_TABS.has(t.id) || t.id === activeTab),
               );
               const renderedGroups = new Set<string>();
               return visibleTabs.map((tab) => {
@@ -3170,6 +3212,21 @@ export default function App() {
                 );
               });
             })()}
+            {isCustomerRole(effectiveRole) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAllTools((v) => !v);
+                  setShowMobileToolsSheet(false);
+                }}
+                aria-expanded={showAllTools}
+                aria-label={showAllTools ? "Show the simpler navigation" : "Explore all available tools"}
+                className="p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] text-text-muted hover:text-text-main"
+              >
+                <span className="p-1.5 rounded-full"><Menu className="w-5 h-5" /></span>
+                <span className="text-[11px] font-bold tracking-wide">{showAllTools ? "Less" : "More"}</span>
+              </button>
+            )}
           </div>
         </motion.div>
       </div>

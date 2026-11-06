@@ -584,7 +584,7 @@ export const NovaChat = ({
     if (messages.length === 0) {
       let greeting =
         initialMessage ||
-        "Nova interface active. What behavioral pattern are we breaking today?";
+        "I'm Nova. What's on your mind today?";
       const profileStr = localStorage.getItem("blaze_profile");
       let profileData: any = null;
       try {
@@ -594,15 +594,12 @@ export const NovaChat = ({
       }
 
       if (!initialMessage && (fingerprint || profileData)) {
-        const username = profileData?.useNameInGreetings
-          ? profileData?.fullName.split(" ")[0]
-          : "Executive";
-        const role =
-          profileData?.role || fingerprint?.profile || "High Achiever";
-        const purpose = profileData?.purpose
-          ? `your priority is to ${profileData.purpose.toLowerCase()}`
-          : "we need to secure your baseline";
-        greeting = `Nova active. Good to see you, ${username}. As a ${role}, ${purpose}. Where are we seeing the most friction in your operating environment today?`;
+        // Use a name only when the person has explicitly allowed greetings.
+        // Do not infer a job title, identity or needs from their profile.
+        const firstName = profileData?.useNameInGreetings && typeof profileData?.fullName === "string"
+          ? profileData.fullName.trim().split(/\s+/)[0]
+          : "";
+        greeting = `I'm Nova. ${firstName ? `Welcome, ${firstName}. ` : ""}What would help you most today?`;
       }
 
       setMessages([{ role: "model", parts: [{ text: greeting }] }]);

@@ -297,14 +297,14 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-primary/10 text-primary rounded-md border border-primary/25">
-                    Stage {step + 1} of {steps.length}
+                    Step {step + 1} of {steps.length}
                   </span>
                   <span className="text-xs font-bold text-text-muted">
-                    {Math.round(((step + 1) / steps.length) * 100)}% Synchronised
+                    One question at a time
                   </span>
                 </div>
                 <span className="text-xs font-mono font-bold text-text-muted">
-                  Setting Up Nova Blaze
+                  Your pace, your choice
                 </span>
               </div>
               
