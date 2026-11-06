@@ -859,7 +859,7 @@ const Header = ({
           <div className={cn("h-3 w-3 rounded-full transition-colors duration-500 shadow-lg", 
             burnoutRisk?.toLowerCase() === 'stable' ? "bg-success shadow-success/50" : 
             burnoutRisk?.toLowerCase() === 'elevated' ? "bg-warning shadow-warning/50" : 
-            "bg-destructive shadow-destructive/50 pulse-indicator"
+            burnoutRisk ? "bg-destructive" : "bg-text-muted"
           )} />
           {/* Tooltip for at-a-glance health monitoring */}
           <div className="absolute left-0 top-6 scale-0 group-hover:scale-100 transition-all z-50 bg-card border border-border px-3 py-1.5 rounded-lg shadow-xl shrink-0 whitespace-nowrap">
@@ -882,14 +882,6 @@ const Header = ({
         )}
       </h2>
       <p className="text-text-muted text-base leading-relaxed  font-medium">
-        {activeTab === "home" &&
-          (burnoutRisk === "Elevated"
-            ? "Your recent check-ins point to elevated strain. A protected reset today would help."
-            : burnoutRisk === "Moderate"
-            ? "Things look manageable, but worth keeping an eye on your energy today."
-            : burnoutRisk === "Stable"
-            ? "Your baseline looks steady. Keep doing what's working."
-            : "Log a check-in to get a real read on your baseline today.")}
         {activeTab === "recovery_intelligence" &&
           "Nova's read on what's worth your attention right now - not a list of everything you could do."}
         {activeTab === "diagnose" &&
@@ -1001,7 +993,7 @@ const Header = ({
               title="Somatic Reset (60s)"
               aria-label="Somatic Reset, 60 seconds"
             >
-              <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
+              <HeartPulse className="w-4 h-4" aria-hidden="true" />
               <span className="sr-only">Somatic Reset</span>
             </button>
             <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
@@ -1062,11 +1054,6 @@ export default function App() {
   // every API call).
   const isSuperAdminUser = isOwnerBootstrapEmail(user?.email) || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
-
-  // Computed once rather than inline in the animate prop - regenerating these
-  // on every render would make the sparkle burst's trajectories visibly jump
-  // mid-animation if anything causes a re-render while it's looping.
-  const sparkleOffsets = useMemo(() => [...Array(10)].map(() => 50 + Math.random() * 60), []);
 
   // Opportunistically build the real-signal data behind the Explainable
   // Recovery Score / archetype-evolution work. Calendar computes locally from
@@ -2431,37 +2418,8 @@ export default function App() {
               role="status"
               aria-live="polite"
             >
-              {/* Floating Sparkle Particles Burst */}
-              {[...Array(10)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ scale: 0, x: 0, y: 0, opacity: 1 }}
-                  animate={{
-                    scale: [0, 1.3, 0],
-                    x: [
-                      0,
-                      Math.sin((i * 2 * Math.PI) / 10) *
-                        sparkleOffsets[i],
-                    ],
-                    y: [
-                      0,
-                      Math.cos((i * 2 * Math.PI) / 10) *
-                        sparkleOffsets[i],
-                    ],
-                    opacity: [1, 1, 0],
-                  }}
-                  transition={{
-                    duration: 1.2,
-                    ease: "easeOut",
-                    repeat: Infinity,
-                    repeatDelay: 0.6,
-                  }}
-                  className="absolute w-2 h-2 rounded-full bg-warning pointer-events-none"
-                  style={{ left: "50%", top: "50%", filter: "blur(0.5px)" }}
-                />
-              ))}
               <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center text-primary relative z-10 shrink-0">
-                <Trophy className="w-6 h-6 animate-bounce" />
+                <Trophy className="w-6 h-6" />
               </div>
               <div className="relative z-10">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
@@ -2547,34 +2505,44 @@ export default function App() {
             <ErrorBoundary level="section" sectionName={activeTab} key={activeTab}>
             <>
             {activeTab === "home" && (
-              <HomeSection
-                onChatRequest={(voice) => {
-                  setActiveTab("nova");
-                  if (voice) setNovaAutoVoiceRequested(true);
-                }}
-                onEnergyRequest={() => setActiveTab("recover")}
-                onDiagnoseRequest={() => setActiveTab("diagnose")}
-                // Only these five are swapped for sample content during a
-                // demo session - everything below (callbacks, badges,
-                // etc.) stays wired to the visitor's real, honest, empty
-                // account. See isDemoSession above and demo-data.ts.
-                fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
-                stats={isDemoSession ? DEMO_STATS : stats}
-                onClaimDaily={handleClaimDaily}
-                hasClaimedDaily={hasClaimedDaily}
-                shipStage={shipStage}
-                energyLevel={isDemoSession ? DEMO_ENERGY_LEVEL : energyLevel}
-                burnoutRisk={isDemoSession ? DEMO_BURNOUT_RISK : burnoutRisk}
-                onOpenCheckIn={() => setShowCheckIn(true)}
-                pulseHistory={isDemoSession ? DEMO_PULSE_HISTORY : pulseHistory}
-                onAwardPoints={awardPoints}
-                onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
-                onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
-                onUpdatePulseHistory={handleUpdatePulseHistory}
-                onLogJourney={logJourney}
-                isDemoSession={isDemoSession}
-                onShipStageChange={setShipStage}
-              />
+              <section aria-labelledby="today-question" className="mx-auto max-w-4xl">
+                <h2 id="today-question" className="font-display text-3xl sm:text-4xl text-text-main">What would help right now?</h2>
+                <div className="flex flex-col sm:flex-row gap-3 mt-6 mb-10">
+                  <button className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
+                  <button className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
+                </div>
+                <details>
+                  <summary className="cursor-pointer py-4 text-text-muted">My check-ins and recovery progress</summary>
+                  <HomeSection
+                    onChatRequest={(voice) => {
+                      setActiveTab("nova");
+                      if (voice) setNovaAutoVoiceRequested(true);
+                    }}
+                    onEnergyRequest={() => setActiveTab("recover")}
+                    onDiagnoseRequest={() => setActiveTab("diagnose")}
+                    // Only these five are swapped for sample content during a
+                    // demo session - everything below (callbacks, badges,
+                    // etc.) stays wired to the visitor's real, honest, empty
+                    // account. See isDemoSession above and demo-data.ts.
+                    fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
+                    stats={isDemoSession ? DEMO_STATS : stats}
+                    onClaimDaily={handleClaimDaily}
+                    hasClaimedDaily={hasClaimedDaily}
+                    shipStage={shipStage}
+                    energyLevel={isDemoSession ? DEMO_ENERGY_LEVEL : energyLevel}
+                    burnoutRisk={isDemoSession ? DEMO_BURNOUT_RISK : burnoutRisk}
+                    onOpenCheckIn={() => setShowCheckIn(true)}
+                    pulseHistory={isDemoSession ? DEMO_PULSE_HISTORY : pulseHistory}
+                    onAwardPoints={awardPoints}
+                    onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
+                    onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
+                    onUpdatePulseHistory={handleUpdatePulseHistory}
+                    onLogJourney={logJourney}
+                    isDemoSession={isDemoSession}
+                    onShipStageChange={setShipStage}
+                  />
+                </details>
+              </section>
             )}
 
             {activeTab === "plan" && (

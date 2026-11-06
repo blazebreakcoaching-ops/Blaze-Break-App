@@ -272,12 +272,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
   const CurrentIcon = steps[step].icon;
 
   return (
-    <div className="ember-shell ember-sanctuary dark min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 relative selection:bg-primary/20 selection:text-primary font-sans text-text-main">
+    <div className="ember-shell ember-sanctuary min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 relative selection:bg-primary/20 selection:text-primary font-sans text-text-main">
       {/* Background aesthetic */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
         <div className="absolute bottom-10 left-1/4 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-[160px] pointer-events-none" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#473124_1px,transparent_1px),linear-gradient(to_bottom,#473124_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25" />
       </div>
 
       <div className="max-w-3xl w-full relative z-10 my-12">
