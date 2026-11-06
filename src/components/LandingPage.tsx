@@ -8,7 +8,7 @@ import type { AppearanceMode } from '../lib/appearance-theme';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
-import { readableSignInError } from '../lib/readable-signin-error';
+import { readableSignInError, readablePasswordResetError } from '../lib/readable-signin-error';
 import type { LegalDocumentType } from './LegalDocumentModal';
 
 // Lazy - this pulls in the `qrcode` library, which has no reason to load
@@ -343,7 +343,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
       await sendPasswordReset(email);
       setResetLinkSent(true);
     } catch (err: any) {
-      setAuthError(err?.message || 'Something went wrong. Please try again.');
+      setAuthError(readablePasswordResetError(err));
     } finally {
       setEmailAuthSubmitting(false);
     }
@@ -539,7 +539,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                     </p>
                     <button
                       type="button"
-                      onClick={() => setAuthMode('signin')}
+                      onClick={() => { setResetLinkSent(false); setAuthMode('signin'); }}
                       className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-2"
                     >
                       <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
@@ -743,7 +743,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                       <div className="text-right -mt-1">
                         <button
                           type="button"
-                          onClick={() => { setAuthError(null); setAuthMode('forgot'); }}
+                          onClick={() => { setAuthError(null); setResetLinkSent(false); setAuthMode('forgot'); }}
                           className="text-xs font-bold text-text-muted hover:text-text-main transition-colors"
                         >
                           Forgot password?
