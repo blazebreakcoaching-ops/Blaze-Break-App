@@ -13,3 +13,6 @@ playwright-report/
 blob-report/
 firestore-debug.log
 ui-debug.log
+
+# Never commit short-lived GitHub OIDC credential files.
+gha-creds-*.json

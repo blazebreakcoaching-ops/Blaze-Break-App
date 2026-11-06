@@ -29,7 +29,8 @@ const firebase = load('firebase.json');
 const productionProject = aliases.production || aliases.default;
 const project = target === 'production' ? productionProject : aliases.staging;
 const database = firebase.firestore?.database;
-const service = 'blaze-break';
+// Use the actual isolated staging Cloud Run service name.
+const service = target === 'staging' ? 'blaze-break-staging' : 'blaze-break';
 const region = 'europe-west2';
 
 const results = [];

@@ -28,6 +28,7 @@ env:
   GCP_PROJECT_ID: gen-lang-client-0537893432
   CLOUD_RUN_SERVICE: blaze-break
   CLOUD_RUN_REGION: europe-west2
+  FIRESTORE_DATABASE: ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
 
 jobs:
   deploy:
@@ -54,10 +55,50 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
-      - name: Verify federated authentication (no deployment)
+      - name: Verify federated authentication and read-only target access
         run: |
           gcloud auth print-access-token > /dev/null
-          echo 'Google Cloud federated authentication succeeded.'
+          gcloud run services describe "$CLOUD_RUN_SERVICE" \
+            --region "$CLOUD_RUN_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --format='value(metadata.name)' > /dev/null
+          gcloud firestore databases describe \
+            --database "$FIRESTORE_DATABASE" \
+            --project "$GCP_PROJECT_ID" \
+            --format='value(name)' > /dev/null
+          echo 'Google Cloud, Cloud Run and named Firestore access verified; no deployment performed.'
+
+      - name: Verify temporary Google credentials are excluded from build source
+        if: ${{ inputs.auth_only == false }}
+        run: |
+          test -f .gcloudignore
+          if gcloud meta list-files-for-upload | grep -E '(^|/)gha-creds-[^/]+\.json      # Google's side - nothing to build or push locally in this job.
+      - name: Deploy to Cloud Run
+        if: ${{ inputs.auth_only == false }}
+        run: |
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --source . \
+            --region "$CLOUD_RUN_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --update-env-vars "FIREBASE_PROJECT_ID=$GCP_PROJECT_ID" \
+            --quiet
+
+      - name: Set up Node.js (for the Firebase CLI)
+        if: ${{ inputs.auth_only == false }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # firebase-tools reads the temporary GOOGLE_APPLICATION_CREDENTIALS
+      # exported by the auth action, not a long-lived JSON key.
+      - name: Deploy Firestore rules + indexes
+        if: ${{ inputs.auth_only == false }}
+        run: npx firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project "$GCP_PROJECT_ID" --non-interactive
+; then
+            echo "::error::Temporary Google credentials would be included in the Cloud Run upload."
+            exit 1
+          fi
+          echo 'Cloud Run upload excludes temporary Google credentials.'
 
       # --source builds the container via Cloud Build + Buildpacks on
       # Google's side - nothing to build or push locally in this job.
