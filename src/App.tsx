@@ -122,6 +122,7 @@ import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalen
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
+import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigation";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
 import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
@@ -394,12 +395,6 @@ export const ALL_TABS: {
 const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, tier: SubscriptionTier) =>
   resolveTabVisibility(t, role, tier, hasSubscriptionEntitlement).visible;
 
-// A calmer default for individual customers. Every existing tab is retained;
-// choosing "Explore all tools" reveals the full role/entitlement-gated list.
-const CUSTOMER_STARTER_TABS = new Set(["home", "nova", "plan"]);
-const isCustomerRole = (role: string | undefined) =>
-  ["individual", "employee", "executive"].includes(role ?? "individual");
-
 const Sidebar = ({
   activeTab,
   setActiveTab,
@@ -476,10 +471,9 @@ const Sidebar = ({
     return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
-  const simplified = isCustomerRole(authRole) && !showAllTools;
   const tabs = ALL_TABS.filter((t) =>
     isTabVisible(t, authRole, currentTier) &&
-    (!simplified || CUSTOMER_STARTER_TABS.has(t.id) || t.id === activeTab)
+    shouldShowCustomerNavTab(authRole, showAllTools, t.id, activeTab)
   );
   // "My Team" is gated on a real, admin-assigned backend fact (teamManagers),
   // not the authRole self-selection every other tab above uses - so it's
@@ -3142,7 +3136,7 @@ export default function App() {
                 {ALL_TABS.filter((t) =>
                   t.group === "recovery_tools" &&
                   isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
-                  (showAllTools || !isCustomerRole(effectiveRole) || t.id === activeTab)
+                  shouldShowCustomerNavTab(effectiveRole, showAllTools, t.id, activeTab)
                 ).map((tab) => (
                   <button
                     key={tab.id}
@@ -3164,10 +3158,9 @@ export default function App() {
           </AnimatePresence>
           <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-2 gap-2">
             {(() => {
-              const simplified = isCustomerRole(effectiveRole) && !showAllTools;
               const visibleTabs = ALL_TABS.filter((t) =>
                 isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
-                (!simplified || CUSTOMER_STARTER_TABS.has(t.id) || t.id === activeTab),
+                shouldShowCustomerNavTab(effectiveRole, showAllTools, t.id, activeTab),
               );
               const renderedGroups = new Set<string>();
               return visibleTabs.map((tab) => {

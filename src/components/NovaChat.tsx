@@ -961,8 +961,15 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <NovaToneControl value={novaTone} onChange={handleToneChange} />
-          <NovaStyleControl value={questioningStyle} onChange={handleStyleChange} />
+          <details className="text-sm text-text-muted">
+            <summary className="cursor-pointer px-2 py-2 rounded-lg hover:text-text-main focus-visible:outline-2 focus-visible:outline-primary">
+              Preferences
+            </summary>
+            <div className="flex flex-wrap gap-2 items-center py-2">
+              <NovaToneControl value={novaTone} onChange={handleToneChange} />
+              <NovaStyleControl value={questioningStyle} onChange={handleStyleChange} />
+            </div>
+          </details>
           {voiceFeatureEnabled && (
             <button
               onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}

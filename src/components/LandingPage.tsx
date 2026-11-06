@@ -323,10 +323,19 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
             <AppearanceMenu mode={themeMode ?? 'system'} onChange={setThemeMode} compact />
           )}
           <button
-            onClick={handleStartRequest}
+            onClick={() => {
+              // Anonymous bootstrap sessions must not be mistaken for real
+              // signed-in accounts. Sign in opens the existing auth modal.
+              if (user && !user.isAnonymous) {
+                onStart();
+              } else {
+                setAuthMode('signin');
+                setShowAuthModal(true);
+              }
+            }}
             className="text-sm text-text-main underline underline-offset-4 px-3 py-3"
           >
-            {user ? 'Continue' : 'Sign in'}
+            {user && !user.isAnonymous ? 'Continue' : 'Sign in'}
           </button>
         </div>
       </nav>
