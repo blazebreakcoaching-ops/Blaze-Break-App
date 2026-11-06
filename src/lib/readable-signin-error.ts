@@ -18,12 +18,21 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth/invalid-email': 'Please check the email address and try again.',
   'auth/too-many-requests': 'Too many attempts. Please try again later.',
   'auth/network-request-failed': 'The sign-in service could not be reached. Check your connection and try again.',
+  'auth/configuration-not-found': 'This sign-in provider has not been configured for this Firebase environment.',
+  'auth/user-disabled': 'This account has been disabled. Please contact support.',
+  'auth/operation-not-supported-in-this-environment': 'This environment does not support this sign-in method. Try email sign-in.',
+  'auth/unauthorized-continue-uri': 'The preview address is not authorised for this sign-in flow.',
 };
 
 export function readableSignInError(error: unknown): string {
-  const code = error && typeof error === 'object' && 'code' in error
-    ? String((error as { code?: unknown }).code)
-    : '';
-  return AUTH_ERROR_MESSAGES[code] ??
-    'We could not complete sign-in. Please try again or contact support if it continues.';
+  const supplied = error && typeof error === 'object' && 'code' in error
+    ? (error as { code?: unknown }).code : undefined;
+  const message = error instanceof Error ? error.message : '';
+  // Only the following exact app-authored message is permitted verbatim.
+  if (message === 'An account with this email already exists. Try signing in instead.') return message;
+  const suppliedCode = typeof supplied === 'string' && /^auth\/[a-z][a-z0-9-]{1,63}$/.test(supplied) ? supplied : '';
+  const code = suppliedCode || (message.match(/\bauth\/[a-z][a-z0-9-]{1,63}\b/)?.[0] ?? '');
+  if (Object.prototype.hasOwnProperty.call(AUTH_ERROR_MESSAGES, code)) return AUTH_ERROR_MESSAGES[code];
+  if (code) return 'We could not complete sign-in (reference: ' + code + '). Please contact support with this reference only.';
+  return 'We could not complete sign-in. Please try again or contact support if it continues.';
 }

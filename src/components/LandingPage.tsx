@@ -97,6 +97,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authErrorSource, setAuthErrorSource] = useState<'social' | 'email'>('email');
   const [emailAuthSubmitting, setEmailAuthSubmitting] = useState(false);
   const [resetLinkSent, setResetLinkSent] = useState(false);
   // True once "Generate a strong password" has been used this signup
@@ -206,6 +207,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
   const handleGoogleSignIn = async () => {
     try {
       setAuthError(null);
+      setAuthErrorSource('social');
       setSigningInProvider('google');
       const { isNewUser } = await signIn();
       if (isNewUser) {
@@ -224,6 +226,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
   const handleMicrosoftSignIn = async () => {
     try {
       setAuthError(null);
+      setAuthErrorSource('social');
       setSigningInProvider('microsoft');
       const { isNewUser } = await signInWithMicrosoft();
       if (isNewUser) {
@@ -233,7 +236,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
         finishOnboarding();
       }
     } catch (e) {
-      console.error("Sign up failed:", e);
+      setAuthError(readableSignInError(e));
     } finally {
       setSigningInProvider(null);
     }
@@ -242,6 +245,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
   const handleFacebookSignIn = async () => {
     try {
       setAuthError(null);
+      setAuthErrorSource('social');
       setSigningInProvider('facebook');
       const { isNewUser } = await signInWithFacebook();
       if (isNewUser) {
@@ -251,7 +255,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
         finishOnboarding();
       }
     } catch (e) {
-      console.error("Sign up failed:", e);
+      setAuthError(readableSignInError(e));
     } finally {
       setSigningInProvider(null);
     }
@@ -259,6 +263,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
 
   const handleEmailAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthErrorSource('email');
     setAuthError(null);
     if (authMode === 'signup' && password !== confirmPassword) {
       setAuthError("Those passwords don't match.");
@@ -574,7 +579,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
 
                   {/* Keep provider failures visible; previously a failed OAuth
                       popup silently returned to the same screen. */}
-                  {authError && (
+                  {authError && authErrorSource === 'social' && (
                     <p role="alert" aria-live="assertive" className="text-xs text-destructive leading-relaxed">
                       {authError}
                     </p>
@@ -700,6 +705,9 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                       </div>
                     )}
 
+                    {authError && authErrorSource === 'email' && (
+                      <p role="alert" aria-live="assertive" className="text-xs text-destructive leading-relaxed">{authError}</p>
+                    )}
                     <button
                       type="submit"
                       disabled={emailAuthSubmitting || (authMode === 'signup' && !legalAgreed)}

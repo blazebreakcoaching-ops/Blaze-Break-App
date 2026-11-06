@@ -120,6 +120,12 @@ export async function continueAsGuest(authInstance: FirebaseAuth): Promise<void>
   }
 }
 
+// Returning customers sign in directly; never try to link their credentials
+// to the auto-created anonymous demo identity first.
+export async function signInExistingEmail(authInstance: FirebaseAuth, email: string, password: string) {
+  return signInWithEmailAndPassword(authInstance, email, password);
+}
+
 export async function signInWithGoogle(authInstance: FirebaseAuth) {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -485,27 +491,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithEmail = async (email: string, password: string) => {
-    try {
-      if (auth.currentUser?.isAnonymous) {
-        const credential = EmailAuthProvider.credential(email, password);
-        await linkWithCredential(auth.currentUser, credential);
-        return;
-      }
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (e: any) {
-      if (e?.code === 'auth/email-already-in-use' || e?.code === 'auth/credential-already-in-use') {
-        // This email already belongs to someone else's real, pre-existing
-        // account, so linking the anonymous session to it can't work -
-        // sign straight into that real account with the same email/
-        // password already in hand instead. This abandons the anonymous
-        // session's data, same as signIn()'s Google fallback above, since
-        // the collision has already proven this was never really the
-        // anonymous session's identity to keep.
-        await signInWithEmailAndPassword(auth, email, password);
-        return;
-      }
-      throw e;
-    }
+    await signInExistingEmail(auth, email, password);
   };
 
   // Deliberately NOT Firebase's own sendPasswordResetEmail() - the reset

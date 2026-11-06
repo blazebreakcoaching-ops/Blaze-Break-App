@@ -27,14 +27,15 @@ vi.mock('firebase/auth', async () => {
     linkWithPopup: vi.fn(),
     signInWithCredential: vi.fn(),
     signInAnonymously: vi.fn(),
+    signInWithEmailAndPassword: vi.fn(),
     GoogleAuthProvider,
     OAuthProvider,
     FacebookAuthProvider,
   };
 });
 
-import { signInWithPopup, linkWithPopup, signInWithCredential, signInAnonymously, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider } from 'firebase/auth';
-import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook, revokeGoogleCalendarAccess, continueAsGuest } from './auth';
+import { signInWithPopup, linkWithPopup, signInWithCredential, signInAnonymously, signInWithEmailAndPassword, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider } from 'firebase/auth';
+import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook, revokeGoogleCalendarAccess, continueAsGuest, signInExistingEmail } from './auth';
 
 const fakeAuth = (currentUser: { isAnonymous: boolean } | null): Auth => ({ currentUser } as unknown as Auth);
 const fakeResult = { user: { uid: 'real-uid' } } as any;
@@ -194,5 +195,16 @@ describe('continueAsGuest (the fix for "See a live demo" not re-establishing a s
   it('does not throw when the anonymous sign-in itself fails', async () => {
     (signInAnonymously as any).mockRejectedValue(new Error('offline'));
     await expect(continueAsGuest(fakeAuth(null))).resolves.toBeUndefined();
+  });
+});
+
+
+describe('returning customer email sign-in', () => {
+  it('signs into the existing identity even when there is an anonymous guest', async () => {
+    (signInWithEmailAndPassword as any).mockResolvedValue(fakeResult);
+    const result = await signInExistingEmail(fakeAuth({ isAnonymous: true }), 'person@example.test', 'test-password');
+    expect(result).toBe(fakeResult);
+    expect(signInWithEmailAndPassword).toHaveBeenCalledOnce();
+    expect(linkWithPopup).not.toHaveBeenCalled();
   });
 });
