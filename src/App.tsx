@@ -557,6 +557,7 @@ const Sidebar = ({
         </button>
       )}
 
+      {(!isCustomerRole(authRole) || showAllTools) && (
       <button
         onClick={onOpenLauncher}
         title="Quick find (Ctrl/Cmd + K)"
@@ -574,6 +575,7 @@ const Sidebar = ({
           </>
         )}
       </button>
+      )}
 
       <nav
         className={cn(
