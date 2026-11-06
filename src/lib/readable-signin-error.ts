@@ -36,3 +36,21 @@ export function readableSignInError(error: unknown): string {
   if (code) return 'We could not complete sign-in (reference: ' + code + '). Please contact support with this reference only.';
   return 'We could not complete sign-in. Please try again or contact support if it continues.';
 }
+
+
+// Password recovery uses our Brevo-backed API, not Firebase's public
+// sign-in errors. Its network/server exceptions may contain internal
+// provider details, which should never appear in a visitor's UI.
+// Surface a small set of actionable messages by HTTP status only.
+export function readablePasswordResetError(error: unknown): string {
+  const status = error && typeof error === 'object' && 'status' in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+  if (status === 429) {
+    return 'Too many password reset attempts. Please try again later.';
+  }
+  if (status === 0) {
+    return 'Could not reach the password reset service. Check your connection and try again.';
+  }
+  return 'Password recovery is unavailable right now. Please try again later or contact support.';
+}
