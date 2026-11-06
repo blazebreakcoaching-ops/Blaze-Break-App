@@ -68,6 +68,7 @@ const ActionEngine = lazy(() => import("./components/ActionEngine.tsx").then(m =
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
 const NovaAgenticJourney = lazy(() => import("./components/NovaAgenticJourney.tsx").then(m => ({ default: m.NovaAgenticJourney })));
 const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => ({ default: m.Walkthrough })));
+const NovaGuide = lazy(() => import("./components/NovaGuide.tsx").then(m => ({ default: m.NovaGuide })));
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 const CommandPalette = lazy(() => import("./components/CommandPalette.tsx").then(m => ({ default: m.CommandPalette })));
@@ -123,6 +124,7 @@ import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCir
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
 import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigation";
+import { novaGuideInviteKey } from "./lib/nova-guide";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
 import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
@@ -956,8 +958,8 @@ const Header = ({
           <button
             onClick={onOpenTour}
             className="h-12 flex items-center gap-2 px-4 bg-primary/10 hover:bg-primary/20 text-primary dark:text-primary border border-primary/20 rounded-full text-xs font-bold uppercase tracking-wider transition-all scale-[1] hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
-            title="Interactive System Walkthrough"
-            aria-label="Recovery Tour: Interactive System Walkthrough"
+            title="Guided tour — explain this page"
+            aria-label="Guided tour: explain this page"
           >
             <Compass className="w-3.5 h-3.5" aria-hidden="true" />
             <span className="sr-only">Recovery Tour</span>
@@ -1235,6 +1237,40 @@ export default function App() {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const [showNovaGuide, setShowNovaGuide] = useState(false);
+  const [novaGuideStartPage, setNovaGuideStartPage] = useState("welcome");
+  const [showNovaGuideInvite, setShowNovaGuideInvite] = useState(false);
+
+  // Only a small, dismissible invitation appears on Today, never an
+  // automatic modal. Remember dismissal per account, not across users on
+  // a shared browser. No health data or coaching messages are stored.
+  useEffect(() => {
+    setShowNovaGuide(false);
+    if (!user?.uid || !isCustomerRole(effectiveRole)) {
+      setShowNovaGuideInvite(false);
+      return;
+    }
+    try {
+      setShowNovaGuideInvite(localStorage.getItem(novaGuideInviteKey(user.uid)) !== 'dismissed');
+    } catch {
+      setShowNovaGuideInvite(true);
+    }
+  }, [user?.uid, effectiveRole]);
+
+  const dismissNovaGuideInvite = () => {
+    if (user?.uid) {
+      try { localStorage.setItem(novaGuideInviteKey(user.uid), 'dismissed'); } catch {
+        // Guide use and dismissal must work if browser storage is blocked.
+      }
+    }
+    setShowNovaGuideInvite(false);
+  };
+
+  const launchNovaGuide = (page: string) => {
+    setNovaGuideStartPage(page);
+    setShowNovaGuide(true);
+    dismissNovaGuideInvite();
+  };
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   // One-shot flag consumed by LandingPage's own initialAuthModalOpen
   // effect - set true right before routing a demo session back to
@@ -1271,6 +1307,8 @@ export default function App() {
   // each chunk's fetch until actually needed without touching animations.
   const [walkthroughReadyToMount, setWalkthroughReadyToMount] = useState(false);
   useEffect(() => { if (showWalkthrough) setWalkthroughReadyToMount(true); }, [showWalkthrough]);
+  const [novaGuideReadyToMount, setNovaGuideReadyToMount] = useState(false);
+  useEffect(() => { if (showNovaGuide) setNovaGuideReadyToMount(true); }, [showNovaGuide]);
   const [launcherReadyToMount, setLauncherReadyToMount] = useState(false);
   useEffect(() => { if (showLauncher) setLauncherReadyToMount(true); }, [showLauncher]);
 
@@ -2493,7 +2531,7 @@ export default function App() {
           themeMode={themeMode}
           setThemeMode={setThemeMode}
           onOpenSettings={() => setShowSettings(true)}
-          onOpenTour={() => setShowWalkthrough(true)}
+          onOpenTour={() => isCustomerRole(effectiveRole) ? launchNovaGuide(activeTab) : setShowWalkthrough(true)}
           onSomaticReset={() => setShowSomaticReset(true)}
           profile={stats.profile}
           burnoutRisk={burnoutRisk}
@@ -2543,6 +2581,25 @@ export default function App() {
                   <button className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
                   <button className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
                 </div>
+                {showNovaGuideInvite && user?.uid && isCustomerRole(effectiveRole) && !postOnboardingProfile && (
+                  <div className="mb-8 max-w-xl rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 flex items-start gap-4">
+                    <div className="shrink-0 h-11 w-11 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                      <Sparkles className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <p className="text-sm font-semibold text-text-main">New here? Nova can show you around.</p>
+                      <p className="text-sm text-text-muted">Five little steps. Simple pictures. Skip whenever you like.</p>
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <button type="button" onClick={() => launchNovaGuide('welcome')} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-primary">
+                          Show me around
+                        </button>
+                        <button type="button" onClick={dismissNovaGuideInvite} className="rounded-xl px-3 py-2.5 text-sm text-text-muted underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary">
+                          Not now
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <details>
                   <summary className="cursor-pointer py-4 text-text-muted">My check-ins and recovery progress</summary>
                   <HomeSection
@@ -3264,6 +3321,20 @@ export default function App() {
               isOpen={showWalkthrough}
               onClose={() => setShowWalkthrough(false)}
               onAwardPoints={awardPoints}
+            />
+          </Suspense>
+        )}
+        {novaGuideReadyToMount && isCustomerRole(effectiveRole) && (
+          <Suspense fallback={null}>
+            <NovaGuide
+              isOpen={showNovaGuide}
+              startPage={novaGuideStartPage}
+              accountId={user?.uid}
+              onClose={() => setShowNovaGuide(false)}
+              onNavigate={(tab) => {
+                safeSetActiveTab(tab);
+                setShowNovaGuide(false);
+              }}
             />
           </Suspense>
         )}
