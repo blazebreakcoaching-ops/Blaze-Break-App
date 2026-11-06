@@ -65,6 +65,15 @@ jobs:
           gcloud auth print-access-token > /dev/null
           echo 'Google Cloud federated authentication succeeded.'
 
+      # The auth action creates a short-lived credential file in the workspace.
+      # Never upload that file as Cloud Build source. The temporary ignore file
+      # exists only on the GitHub runner and is not committed to the repository.
+      - name: Exclude credential files from Cloud Run source
+        if: ${{ github.event_name == 'push' || inputs.auth_only == false }}
+        run: |
+          printf '%s\n' '.git' '.gitignore' '#!include:.gitignore' 'gha-creds-*.json' > .gcloudignore
+          grep -Fq 'gha-creds-*.json' .gcloudignore
+
       # --source builds the container via Cloud Build + Buildpacks on
       # Google's side - nothing to build or push locally in this job.
       - name: Deploy to Cloud Run
