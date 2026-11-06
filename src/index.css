@@ -591,6 +591,74 @@
     linear-gradient(90deg, #100f0e 0%, rgba(16, 15, 14, .96) 28%, rgba(16, 15, 14, .62) 57%, rgba(16, 15, 14, .10) 100%),
     linear-gradient(0deg, #100f0e 0%, transparent 38%);
 }
+
+/* Cinematic Ember welcome, based on the existing approved sunset palette.
+   No external imagery, autoplay, motion or third-party tracking is added. */
+.ember-landing-hero {
+  min-height: min(820px, 100svh);
+  background: radial-gradient(ellipse 60% 50% at 82% 46%, var(--ember-halo), transparent 88%);
+}
+.ember-landing-hero::before {
+  filter: saturate(.82) contrast(1.09);
+  transform: scale(1.035);
+  opacity: .57;
+}
+.ember-landing-hero::after {
+  background:
+    linear-gradient(90deg, var(--background) 0%, color-mix(in srgb, var(--background) 94%, transparent) 31%, color-mix(in srgb, var(--background) 45%, transparent) 73%, transparent 100%),
+    linear-gradient(0deg, var(--background) 0%, transparent 45%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 80%, transparent) 0%, transparent 32%);
+}
+.dark .ember-landing-hero::before { opacity: .82; }
+.dark .ember-landing-hero::after {
+  background:
+    linear-gradient(90deg, #100f0e 0%, rgba(16,15,14,.96) 23%, rgba(16,15,14,.78) 47%, rgba(16,15,14,.27) 76%, rgba(16,15,14,.17) 100%),
+    linear-gradient(0deg, #100f0e 0%, transparent 46%),
+    linear-gradient(180deg, rgba(16,15,14,.83) 0%, transparent 33%);
+}
+.ember-landing-orb {
+  position: absolute;
+  z-index: 0;
+  right: clamp(0px, 5vw, 70px);
+  top: 24%;
+  width: min(32vw, 400px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 40% 29%, rgba(255,244,211,.86) 0%, rgba(255,184,122,.36) 5%, rgba(255,145,71,.17) 23%, rgba(152,55,36,.10) 47%, transparent 70%);
+  box-shadow: 0 0 90px rgba(248,137,70,.10);
+}
+.ember-landing-orb::before,
+.ember-landing-orb::after {
+  content: '';
+  position: absolute;
+  border: 1px solid rgba(202,118,65,.19);
+  border-radius: 50%;
+}
+.ember-landing-orb::before { inset: 19%; box-shadow: 0 0 0 48px rgba(246,143,70,.018), inset 0 0 60px rgba(245,143,76,.09); }
+.ember-landing-orb::after { inset: 32%; box-shadow: 0 0 70px rgba(246,143,76,.18); }
+.ember-landing-orb span {
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1.5rem;
+  text-align: center;
+  font-size: .67rem;
+  text-transform: uppercase;
+  letter-spacing: .27em;
+  color: var(--muted-foreground);
+}
+@media (max-width: 767px) {
+  .ember-landing-hero { min-height: 710px; }
+  .ember-landing-hero::before { background-position: 66% center; }
+  .ember-landing-orb { width: 300px; right: -155px; top: 30%; opacity: .52; }
+  .ember-landing-orb span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ember-landing-hero::before,
+  .ember-landing-orb { transition: none !important; animation: none !important; }
+}
+
 .ember-hero-content {
   position: relative;
   z-index: 1;
