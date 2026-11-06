@@ -386,3 +386,40 @@ test.describe('Real app (Phase 5N directive §4): shared-device and account-swit
     await expect(page.getByRole('button', { name: 'Nova Coach' })).toHaveCount(0);
   });
 });
+
+
+test('mobile sign-up keeps every action reachable on a short 320px screen', async ({ page }) => {
+  // This is the REAL landing page, not a screenshot or stub. No Firebase
+  // account or external provider call is made during this test.
+  await mockAvatarRequests(page);
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Create my free account' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Create your free account' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS('overflow-y', 'auto');
+
+  const bounds = await dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    };
+  });
+  expect(bounds.top).toBeGreaterThanOrEqual(-1);
+  expect(bounds.bottom).toBeLessThanOrEqual(569);
+  expect(bounds.scrollHeight).toBeGreaterThan(bounds.clientHeight);
+
+  // A real prospective beta tester must be able to reach the form submit
+  // even when all social options, legal consent and password fields appear.
+  const submit = dialog.locator('button[type="submit"]');
+  await submit.scrollIntoViewIfNeeded();
+  await expect(submit).toBeVisible();
+  const actionBounds = await submit.boundingBox();
+  expect(actionBounds).not.toBeNull();
+  expect(actionBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(569);
+});
