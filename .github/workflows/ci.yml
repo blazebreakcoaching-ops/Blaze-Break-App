@@ -45,6 +45,8 @@ jobs:
       # advisory was published against something in the tree, not a
       # standing backlog silently going unenforced.
       - name: Dependency audit (npm audit)
+        id: dependency_audit
+        continue-on-error: true
         run: npm audit --audit-level=high
 
       # tsc --noEmit, wired up as "lint" in package.json already -
@@ -69,3 +71,12 @@ jobs:
 
       - name: Test
         run: npm run test
+
+      # Keep the security audit as a hard CI gate, but let type-check,
+      # ESLint, build and tests run first so their results are visible
+      # even when a new dependency advisory is published.
+      - name: Enforce dependency audit result
+        if: ${{ always() && steps.dependency_audit.outcome == 'failure' }}
+        run: |
+          echo "::error::Dependency audit failed; fix high/critical vulnerabilities before merging."
+          exit 1
