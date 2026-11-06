@@ -478,7 +478,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
               aria-modal="true"
               aria-labelledby="auth-modal-title"
               tabIndex={-1}
-              className="bg-surface border border-border rounded-xl p-8 max-w-md w-full shadow-lg relative z-10 flex flex-col space-y-6"
+              className="bg-surface border border-border rounded-xl p-5 sm:p-8 max-w-md w-full max-h-[calc(100dvh-2rem)] min-h-0 overflow-y-auto overscroll-contain shadow-lg relative z-10 flex flex-col space-y-6"
             >
               <button 
                 onClick={() => setShowAuthModal(false)}
