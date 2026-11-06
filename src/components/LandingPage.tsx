@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
+import { ArrowRight, ShieldCheck, BatteryLow, LogIn, ArrowLeft, Loader2, Mail, Lock, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { BlazeBrandLogo } from './BlazeBrandLogo';
 import { AppearanceMenu } from './AppearanceMenu';
@@ -309,24 +309,6 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
 
   return (
     <div className="ember-shell ember-sanctuary min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main">
-      {/* Premium Glow Aura Backdrops */}
-      <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-amber-500/5 rounded-full blur-[160px] pointer-events-none" />
-      {/* iOS Safari/Chrome (both WebKit) need -webkit-mask-image explicitly -
-          without it, WebKit ignores the mask entirely and this faint grid
-          pattern renders as a solid dark block over the hero heading
-          instead of fading out. Set via inline style rather than another
-          Tailwind arbitrary-property class so both the standard and
-          -webkit- prefixed properties are guaranteed to land, regardless
-          of what the build pipeline does or doesn't autoprefix. */}
-      <div
-        className="absolute inset-0 bg-[linear-gradient(to_right,#473124_1px,transparent_1px),linear-gradient(to_bottom,#473124_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-25"
-        style={{
-          maskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
-        }}
-      />
-
       {/* Navigation */}
       <nav aria-label="Primary navigation" className="ember-nav fixed top-0 w-full z-50 px-3 sm:px-8 py-3 sm:py-5 flex justify-between items-center border-b">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -348,7 +330,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
           </button>
           <button
             onClick={handleStartRequest}
-            className="btn-primary ember-orbit text-[10px] sm:text-xs uppercase tracking-widest px-4 sm:px-8 py-3 rounded-xl flex items-center gap-2"
+            className="text-sm text-text-main underline underline-offset-4 px-3 py-3"
           >
             {user ? 'Enter Suite' : 'Access Account'}
           </button>
@@ -357,33 +339,25 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
 
       {/* Hero Section */}
       <section className="ember-hero ember-landing-hero pt-36 sm:pt-44 pb-16 sm:pb-20 px-5 sm:px-10 lg:px-16 max-w-7xl mx-auto flex flex-col items-center text-center md:text-left relative z-10">
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-          className="ember-hero-content space-y-7"
-        >
-          <span className="ember-kicker inline-block px-4 py-1.5 rounded-full text-xs uppercase tracking-[0.2em] font-black">
-            A Recovery Method for High Performers
-          </span>
+        <div className="ember-hero-content space-y-6">
           <h1 className="ember-title ember-hero-title text-text-main max-w-5xl">
             High performance <br className="hidden sm:block" />
             without the <em>burnout.</em>
           </h1>
           <p className="ember-hero-subtitle max-w-2xl mx-auto md:mx-0 text-base sm:text-lg font-medium">
-            Scale ambition without self-destruction. Blaze Break helps you recognise overload, build practical recovery habits and protect your energy. Your burnout fingerprint comes from a self-assessment, not a biometric scan.
+            Take a moment to check in with yourself. Your Burnout Fingerprint starts with a short self-assessment.
           </p>
           <div className="ember-hero-actions pt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-center md:justify-start gap-3 sm:gap-4">
             <button
               onClick={handleStartRequest}
-              className="btn-primary ember-orbit w-full sm:w-auto justify-center px-6 sm:px-10 py-4 sm:py-5 rounded-xl font-bold uppercase tracking-[0.12em] sm:tracking-[0.2em] text-xs flex items-center gap-3 sm:gap-4 group"
+              className="btn-primary ember-orbit w-full sm:w-auto justify-center px-6 sm:px-10 py-4 sm:py-5 rounded-xl font-semibold text-base flex items-center gap-3 sm:gap-4 group"
             >
               Get Burnout Fingerprint
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
             <button
               onClick={onViewDemo}
-              className="ember-soft-action ember-orbit w-full sm:w-auto justify-center px-6 sm:px-10 py-4 sm:py-5 rounded-xl font-bold uppercase tracking-[0.12em] sm:tracking-[0.2em] text-xs flex items-center gap-3 sm:gap-4 group"
+              className="w-full sm:w-auto justify-center px-4 py-4 text-sm font-medium underline underline-offset-4 flex items-center gap-2 group"
             >
               See a live demo
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -407,88 +381,11 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
               <strong>Rejuvenate</strong><span>Make room to recover</span>
             </div>
           </div>
-        </motion.div>
-      </section>
-
-      {/* Value Prop Grid */}
-      <section className="py-16 px-6 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
-        <div className="ember-feature p-8 rounded-2xl transition-all duration-300 space-y-4">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-            <BatteryLow className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-bold text-text-main tracking-wide">Dynamic Energy Credits</h3>
-          <p className="text-text-muted text-xs leading-relaxed">
-            Time management is a delusion; energy capacity is everything. Map your schedule to a custom cognitive credit budget that helps you get ahead of midday crashes, not just react to them.
-          </p>
         </div>
-        <div className="ember-feature p-8 rounded-2xl transition-all duration-300 space-y-4">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-            <MessageSquareText className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-bold text-text-main tracking-wide">Nova Blaze Recovery Coach</h3>
-          <p className="text-text-muted text-xs leading-relaxed">
-            An analytical, slightly provocative AI coach designed for high performers. Nova identifies your over-responsibility loops and helps you simulate difficult boundary negotiations real-time.
-          </p>
-        </div>
-        <div className="ember-feature p-8 rounded-2xl transition-all duration-300 space-y-4">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-bold text-text-main tracking-wide">One-Tap Guardian Support</h3>
-          <p className="text-text-muted text-xs leading-relaxed">
-            A pre-set escalation network for high-stakes moments. Add trusted contacts once, then reach them in one tap when you need real support — no automatic monitoring, no biometric tracking, just a fast, private way to ask for help.
-          </p>
-        </div>
-      </section>
-
-      {/* Who it's for - names the audience explicitly rather than leaving
-          "high performers" as the only signal, so a specific reader sees
-          themselves described rather than a generic pitch. */}
-      <section className="py-16 px-6 max-w-7xl mx-auto relative z-10">
-        <div className="text-center max-w-2xl mx-auto mb-12 space-y-4">
-          <span className="inline-block px-4 py-1.5 bg-accent/10 border border-accent/20 text-[#9a3412] dark:text-accent rounded-full text-xs uppercase tracking-[0.2em] font-black">
-            Who this is built for
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-light tracking-tight text-text-main">
-            For people who can't just <span className="italic font-serif">"switch off."</span>
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="ember-feature p-8 rounded-2xl transition-all duration-300 space-y-4">
-            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-bold text-text-main tracking-wide">Founders &amp; Operators</h3>
-            <p className="text-text-muted text-xs leading-relaxed">
-              Building something from nothing, on a clock that never really stops. You've normalised exhaustion because stopping feels like losing ground you can't get back.
-            </p>
-          </div>
-          <div className="ember-feature p-8 rounded-2xl transition-all duration-300 space-y-4">
-            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-              <Briefcase className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-bold text-text-main tracking-wide">Senior Leaders &amp; Executives</h3>
-            <p className="text-text-muted text-xs leading-relaxed">
-              Carrying decisions other people never see, in a role where "I'm running on empty" isn't really something you get to say out loud.
-            </p>
-          </div>
-          <div className="ember-feature p-8 rounded-2xl transition-all duration-300 space-y-4">
-            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-              <Users className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-bold text-text-main tracking-wide">High-Stakes Professionals</h3>
-            <p className="text-text-muted text-xs leading-relaxed">
-              Consultants, clinicians, partners, anyone whose output is tied directly to hours they don't actually have left to give.
-            </p>
-          </div>
-        </div>
-        <p className="text-center text-text-muted text-sm max-w-xl mx-auto mt-12 leading-relaxed">
-          If your job has ever made someone say <span className="italic">"must be nice"</span> about a burnout you couldn't talk about - this was built with you specifically in mind, not as a generic wellness app repurposed for anyone.
-        </p>
       </section>
 
       {/* Footer */}
-      <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
+      <footer className="py-8 border-t border-border text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
           <BlazeBrandLogo className="w-8 h-8" decorative />
           <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
