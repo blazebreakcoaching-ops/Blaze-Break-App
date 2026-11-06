@@ -96,8 +96,8 @@ async function clickRobustly(page: Page, locator: Locator, attempts = 5) {
 async function startAnonymousDemo(page: Page) {
   await mockAvatarRequests(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'See a live demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 25_000 });
+  await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
+  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
   // WhatsNewModal.tsx mounts for ANY signed-in Firebase identity (App.tsx
   // gates it on plain `user`, anonymous included - unlike NovaFeedbackModal,
   // which is guest-only), so a brand-new anonymous demo session with no
@@ -115,7 +115,7 @@ async function openSignUpModal(page: Page) {
   // direct URL or state manipulation. The banner only renders for a demo
   // session, so it's reachable right after startAnonymousDemo().
   await clickRobustly(page, page.getByRole('button', { name: 'Sign up free' }));
-  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole('heading', { name: 'Create your free account' })).toBeVisible({ timeout: 10_000 });
 }
 
 async function submitRealSignUp(page: Page, email: string) {
@@ -179,7 +179,7 @@ async function completeRealOnboarding(page: Page, fullName: string) {
   await page.getByLabel('Full Name / Alias').fill(fullName);
   await page.getByRole('button', { name: 'Get started' }).click();
 
-  await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
   await dismissPostOnboardingModals(page);
   await dismissFeedbackModalIfOpen(page);
 }
@@ -213,7 +213,7 @@ async function dismissPostOnboardingModals(page: Page) {
 }
 
 async function openNovaTab(page: Page) {
-  await clickRobustly(page, page.getByRole('button', { name: 'Nova Coach' }));
+  await clickRobustly(page, page.getByRole('button', { name: 'Nova' }));
 }
 
 async function sendNovaMessage(page: Page, userText: string, replyText: string) {
@@ -269,7 +269,7 @@ test.describe('Real app (Phase 5N directive §3): registration and onboarding jo
     await clickRobustly(page, page.getByRole('button', { name: /access account|sign in/i }).first());
     await submitRealSignIn(page, email);
 
-    await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
     await dismissPostOnboardingModals(page);
     await dismissFeedbackModalIfOpen(page);
     await openNovaTab(page);
@@ -328,12 +328,12 @@ test.describe('Real app (Phase 5N directive §4): shared-device and account-swit
     await sendNovaMessage(page, secretA, 'Logged for the account only.');
 
     await signOut(page);
-    await expect(page.getByRole('button', { name: 'See a live demo' })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByRole('button', { name: 'Prefer to look around first? View a demo' })).toBeVisible({ timeout: 25_000 });
 
-    // A fresh anonymous visitor - the real "See a live demo" path, a new
+    // A fresh anonymous visitor - the real "Prefer to look around first? View a demo" path, a new
     // Firebase anonymous uid, never account A's.
-    await clickRobustly(page, page.getByRole('button', { name: 'See a live demo' }));
-    await expect(page.getByRole('button', { name: 'Nova Coach' })).toBeVisible({ timeout: 25_000 });
+    await clickRobustly(page, page.getByRole('button', { name: 'Prefer to look around first? View a demo' }));
+    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
     await dismissAnyOpenModal(page);
     await openNovaTab(page);
     await expect(page.getByText(secretA)).toHaveCount(0);
@@ -383,7 +383,7 @@ test.describe('Real app (Phase 5N directive §4): shared-device and account-swit
     await submitRealSignIn(page, email);
 
     await expect(page.getByText("Welcome. Let's take this one step at a time.")).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByRole('button', { name: 'Nova Coach' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Nova' })).toHaveCount(0);
   });
 });
 
