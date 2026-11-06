@@ -192,9 +192,9 @@ describe('continueAsGuest (the fix for "See a live demo" not re-establishing a s
     expect(signInAnonymously).not.toHaveBeenCalled();
   });
 
-  it('does not throw when the anonymous sign-in itself fails', async () => {
+  it('reports a real demo authentication failure instead of silently opening a broken preview', async () => {
     (signInAnonymously as any).mockRejectedValue(new Error('offline'));
-    await expect(continueAsGuest(fakeAuth(null))).resolves.toBeUndefined();
+    await expect(continueAsGuest(fakeAuth(null))).rejects.toThrow('offline');
   });
 });
 
