@@ -8,6 +8,7 @@ import type { AppearanceMode } from '../lib/appearance-theme';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
+import { readableSignInError } from '../lib/readable-signin-error';
 import type { LegalDocumentType } from './LegalDocumentModal';
 
 // Lazy - this pulls in the `qrcode` library, which has no reason to load
@@ -204,6 +205,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
 
   const handleGoogleSignIn = async () => {
     try {
+      setAuthError(null);
       setSigningInProvider('google');
       const { isNewUser } = await signIn();
       if (isNewUser) {
@@ -213,7 +215,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
         finishOnboarding();
       }
     } catch (e) {
-      console.error("Sign up failed:", e);
+      setAuthError(readableSignInError(e));
     } finally {
       setSigningInProvider(null);
     }
@@ -221,6 +223,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
 
   const handleMicrosoftSignIn = async () => {
     try {
+      setAuthError(null);
       setSigningInProvider('microsoft');
       const { isNewUser } = await signInWithMicrosoft();
       if (isNewUser) {
@@ -238,6 +241,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
 
   const handleFacebookSignIn = async () => {
     try {
+      setAuthError(null);
       setSigningInProvider('facebook');
       const { isNewUser } = await signInWithFacebook();
       if (isNewUser) {
@@ -287,7 +291,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
         finishOnboarding();
       }
     } catch (err: any) {
-      setAuthError(err?.message || 'Something went wrong. Please try again.');
+      setAuthError(readableSignInError(err));
     } finally {
       setEmailAuthSubmitting(false);
     }
@@ -556,7 +560,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                       className="mt-0.5 w-4 h-4 shrink-0 accent-primary cursor-pointer"
                     />
                     <span className="text-xs text-text-muted leading-normal">
-                      I agree to the Blaze Break{' '}
+                      {authMode === 'signup' ? 'To create an account, I agree to the Blaze Break' : 'For social sign-in, I agree to the Blaze Break'}{' '}
                       <button type="button" onClick={(e) => { e.preventDefault(); setLegalDocOpen('TERMS'); }} className="underline hover:text-text-main transition-colors">
                         Terms &amp; Conditions
                       </button>
@@ -568,6 +572,13 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                     </span>
                   </label>
 
+                  {/* Keep provider failures visible; previously a failed OAuth
+                      popup silently returned to the same screen. */}
+                  {authError && (
+                    <p role="alert" aria-live="assertive" className="text-xs text-destructive leading-relaxed">
+                      {authError}
+                    </p>
+                  )}
                   <div className="space-y-3 pt-2">
                     <button
                       onClick={handleGoogleSignIn}
@@ -688,12 +699,10 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                         </button>
                       </div>
                     )}
-                    {authError && (
-                      <p role="alert" className="text-xs text-destructive leading-relaxed">{authError}</p>
-                    )}
+
                     <button
                       type="submit"
-                      disabled={emailAuthSubmitting || !legalAgreed}
+                      disabled={emailAuthSubmitting || (authMode === 'signup' && !legalAgreed)}
                       className="w-full flex items-center justify-center gap-3 bg-primary text-primary-foreground font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15 disabled:opacity-50"
                     >
                       {emailAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
