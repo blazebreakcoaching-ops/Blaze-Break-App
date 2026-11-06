@@ -113,11 +113,8 @@ export const useAuth = () => useContext(AuthContext);
 // never be silently swapped for a fresh anonymous identity.
 export async function continueAsGuest(authInstance: FirebaseAuth): Promise<void> {
   if (authInstance.currentUser) return;
-  try {
-    await signInAnonymously(authInstance);
-  } catch (e) {
-    console.error("Anonymous sign-in failed - continuing without a signed-in session.", e);
-  }
+  // Only a deliberate demo click creates a guest account. Surface failures.
+  await signInAnonymously(authInstance);
 }
 
 // Returning customers sign in directly; never try to link their credentials
@@ -391,29 +388,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setMfaPending(false);
         setAppRole('individual');
 
-        if (explicitSignOutRef.current) {
-          // They just deliberately signed out - land them on a clean,
-          // properly-signed-out state instead of silently re-authenticating
-          // them as a new anonymous stranger who'd look like they need
-          // onboarding again.
-          explicitSignOutRef.current = false;
-        } else {
-          // Nobody signed in at all yet (not even anonymously) - this fires
-          // once, right after the app first loads for a brand-new visitor.
-          // Signing in anonymously here means every feature that reads
-          // auth.currentUser gets a real, Firestore-backed identity from the
-          // first moment, instead of a local-only/"demo" fallback.
-          try {
-            await signInAnonymously(auth);
-            // Don't set user/loading below for this invocation - that would
-            // briefly flash a logged-out state. onAuthStateChanged fires again
-            // momentarily with the real anonymous userRecord, and that
-            // invocation sets user/loading correctly instead.
-            return;
-          } catch (e) {
-            console.error("Anonymous sign-in failed - features requiring a signed-in user will be unavailable until the user signs in manually.", e);
-          }
-        }
+        // A new visitor stays signed out until they choose an action.
+        explicitSignOutRef.current = false;
       }
       setUser(userRecord);
       setEmailVerified(userRecord?.emailVerified ?? false);

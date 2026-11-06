@@ -2264,7 +2264,7 @@ export default function App() {
       <>
         <LandingPage
           onStart={() => setFlow("onboarding")}
-          onViewDemo={() => { void continueAsGuest().then(() => setFlow("app")); }}
+          onViewDemo={async () => { await continueAsGuest(); setFlow("app"); }}
           onOpenTrustCentre={() => setFlow("trust-centre")}
           themeMode={themeMode}
           setThemeMode={setThemeMode}

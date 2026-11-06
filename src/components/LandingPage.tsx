@@ -28,7 +28,7 @@ interface LandingPageProps {
   // on "landing" until they click something, precisely so nobody who
   // just wants to read the Terms/Privacy or look around gets swept into
   // either onboarding or this demo without asking.
-  onViewDemo: () => void;
+  onViewDemo: () => Promise<void>;
   onOpenTrustCentre: () => void;
   // Optional because App.tsx's dark mode state already defaults every
   // visitor to their system preference before this component ever
@@ -78,7 +78,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
   // modal - `authMode` picks which form is showing. Reset to a clean slate
   // every time the modal opens, so a previous attempt's typed password or
   // error message never lingers into the next visit.
-  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+  const [authMode, setAuthMode] = useState<AuthMode>('signup');
 
   useEffect(() => {
     if (initialAuthModalOpen) {
@@ -97,6 +97,9 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
+  const [marketingConsentNotice, setMarketingConsentNotice] = useState<string | null>(null);
   const [authErrorSource, setAuthErrorSource] = useState<'social' | 'email'>('email');
   const [emailAuthSubmitting, setEmailAuthSubmitting] = useState(false);
   const [resetLinkSent, setResetLinkSent] = useState(false);
@@ -152,6 +155,8 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
     setShowPostSignupMfaStep(false);
     setMfaJustEnabled(false);
     setLegalAgreed(false);
+    setMarketingOptIn(false);
+    setMarketingConsentNotice(null);
   }, [showAuthModal]);
 
   // The shared "finish onboarding" action, reached either by skipping the
@@ -187,10 +192,34 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
   };
 
   const handleStartRequest = () => {
-    if (user) {
+    if (user && !user.isAnonymous) {
       onStart();
     } else {
+      setAuthMode('signup');
+      setAuthError(null);
       setShowAuthModal(true);
+    }
+  };
+
+  const handleDemoRequest = async () => {
+    setDemoError(null);
+    try {
+      await onViewDemo();
+    } catch (error) {
+      setDemoError(readableSignInError(error));
+    }
+  };
+
+  const saveMarketingChoice = async () => {
+    if (!marketingOptIn) return;
+    try {
+      const res = await secureApiFetch('/api/marketing/preferences', {
+        method: 'POST', data: { optedIn: true, source: 'signup' },
+      });
+      if (!res.ok) throw new Error('Consent not saved');
+      setMarketingConsentNotice('Optional email updates preference saved. You can change it in Settings.');
+    } catch {
+      setMarketingConsentNotice('Your account is ready, but email updates were not enabled. You can retry in Settings.');
     }
   };
 
@@ -212,6 +241,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
       const { isNewUser } = await signIn();
       if (isNewUser) {
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
@@ -231,6 +261,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
       const { isNewUser } = await signInWithMicrosoft();
       if (isNewUser) {
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
@@ -250,6 +281,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
       const { isNewUser } = await signInWithFacebook();
       if (isNewUser) {
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
@@ -290,6 +322,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
         // needed, unlike the social providers) - always offer the
         // optional 2FA step here, same as after a fresh social signup.
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         await signInWithEmail(email, password);
@@ -375,18 +408,19 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
               onClick={handleStartRequest}
               className="btn-primary ember-orbit w-full sm:w-auto justify-center px-8 sm:px-10 py-4 sm:py-5 rounded-xl font-semibold text-base flex items-center gap-3 group"
             >
-              Start my check-in
+              Create my free account
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
             <p className="text-sm text-text-muted">
               One question at a time. At your own pace.
             </p>
             <button
-              onClick={onViewDemo}
+              onClick={() => { void handleDemoRequest(); }}
               className="text-sm font-medium text-text-main underline underline-offset-4 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             >
               Prefer to look around first? View a demo
             </button>
+            {demoError && <p role="alert" className="text-xs text-destructive">{demoError}</p>}
           </div>
         </div>
       </section>
@@ -458,7 +492,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                   <BlazeBrandLogo className="w-6 h-6" decorative />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
-                  {showPostSignupMfaStep ? 'Secure your account' : authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
+                  {showPostSignupMfaStep ? 'Secure your account' : authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your free account' : 'Sign in'}
                 </h3>
                 {showPostSignupMfaStep ? (
                   <p className="text-text-muted text-sm mt-1 leading-relaxed">
@@ -466,13 +500,14 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                   </p>
                 ) : authMode !== 'forgot' && (
                   <p className="text-text-muted text-sm mt-1 leading-relaxed">
-                    Register or login. Blaze Break is in controlled early access. Features may evolve. Data tools are for coaching support, not medical diagnosis. Optional Nova AI is a recovery coach, not a therapist.
+                    {authMode === 'signup' ? 'Create your free account to save your progress.' : 'Welcome back. Sign in to continue where you left off.'}
                   </p>
                 )}
               </div>
 
               {showPostSignupMfaStep ? (
                 <div className="space-y-4 pt-2">
+                  {marketingConsentNotice && <p role="status" className="text-xs text-text-muted">{marketingConsentNotice}</p>}
                   <Suspense fallback={null}>
                     <SecuritySettingsView onEnabled={() => setMfaJustEnabled(true)} />
                   </Suspense>
@@ -577,6 +612,17 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode,
                     </span>
                   </label>
 
+                  {authMode === 'signup' && (
+                    <label className="flex items-start gap-3 p-3 rounded-xl border border-border bg-surface cursor-pointer">
+                      <input type="checkbox" checked={marketingOptIn}
+                        onChange={(e) => setMarketingOptIn(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 shrink-0 accent-primary" />
+                      <span className="text-xs text-text-muted leading-relaxed">
+                        Email me optional Blaze Break news, practical tips and offers.
+                        I can unsubscribe anytime. Not required to use the app.
+                      </span>
+                    </label>
+                  )}
                   {/* Keep provider failures visible; previously a failed OAuth
                       popup silently returned to the same screen. */}
                   {authError && authErrorSource === 'social' && (
