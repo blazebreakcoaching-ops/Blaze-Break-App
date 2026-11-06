@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readableSignInError } from './readable-signin-error';
+import { readableSignInError, readablePasswordResetError } from './readable-signin-error';
 
 describe('customer sign-in error messages', () => {
   it('explains the common staging domain failure without exposing internal secrets', () => {
@@ -30,5 +30,40 @@ describe('customer sign-in error messages', () => {
   it('returns a generic message for unexpected errors instead of raw exceptions', () => {
     expect(readableSignInError(new Error('secret key!'))).not.toContain('secret');
     expect(readableSignInError(null)).toContain('could not complete');
+  });
+});
+
+describe('password recovery errors', () => {
+  it('shows a safe rate-limit message instead of exposing provider details', () => {
+    const error = Object.assign(new Error('Brevo failure: internal-key'), { status: 429 });
+    const result = readablePasswordResetError(error);
+    expect(result).toContain('Too many password reset attempts');
+    expect(result).not.toContain('Brevo');
+    expect(result).not.toContain('internal-key');
+  });
+
+  it('explains connection failures without exposing internal URLs', () => {
+    const error = Object.assign(new Error('https://internal.service.local:8888'), { status: 0 });
+    const result = readablePasswordResetError(error);
+    expect(result).toContain('Check your connection');
+    expect(result).not.toContain('internal.service');
+  });
+
+  it.each([400, 401, 403, 404, 500, 503, 504])(
+    'shows generic safe text for HTTP %i',
+    (status) => {
+      const error = Object.assign(new Error('Provider secret=123, account exists=true'), { status });
+      const result = readablePasswordResetError(error);
+      expect(result).toContain('Password recovery is unavailable');
+      expect(result).not.toContain('Provider');
+      expect(result).not.toContain('secret');
+      expect(result).not.toContain('account exists');
+    },
+  );
+
+  it('handles unexpected errors without revealing server text', () => {
+    const result = readablePasswordResetError('unexpected server diagnostic: token=123');
+    expect(result).toContain('Password recovery is unavailable');
+    expect(result).not.toContain('token=123');
   });
 });
