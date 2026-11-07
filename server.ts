@@ -10820,7 +10820,18 @@ const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid
   adminUids.forEach((uid) => {
     if (roster.has(uid) && !resolvedRoleByUid.has(uid)) ownerUids.add(uid);
   });
-  if (ownerUids.has(targetUid) && ownerUids.size <= 1) {
+  // A role document alone cannot prove that another owner can actually
+  // administer this company: their profile might now belong to a different
+  // organisation. Exclude those stale cross-company identities, using the
+  // same transactional read set that protects the roster mutation.
+  const activeOwners = new Set<string>();
+  for (const uid of ownerUids) {
+    const profileRef = db.collection("users").doc(uid);
+    const profileSnap = tx ? await tx.get(profileRef) : await profileRef.get();
+    const linked = profileSnap.exists ? profileSnap.data()?.organisationId : null;
+    if (!linked || linked === orgId) activeOwners.add(uid);
+  }
+  if (activeOwners.has(targetUid) && activeOwners.size <= 1) {
     throw new Error("Operation Rejected: Cannot remove or downgrade the last owner of this organisation.");
   }
 };
