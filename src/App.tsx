@@ -119,6 +119,7 @@ const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
 import { AccountStatusBanner } from "./components/AccountStatusBanner.tsx";
+import { AccountDataLoadGate } from "./components/AccountDataLoadGate";
 import { EmailVerificationBanner } from "./components/EmailVerificationBanner.tsx";
 import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted, setNovaLearningAllowedForUid } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
@@ -2399,21 +2400,14 @@ export default function App() {
     );
   }
 
-  // A failed read must never masquerade as a brand-new profile. Keep all
-  // data-writing surfaces closed until the right account loads successfully.
-  if (user?.uid && statsLoadError && (flow === "onboarding" || flow === "app" || (!user.isAnonymous && flow === "landing"))) {
-    return (
-      <main className="min-h-screen bg-background text-text-main flex items-center justify-center p-6">
-        <section role="alert" aria-labelledby="account-load-error-heading" className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-6">
-          <h1 id="account-load-error-heading" className="text-xl font-bold">We couldn't load your account</h1>
-          <p className="text-sm text-text-muted">Your saved information has not been changed. Check your connection and try again.</p>
-          <button type="button" className="btn-primary rounded-xl px-5 py-3" onClick={() => setStatsLoadRetry(n => n + 1)}>
-            Try again
-          </button>
-          <p className="text-xs text-text-muted">If this continues, contact support. Please do not create another account.</p>
-        </section>
-      </main>
-    );
+  // Registration, returning sign-in and app content must wait until
+  // Firestore confirms the current account's actual saved state. Otherwise
+  // failed reads could restart onboarding or overwrite real customer data.
+  if (user?.uid && (
+      statsLoadError && (flow === "app" || flow === "onboarding" || (!user.isAnonymous && flow === "landing")) ||
+      statsOwnerUid !== user.uid && (flow === "app" || flow === "onboarding")
+    )) {
+    return <AccountDataLoadGate error={statsLoadError} onRetry={() => setStatsLoadRetry(n => n + 1)} />;
   }
 
   if (flow === "onboarding") {
@@ -2503,17 +2497,9 @@ export default function App() {
     launcher: showLauncher,
   });
 
-  // React retains component state across Firebase sign-ins. Until the
-  // current UID's stats load, show no prior account's personal dashboard.
+  // No old account's data may appear while auth resolves.
   if (flow === "app" && (!user?.uid || statsOwnerUid !== user.uid)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-text-main" role="status" aria-live="polite">
-        <div className="flex items-center gap-3 p-6">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />
-          <span>Loading your account…</span>
-        </div>
-      </div>
-    );
+    return <AccountDataLoadGate error={false} onRetry={() => setStatsLoadRetry(n => n + 1)} />;
   }
 
   return (
