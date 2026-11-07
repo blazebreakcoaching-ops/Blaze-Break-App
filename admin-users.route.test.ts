@@ -230,23 +230,27 @@ describe('GET /api/admin/users/:uid', () => {
     expect(res.status).toBe(403);
   });
 
-  it('merges Auth account data with the Firestore profile and fingerprint docs', async () => {
+  it('returns account metadata without leaking private profile or recovery fingerprint', async () => {
     h.getUser.mockImplementationOnce(async (uid: string) => ({
       uid, email: `${uid}@test.dev`, emailVerified: true, displayName: 'Target User', disabled: false,
       customClaims: {}, metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: '2026-01-05T00:00:00.000Z' },
     }));
-    seedDoc('users/target_uid', { archetype: 'Founder on Fire' });
+    seedDoc('users/target_uid', { organisationId: 'company_a', archetype: 'Founder on Fire', privateJournal: 'never expose this' });
     seedDoc('users/target_uid/recovery/fingerprint', { summary: 'Early-stage burnout.' });
 
     const res = await request(app).get('/api/admin/users/target_uid').set(auth(OWNER));
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       uid: 'target_uid', email: 'target_uid@test.dev', emailVerified: true, displayName: 'Target User',
-      accessStatus: 'active', profile: { archetype: 'Founder on Fire' }, fingerprint: { summary: 'Early-stage burnout.' },
+      accessStatus: 'active', organisationId: 'company_a',
     });
+    expect(res.body).not.toHaveProperty('profile');
+    expect(res.body).not.toHaveProperty('fingerprint');
+    expect(JSON.stringify(res.body)).not.toContain('Early-stage burnout');
+    expect(JSON.stringify(res.body)).not.toContain('never expose this');
   });
 
-  it('reports accessStatus "disabled" for a disabled Auth account, and null profile/fingerprint when neither doc exists', async () => {
+  it('reports accessStatus "disabled" for a disabled Auth account, and null organisationId when no profile exists', async () => {
     h.getUser.mockImplementationOnce(async (uid: string) => ({
       uid, email: `${uid}@test.dev`, emailVerified: false, displayName: null, disabled: true,
       customClaims: {}, metadata: { creationTime: '2026-01-01T00:00:00.000Z', lastSignInTime: null },
@@ -254,8 +258,9 @@ describe('GET /api/admin/users/:uid', () => {
     const res = await request(app).get('/api/admin/users/target_uid').set(auth(OWNER));
     expect(res.status).toBe(200);
     expect(res.body.accessStatus).toBe('disabled');
-    expect(res.body.profile).toBeNull();
-    expect(res.body.fingerprint).toBeNull();
+    expect(res.body.organisationId).toBeNull();
+    expect(res.body).not.toHaveProperty('profile');
+    expect(res.body).not.toHaveProperty('fingerprint');
   });
 
   // The defensive catch block behind the happy paths above.
