@@ -599,8 +599,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                          // Firestore rejects an explicit `undefined` field value
                          // outright, so "Off" persists as `null`, not `style` as-is.
                          const next = { ...formData, questioningStyle: style ?? null };
-                         setFormData(next);
-                         onSave(next);
+                         savePreference(next);
                        }}
                      />
                    </div>
