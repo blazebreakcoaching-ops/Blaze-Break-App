@@ -23,7 +23,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore, forceDocError, forceTransactionError } from './test/fake-firestore';
+import { fakeDb, seedDoc, getDocRaw, resetStore, forceDocError, forceTransactionError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
@@ -1277,5 +1277,20 @@ describe('offboarding cannot be bypassed through stale member documents', () => 
       .set(auth('owner_1')).send({ role: 'member' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/last owner/i);
+  });
+});
+
+
+describe('fake database transaction rollback reflects production atomicity', () => {
+  it('does not publish earlier writes when a transaction callback throws', async () => {
+    seedDoc('organisations/rollback_org', { memberUids: ['existing'] });
+    await expect(fakeDb.runTransaction(async (tx: any) => {
+      const ref = fakeDb.collection('organisations').doc('rollback_org');
+      tx.update(ref, { memberUids: ['existing', 'unauthorised'] });
+      tx.set(ref.collection('audit_logs').doc('test_event'), { action: 'test' });
+      throw new Error('audit persistence failed');
+    })).rejects.toThrow('audit persistence failed');
+    expect(getDocRaw('organisations/rollback_org')?.memberUids).toEqual(['existing']);
+    expect(getDocRaw('organisations/rollback_org/audit_logs/test_event')).toBeUndefined();
   });
 });
