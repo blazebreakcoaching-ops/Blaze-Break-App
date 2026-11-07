@@ -8692,6 +8692,9 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     await logAdminAction(req, "update_user_role", targetUid, "", { role });
     res.json({ success: true });
   } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      return res.status(403).json({ error: "You do not have permission to update account roles." });
+    }
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
