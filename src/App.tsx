@@ -121,7 +121,7 @@ import { AuthStatusTracker } from "./lib/sync.tsx";
 import { AccountStatusBanner } from "./components/AccountStatusBanner.tsx";
 import { AccountDataLoadGate } from "./components/AccountDataLoadGate";
 import { EmailVerificationBanner } from "./components/EmailVerificationBanner.tsx";
-import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted, setNovaLearningAllowedForUid } from "./lib/nova-brain";
+import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted, setNovaLearningAllowedForUid, isNovaBrainReadyForAutoSync } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
@@ -1079,6 +1079,7 @@ export default function App() {
   const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
   // Never show or save a previous Firebase account's data during a switch.
   const [statsOwnerUid, setStatsOwnerUid] = useState<string | null>(null);
+  const [novaBrainReadyUid, setNovaBrainReadyUid] = useState<string | null>(null);
   const [statsLoadError, setStatsLoadError] = useState(false);
   const [statsLoadRetry, setStatsLoadRetry] = useState(0);
 
@@ -1678,6 +1679,7 @@ export default function App() {
     fingerprintLoadedRef.current = false;
     setStatsLoaded(false);
     setStatsOwnerUid(null);
+    setNovaBrainReadyUid(null);
     setStatsLoadError(false);
     setPostOnboardingProfile(null);
 
@@ -1788,7 +1790,16 @@ export default function App() {
         setNovaLearningAllowedForUid(user.uid, verifiedConsent);
         // Load the current account's saved memory only after a successful
         // Firestore identity/profile read. Memory edits stay consent-gated.
-        if (persistedProfileVerified) initNovaBrain(user.uid);
+        if (persistedProfileVerified) {
+          initNovaBrain(user.uid).then(() => {
+            if (mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled) &&
+                isNovaBrainReadyForAutoSync(user.uid)) {
+              setNovaBrainReadyUid(user.uid);
+            }
+          }).catch(() => {
+            // Background memory failure must not block the dashboard.
+          });
+        }
       }
       setStats(loadedStats);
       setStatsLoadError(false);
@@ -2258,7 +2269,8 @@ export default function App() {
     // This effect writes multiple personal Nova memories. During an
     // account switch or failed Firestore load, stats can still contain
     // the prior account's React values. Never sync them across UIDs.
-    if (authLoading || !user?.uid || statsOwnerUid !== user.uid || !statsLoadedRef.current) return;
+    if (authLoading || !user?.uid || statsOwnerUid !== user.uid ||
+        novaBrainReadyUid !== user.uid || !statsLoadedRef.current) return;
 
     // Sync Profile
     if (stats.profile) {
@@ -2344,7 +2356,7 @@ export default function App() {
       confidence: "verified",
       canEdit: false,
     });
-  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle, user?.uid, statsOwnerUid, authLoading]);
+  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle, user?.uid, statsOwnerUid, novaBrainReadyUid, authLoading]);
 
   // Blocks app access (not Firebase auth itself, which already fully
   // succeeded by this point) whenever the signed-in account has 2FA
@@ -2434,7 +2446,11 @@ export default function App() {
             setStats((prev) => ({ ...prev, profile, lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION }));
             writeAccountProfile(uid, profile);
             setNovaLearningAllowedForUid(uid, profile.letNovaLearn !== false);
-            initNovaBrain(uid);
+            initNovaBrain(uid).then(() => {
+              if (auth.currentUser?.uid === uid && isNovaBrainReadyForAutoSync(uid)) {
+                setNovaBrainReadyUid(uid);
+              }
+            }).catch(() => {});
             setFlow("app");
             setActiveTab("home");
             setPostOnboardingProfile(profile);
