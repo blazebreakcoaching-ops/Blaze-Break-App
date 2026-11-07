@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, ArrowRight } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -53,16 +53,22 @@ interface WhatsNewModalProps {
 export const WhatsNewModal = ({ lastSeenVersion, loaded, paused = false, onSeen }: WhatsNewModalProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const modalRef = useFocusTrap(isOpen);
+  // Once the visitor starts another task, do not restart a fresh
+  // three-second promo timer when that task finishes. Another visit may
+  // present the unacknowledged changelog, without interrupting this one.
+  const deferForThisVisitRef = useRef(false);
 
   // A higher-priority dialog can open after this informational popup has
   // appeared. Close it without acknowledging the changelog: the person
   // can read it on a later quiet visit.
   useEffect(() => {
-    if (paused && isOpen) setIsOpen(false);
+    if (!paused) return;
+    deferForThisVisitRef.current = true;
+    if (isOpen) setIsOpen(false);
   }, [paused, isOpen]);
 
   useEffect(() => {
-    if (!loaded || paused || lastSeenVersion === CURRENT_CHANGELOG_VERSION) return;
+    if (!loaded || paused || deferForThisVisitRef.current || lastSeenVersion === CURRENT_CHANGELOG_VERSION) return;
 
     // This is informational, not a security/consent prompt. Previously
     // it could appear in the middle of typing or clicking because it
@@ -75,6 +81,7 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, paused = false, onSeen 
     let userInteracted = false;
     const onInteraction = () => {
       userInteracted = true;
+      deferForThisVisitRef.current = true;
       clearTimeout(timer);
     };
     // Declared (and the listeners attached) before any code that could
@@ -83,7 +90,7 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, paused = false, onSeen 
     // synchronous block finishes, so `timer` is always initialised by
     // the time onInteraction's closure over it is ever read.
     const timer = setTimeout(() => {
-      if (!userInteracted && isWhatsNewAutoOpenSafe(document)) {
+      if (!userInteracted && !deferForThisVisitRef.current && isWhatsNewAutoOpenSafe(document)) {
         setIsOpen(true);
       }
     }, 3000);
