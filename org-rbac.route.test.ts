@@ -850,3 +850,35 @@ describe('protected role revocations require an existing owner', () => {
     expect(getDocRaw(`organisations/${ORG}/members/owner_2`)?.role).toBe('member');
   });
 });
+
+describe('protected account suspension permissions', () => {
+  it('blocks a non-owner admin from suspending a second company owner', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'owner_2'], memberUids: ['owner_1', 'owner_2', 'admin_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'owner_2', 'owner');
+    seedMember(ORG, 'admin_1', 'admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_2/suspend`).set(auth('admin_1'));
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_2`)?.status).toBe('active');
+  });
+
+  it('blocks a security admin from suspending a second security admin', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'security_1', 'security_2'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'security_1', 'security_admin');
+    seedMember(ORG, 'security_2', 'security_admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/security_2/suspend`).set(auth('security_1'));
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/security_2`)?.status).toBe('active');
+  });
+
+  it('blocks admin from reactivating a suspended company owner', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'owner_2'], memberUids: ['owner_1', 'owner_2', 'admin_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'owner_2', 'owner', 'suspended');
+    seedMember(ORG, 'admin_1', 'admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_2/reactivate`).set(auth('admin_1'));
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_2`)?.status).toBe('suspended');
+  });
+});
