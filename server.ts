@@ -11001,6 +11001,44 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       return res.status(400).json({ error: "That invitation code is invalid." });
     }
     const db = getDb();
+    // A per-instance Express limiter is not enough when Cloud Run scales
+    // horizontally. Count *all* join attempts in shared Firestore, before
+    // looking up any code or returning an organisation-existence response.
+    // Hash actor/IP identifiers so this abuse ledger stores no raw IPs.
+    const joinLimitWindowMs = 15 * 60 * 1000;
+    const nowMs = Date.now();
+    const actorBucket = crypto.createHash('sha256').update(String(user.uid)).digest('hex');
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const ipBucket = crypto.createHash('sha256').update(String(ip)).digest('hex');
+    const allowedAttempt = await db.runTransaction(async (tx) => {
+      const actorRef = db.collection('org_join_rate_limits').doc('user_' + actorBucket);
+      const ipRef = db.collection('org_join_rate_limits').doc('ip_' + ipBucket);
+      const [actorSnap, ipSnap] = await Promise.all([tx.get(actorRef), tx.get(ipRef)]);
+      const countWithinWindow = (snap: any, max: number) => {
+        const data = snap.exists ? snap.data() : null;
+        const startedAt = data?.windowStartedAt;
+        const isCurrent = typeof startedAt === 'number' &&
+          startedAt <= nowMs && nowMs - startedAt < joinLimitWindowMs;
+        const attempts = isCurrent && Number.isSafeInteger(data?.attempts) ? data.attempts : 0;
+        return { current: isCurrent, attempts, allowed: attempts < max };
+      };
+      const actor = countWithinWindow(actorSnap, 12);
+      const network = countWithinWindow(ipSnap, 60);
+      if (!actor.allowed || !network.allowed) return false;
+      for (const [ref, state] of [[actorRef, actor], [ipRef, network]] as const) {
+        tx.set(ref, {
+          attempts: state.attempts + 1,
+          windowStartedAt: state.current
+            ? (state === actor ? actorSnap.data()!.windowStartedAt : ipSnap.data()!.windowStartedAt)
+            : nowMs,
+          expiresAt: new Date(nowMs + 2 * joinLimitWindowMs),
+        });
+      }
+      return true;
+    });
+    if (!allowedAttempt) {
+      return res.status(429).json({ error: 'Too many company joining attempts. Try again later.' });
+    }
     let orgRef;
     if (inviteMatch) {
       const candidateId = inviteMatch[1].toLowerCase();
