@@ -946,7 +946,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
 
   return (
     <div className="ember-midnight ember-nova-room flex flex-col h-full bg-card rounded-2xl border border-border overflow-hidden relative transition-all duration-500">
-      <div className="px-4 py-4 sm:p-5 border-b border-border flex items-center justify-between gap-3">
+      <div className="px-4 py-4 sm:p-5 border-b border-border flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="ember-nova-mark w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary relative overflow-hidden group">
             <Sparkles className="w-4 h-4 relative z-10" />
@@ -963,7 +963,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
           {onShowMeHow && (
             <button
               type="button"
