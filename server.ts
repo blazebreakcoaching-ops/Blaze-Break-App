@@ -4274,7 +4274,10 @@ const requireRole = (req: any, allowedRoles: string[]) => {
 };
 
 const isUserPlatformOwner = (user: any) =>
-  user.platformOwner === true || isOwnerBootstrapEmail(user.email) || user.role === 'platform_owner';
+  isOwnerBootstrapEmail(user.email) || user.role === 'platform_owner' ||
+  // Only role-less legacy owner records may rely on the older flag.
+  // An explicit narrower role must not inherit an old owner boolean.
+  (!user.role && user.platformOwner === true);
 
 const requirePlatformOwner = (req: any) => {
   const user = requireAuth(req);
