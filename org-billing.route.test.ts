@@ -8,7 +8,7 @@ vi.hoisted(() => {
 vi.mock('express-rate-limit', () => ({ default: () => (_req: any, _res: any, next: any) => next() }));
 vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{}] }));
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
-vi.mock('firebase-admin/auth', () => ({ getAuth: () => ({ verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev` }) }) }));
+vi.mock('firebase-admin/auth', () => ({ getAuth: () => ({ verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev`, email_verified: !t.startsWith('unverified_') }) }) }));
 vi.mock('firebase-admin/firestore', async () => {
   const fake = await import('./test/fake-firestore');
   return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue };
@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -167,6 +167,71 @@ describe('seat-limit enforcement on invites', () => {
 
     const allowed = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1')).send({ emails: ['a@example.com'] });
     expect(allowed.status).toBe(200);
+  });
+});
+
+describe('atomic company joins and invitation reservations', () => {
+  it('blocks an uninvited code redemption when all seats are reserved', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/pending_invites/reserved@test.dev`, { email: 'reserved@test.dev' });
+    seedDoc('users/outsider', {});
+    const res = await request(app).post('/api/org/join').set(auth('outsider')).send({ joinCode: 'ABC123' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/seats/);
+    expect(getDocRaw('users/outsider')?.organisationId).toBeUndefined();
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toEqual(['owner_1']);
+  });
+
+  it('allows a verified invitee to convert their reserved seat, removing the invite atomically', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/pending_invites/invited@test.dev`, { email: 'invited@test.dev' });
+    seedDoc('users/invited', {});
+    const res = await request(app).post('/api/org/join').set(auth('invited')).send({ joinCode: 'ABC123' });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/invited@test.dev`)).toBeUndefined();
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('invited');
+    expect(getDocRaw(`organisations/${ORG}/members/invited`)?.role).toBe('member');
+  });
+
+  it('never gives an unverified identity somebody else’s reserved invite seat', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedDoc(`organisations/${ORG}/pending_invites/unverified_claim@test.dev`, { email: 'unverified_claim@test.dev' });
+    seedDoc('users/unverified_claim', {});
+    const res = await request(app).post('/api/org/join').set(auth('unverified_claim')).send({ joinCode: 'ABC123' });
+    expect(res.status).toBe(400);
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/unverified_claim@test.dev`)).toBeDefined();
+  });
+
+  it('two parallel join requests cannot exceed the same one remaining seat', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedDoc('users/joiner_a', {});
+    seedDoc('users/joiner_b', {});
+    const results = await Promise.all(['joiner_a', 'joiner_b'].map(uid =>
+      request(app).post('/api/org/join').set(auth(uid)).send({ joinCode: 'ABC123' })
+    ));
+    expect(results.map(r => r.status).sort()).toEqual([200, 400]);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toHaveLength(2);
+  });
+
+  it('simultaneous invitations reserve seats only once and reject the over-capacity request', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedMember(ORG, 'owner_1', 'owner');
+    const results = await Promise.all(['a@test.dev', 'b@test.dev'].map(email =>
+      request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1')).send({ emails: [email] })
+    ));
+    expect(results.map(r => r.status).sort()).toEqual([200, 400]);
+    const rows = ['a@test.dev', 'b@test.dev'].filter(email => !!getDocRaw(`organisations/${ORG}/pending_invites/${email}`));
+    expect(rows).toHaveLength(1);
+  });
+
+  it('resending an existing pending invite does not consume another seat', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/pending_invites/a@test.dev`, { email: 'a@test.dev' });
+    const res = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1')).send({ emails: ['a@test.dev'] });
+    expect(res.status).toBe(200);
   });
 });
 
