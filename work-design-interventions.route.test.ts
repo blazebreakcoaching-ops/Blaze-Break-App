@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, forceTransactionError, getDocRaw, fakeDb } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -256,5 +256,22 @@ describe('defensive catch blocks', () => {
     expect(errorSpy).toHaveBeenCalled();
     restore();
     errorSpy.mockRestore();
+  });
+});
+
+
+describe('intervention outcome writes are audit atomic', () => {
+  it('does not record an outcome when its audit transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedDoc(`organisations/${ORG}/work_design_interventions/one`, {
+      team: 'Team A', signalKey: 'meeting_pressure', status: 'trialling',
+    });
+    const restore = forceTransactionError(new Error('simulated audit failure'));
+    try {
+      const res = await request(app).patch(`/api/org/${ORG}/work-design-interventions/one/outcome`)
+        .set(auth('owner_1')).send({ outcomeRating: 'useful' });
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/work_design_interventions/one`)?.status).toBe('trialling');
+    } finally { restore(); }
   });
 });
