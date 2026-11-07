@@ -14808,7 +14808,7 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
       after.name = update.name;
     }
     if (privacyThreshold !== undefined) {
-      if (typeof privacyThreshold !== 'number' || privacyThreshold < 3 || privacyThreshold > 100) {
+      if (!Number.isInteger(privacyThreshold) || privacyThreshold < 3 || privacyThreshold > 100) {
         return res.status(400).json({ error: "Minimum cohort size must be between 3 and 100." });
       }
       update.privacyThreshold = privacyThreshold;
