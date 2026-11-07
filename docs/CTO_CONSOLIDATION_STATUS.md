@@ -130,3 +130,24 @@ Commits: `6317aac` (org security), `c4a2e58` (org screens), `61aef3f` (Command C
 
 Gate: `verify:integration:offline` on `61aef3f` → OFFLINE_CHECKS_PASS (vitest 5,339;
 components 134; emulator 52; Playwright preview 66, real app 38; mobile and Functions pass).
+
+## 7. Batch 3 — Evolution Engine, Intelligence Layer, Recovery Report, Nova (2026-11-07)
+
+Commits: `f73e56c` (Nova context trust boundary), `4b20f84` (module fixes).
+
+| Area | Item | Status |
+|---|---|---|
+| All modules | All 282 frontend API calls reach a real server route | DONE (verified) |
+| Nova | Per-category consent gating of context; memory needs two opt-ins | DONE (verified) |
+| Nova | Saved memories / onboarding answers could act as system instructions | DONE (fixed) |
+| Nova | Memory tools check consent; manager tools anonymised above threshold | DONE (verified) |
+| Recovery Report | Figures computed from the user's own last-7-days records | DONE (verified) |
+| Recovery Report | Rate limit / outage shown and printable as "no activity" | DONE (fixed: real reason, no PDF) |
+| Evolution Engine | Unfinished sections clearly labelled "Not built" | DONE (verified) |
+| Evolution Engine | 17 handlers hid the server's refusal reason | DONE (fixed) |
+| Intelligence Layer | Recalculation is server-side from the user's own records | DONE (verified) |
+| Intelligence Layer | False "Nova automatically marks invites low priority" claim | DONE (removed) |
+| Intelligence Layer | Personal-data module visible to platform staff only (since July) | BLOCKED — product decision |
+
+Gate: `verify:integration:offline` on `4b20f84` → OFFLINE_CHECKS_PASS (vitest 5,341;
+components 138; emulator 52; Playwright preview 66, real app 38; mobile and Functions pass).
