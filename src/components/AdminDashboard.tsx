@@ -10,7 +10,7 @@ import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { ConfirmDialog } from './ConfirmDialog';
-import { AdminPeopleDirectory } from './AdminPeopleDirectory';
+import { AdminPeopleDirectory, type DirectoryUser } from './AdminPeopleDirectory';
 import { formatFeedbackCategory } from '../lib/feedback-format';
 import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole } from '../../admin-roles';
 import { DEVICE_CHANNELS } from '../../desktop-deployment';
@@ -250,6 +250,7 @@ export const AdminDashboard = () => {
   const [expandedTimelineUid, setExpandedTimelineUid] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersCapped, setUsersCapped] = useState(false);
+  const [directoryRefreshRevision, setDirectoryRefreshRevision] = useState(0);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [feedbackSubmissions, setFeedbackSubmissions] = useState<FeedbackSubmission[]>([]);
@@ -1189,6 +1190,22 @@ export const AdminDashboard = () => {
     }
   }, [activeTab]);
 
+  const refreshManagedAccount = async (uid: string) => {
+    // The original users list is capped and cannot refresh out-of-page
+    // targets. Re-read the exact Auth identity after a successful mutation.
+    setDirectoryRefreshRevision(value => value + 1);
+    try {
+      const response = await secureApiFetch(`/api/admin/directory?lookup=${encodeURIComponent(uid)}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      const updated = (data.users as AdminUser[] | undefined)?.find(u => u.uid === uid);
+      if (updated) setSelectedUser(previous => previous?.uid === uid ? updated : previous);
+    } catch {
+      // Mutation succeeded; do not misreport it as a failure if refresh
+      // fails. Manual reload still works and the directory has Retry.
+    }
+  };
+
   const handleUpdateRole = async (uid: string) => {
     try {
       setIsUpdatingRole(true);
@@ -1210,6 +1227,7 @@ export const AdminDashboard = () => {
       // plan grant on the same account shouldn't have the drawer vanish
       // out from under them after the first action succeeds.
       await loadAllData();
+      await refreshManagedAccount(uid);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -1259,6 +1277,7 @@ export const AdminDashboard = () => {
       // Deliberately doesn't clear selectedUser - see handleUpdateRole's
       // comment above for why the drawer should outlive a single action.
       await loadAllData();
+      await refreshManagedAccount(uid);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -1282,6 +1301,7 @@ export const AdminDashboard = () => {
 
       showSuccess(`Account state successfully toggled.`);
       await loadAllData();
+      await refreshManagedAccount(uid);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -1786,7 +1806,11 @@ export const AdminDashboard = () => {
         {/* Tab 1: Users & Role Assignment */}
         {activeTab === 'users' && (
           <div className="space-y-6">
-            <AdminPeopleDirectory key={authUser?.uid || 'signed-out'} />
+            <AdminPeopleDirectory
+              key={authUser?.uid || 'signed-out'}
+              refreshRevision={directoryRefreshRevision}
+              onManageAccount={(account: DirectoryUser) => openAccountDrawer(account as AdminUser)}
+            />
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
               <div className="flex flex-col sm:flex-row gap-3 w-full flex-wrap">
                 <div className="relative flex-1 min-w-[200px]">
