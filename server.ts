@@ -8626,6 +8626,94 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
   }
 });
 
+// Command Centre People Directory v2. Firebase Authentication is authoritative
+// for account existence. Cursor pagination avoids scanning an entire customer
+// base or claiming that the first 100 Firestore documents are all customers.
+// Only operational identity and entitlement metadata leaves this endpoint.
+const ADMIN_DIRECTORY_PAGE_SIZE = 50;
+app.get("/api/admin/directory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requirePermission(req, "users.read");
+    const rawCursor = req.query.cursor;
+    const rawLookup = req.query.lookup;
+    if ((rawCursor !== undefined && (typeof rawCursor !== "string" || rawCursor.length > 2048)) ||
+        (rawLookup !== undefined && (typeof rawLookup !== "string" || rawLookup.length > 320)) ||
+        (rawCursor && rawLookup)) {
+      return res.status(400).json({ error: "Invalid directory query." });
+    }
+    const cursor = typeof rawCursor === "string" ? rawCursor : undefined;
+    const lookup = typeof rawLookup === "string" ? rawLookup.trim() : "";
+    if (rawLookup !== undefined && !lookup) {
+      return res.status(400).json({ error: "Enter a complete account email or UID." });
+    }
+    const auth = getAuth();
+    let authUsers: import("firebase-admin/auth").UserRecord[];
+    let nextCursor: string | null = null;
+    if (lookup) {
+      // Exact lookup only: never scan all customers to implement a fuzzy search.
+      try {
+        const account = lookup.includes("@")
+          ? await auth.getUserByEmail(lookup)
+          : await auth.getUser(lookup);
+        authUsers = [account];
+      } catch (error: any) {
+        if (error?.code === "auth/user-not-found") authUsers = [];
+        else throw error;
+      }
+    } else {
+      const page = await auth.listUsers(ADMIN_DIRECTORY_PAGE_SIZE, cursor);
+      authUsers = page.users;
+      nextCursor = page.pageToken || null;
+    }
+    const db = getDb();
+    const profileRefs = authUsers.map(u => db.collection("users").doc(u.uid));
+    const entitlementRefs = profileRefs.map(ref => ref.collection("entitlements").doc("status"));
+    // Both reads are bounded to the page/one exact match. Never fetch
+    // recovery, check-in, Nova, health or personal journal documents.
+    const [profiles, entitlements] = await Promise.all([
+      profileRefs.length ? db.getAll(...profileRefs) : Promise.resolve([]),
+      entitlementRefs.length ? db.getAll(...entitlementRefs) : Promise.resolve([]),
+    ]);
+    const users = authUsers.map((account, i) => {
+      const profile = profiles[i];
+      const entitlement = getEffectiveEntitlement(
+        entitlements[i]?.exists ? entitlements[i].data() : undefined,
+      );
+      return {
+        uid: account.uid,
+        email: account.email || null,
+        displayName: account.displayName || null,
+        organisationId: profile?.exists && typeof profile.data()?.organisationId === "string"
+          ? profile.data()!.organisationId : null,
+        emailVerified: account.emailVerified,
+        isAnonymous: !account.email && !account.phoneNumber && account.providerData.length === 0,
+        createdAt: account.metadata.creationTime || null,
+        lastSignIn: account.metadata.lastSignInTime || null,
+        accessStatus: account.disabled ? "disabled" : "active",
+        role: (account.customClaims as any)?.role || "user",
+        plan: effectivePlan(entitlement),
+        entitlementStatus: entitlement.status,
+        storedPlan: entitlement.plan,
+        billingSource: entitlement.billingSource,
+        entitlementEnd: entitlement.entitlementEnd,
+        cancelAtPeriodEnd: entitlement.cancelAtPeriodEnd,
+        lastVerifiedAt: entitlement.lastVerifiedAt,
+        profilePresent: Boolean(profile?.exists),
+      };
+    });
+    // No fabricated global total: Auth page size is not the total number
+    // of accounts, and a single account's lack of a Firestore profile is
+    // a reconciliation warning, not evidence that their Auth UID is invalid.
+    res.json({ users, nextCursor, pageSize: ADMIN_DIRECTORY_PAGE_SIZE, lookup: Boolean(lookup), total: null });
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      return res.status(403).json({ error: "You do not have permission to view the directory." });
+    }
+    logger.error("[ADMIN] Directory retrieval failed:", errorFields(err));
+    res.status(500).json({ error: "Account directory is temporarily unavailable." });
+  }
+});
+
 app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePermission(req, "users.read");
