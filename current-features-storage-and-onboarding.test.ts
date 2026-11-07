@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { isSafeAuthenticatedStorageKey } from './src/lib/secure-local-storage-keys';
 
 describe('existing user experiences: secure storage and onboarding', () => {
-  it('does not silently block Light/Dark/System persistence for signed-in users', () => {
+  it('preserves themes AND real-account private preferences without opening cross-account storage', () => {
     const source = readFileSync('src/main.tsx', 'utf8');
-    const allowed = source.match(/const ALLOWED_AUTHED_KEYS\s*=\s*\[([\s\S]*?)\];/)?.[1];
-    expect(allowed).toBeTruthy();
-    // The legacy Secure Account storage shim only allows these keys for
-    // registered accounts. App theme settings are device-level, not
-    // shared anonymous-onboarding state like blaze_profile.
-    expect(allowed).toContain("'blaze_theme_mode'");
-    expect(allowed).toContain("'blaze_dark_mode'");
-    expect(allowed).not.toContain("'blaze_profile'");
-    expect(source).toContain('key === allowed || key.startsWith');
+    expect(source).toContain("isSafeAuthenticatedStorageKey(key");
+    expect(isSafeAuthenticatedStorageKey('blaze_theme_mode', 'A')).toBe(true);
+    expect(isSafeAuthenticatedStorageKey('blaze_dark_mode', 'A')).toBe(true);
+    expect(isSafeAuthenticatedStorageKey('blaze_profile_v2:A', 'A')).toBe(true);
+    expect(isSafeAuthenticatedStorageKey('blaze_profile_v2:A', 'B')).toBe(false);
+    expect(isSafeAuthenticatedStorageKey('blaze_profile', 'A')).toBe(false);
+    expect(isSafeAuthenticatedStorageKey('nova_chat_history::A', 'A')).toBe(true);
+    expect(isSafeAuthenticatedStorageKey('nova_chat_history::A', 'B')).toBe(false);
   });
 
   it("does not interrupt a new anonymous demo with an existing-users What's New modal", () => {
