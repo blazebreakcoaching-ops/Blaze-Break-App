@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { secureApiFetch } from '../lib/secure-api';
+import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { OrgManagerCoachChat } from './OrgManagerCoachChat';
@@ -105,6 +105,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [regeneratingCode, setRegeneratingCode] = useState(false);
+  const [codeRotationError, setCodeRotationError] = useState('');
   const [currentJoinCode, setCurrentJoinCode] = useState('');
 
   const [inviteEmails, setInviteEmails] = useState('');
@@ -156,7 +157,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         await fetchGovernance(orgIdToUse);
       }
     } catch (e) {
-      setRoleChangeError('Could not change that role.');
+      setRoleChangeError(e instanceof SecureApiError ? e.message : 'Could not change that role.');
     }
     setChangingRoleUid(null);
   };
@@ -263,7 +264,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         await fetchMembers(orgStatus.organisationId);
       }
     } catch (e) {
-      setMembersError('Could not remove that person.');
+      setMembersError(e instanceof SecureApiError ? e.message : 'Could not remove that person.');
     }
     setMemberActionUid(null);
     setMemberToRemove(null);
@@ -282,7 +283,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         await fetchMembers(orgStatus.organisationId);
       }
     } catch (e) {
-      setMembersError('Could not promote that person.');
+      setMembersError(e instanceof SecureApiError ? e.message : 'Could not promote that person.');
     }
     setMemberActionUid(null);
   };
@@ -300,7 +301,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         await fetchMembers(orgStatus.organisationId);
       }
     } catch (e) {
-      setMembersError('Could not revoke that admin access.');
+      setMembersError(e instanceof SecureApiError ? e.message : 'Could not revoke that admin access.');
     }
     setMemberActionUid(null);
   };
@@ -322,7 +323,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         setEditingTeamUid(null);
       }
     } catch (e) {
-      setMembersError("Could not save that person's team.");
+      setMembersError(e instanceof SecureApiError ? e.message : "Could not save that person's team.");
     }
     setSavingTeamUid(null);
   };
@@ -344,7 +345,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         setEditingManagesUid(null);
       }
     } catch (e) {
-      setMembersError("Could not save which teams this person manages.");
+      setMembersError(e instanceof SecureApiError ? e.message : "Could not save which teams this person manages.");
     }
     setSavingManagesUid(null);
   };
@@ -370,7 +371,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         setHrViewerUids(nextUids);
       }
     } catch (e) {
-      setMembersError("Could not update HR viewer access.");
+      setMembersError(e instanceof SecureApiError ? e.message : "Could not update HR viewer access.");
     }
     setSavingHrViewerUid(null);
   };
@@ -398,7 +399,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         setTimeout(() => setSettingsSaved(false), 3000);
       }
     } catch (e) {
-      setMembersError('Could not save those settings.');
+      setMembersError(e instanceof SecureApiError ? e.message : 'Could not save those settings.');
     }
     setSavingSettings(false);
   };
@@ -406,12 +407,15 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
   const handleRegenerateCode = async () => {
     if (!orgStatus?.organisationId) return;
     setRegeneratingCode(true);
+    setCodeRotationError('');
     try {
       const res = await secureApiFetch(`/api/org/${orgStatus.organisationId}/regenerate-join-code`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) setCurrentJoinCode(data.joinCode);
     } catch (e) {
-      // Non-critical - the existing code just stays valid if this fails.
+      // Must be visible: an admin rotating a leaked code needs to know the
+      // OLD code is still valid when rotation did not happen.
+      setCodeRotationError(`${e instanceof SecureApiError ? e.message : 'Could not regenerate the code.'} The previous code is still valid.`);
     }
     setRegeneratingCode(false);
   };
@@ -461,7 +465,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         await fetchInvites(orgStatus.organisationId);
       }
     } catch (e) {
-      setInviteResult('Could not send those invites.');
+      setInviteResult(e instanceof SecureApiError ? e.message : 'Could not send those invites.');
     }
     setSendingInvites(false);
   };
@@ -515,7 +519,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
       await fetchInvites(orgStatus.organisationId);
       setInviteResult('Email invitation cancelled: its personal invitation code no longer works. The separate shared company code still works until regenerated.');
     } catch (e) {
-      setInviteResult("Couldn't remove that invitation. Its staff seat may still be reserved.");
+      setInviteResult(e instanceof SecureApiError ? e.message : "Couldn't remove that invitation. Its staff seat may still be reserved.");
     }
     setCancelingInviteId(null);
   };
@@ -1150,7 +1154,10 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                     {regeneratingCode ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                     Regenerate Code
                   </button>
-                  <p className="text-[11px] text-text-muted">Regenerating invalidates the old code — anyone who hasn't joined yet will need the new one.</p>
+                  {codeRotationError && (
+                    <p role="alert" className="text-[11px] text-destructive">{codeRotationError}</p>
+                  )}
+                  <p className="text-[11px] text-text-muted">Regenerating invalidates the old code — anyone who hasn't joined yet will need the new one. Removed staff cannot reuse it; readmit them with a personal invitation.</p>
                 </div>
 
                 <div className="card space-y-3">

@@ -37,7 +37,7 @@ import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { secureApiFetch } from '../lib/secure-api.ts';
+import { secureApiFetch, SecureApiError } from '../lib/secure-api.ts';
 import { TeamClimateSurvey } from './TeamClimateSurvey.tsx';
 import { AnonymousSuggestionBox } from './AnonymousSuggestionBox.tsx';
 
@@ -135,7 +135,7 @@ export const PrivacyVault = ({
         await fetchOrgStatus();
       }
     } catch (e) {
-      setOrgError('Could not join that organisation.');
+      setOrgError(e instanceof SecureApiError ? e.message : 'Could not join that organisation.');
     }
     setJoining(false);
   };
