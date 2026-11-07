@@ -11479,6 +11479,26 @@ app.post("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser
 // one of linkedInterventionId/note is ever stored at a time - linking to
 // a real intervention supersedes a stale note, same as the other way
 // around.
+// Atomically couple organisation mutations with their audit evidence.
+const withOrgAuditedWrite = async <T>(
+  db: any, req: any, orgId: string,
+  work: (tx: any, orgRef: any) => Promise<{ result: T; audit: {
+    action: string; resourceType: string; resourceId: string;
+    before: Record<string, unknown> | null; after: Record<string, unknown> | null;
+  } | null }>,
+): Promise<T> => db.runTransaction(async (tx: any) => {
+  const orgRef = db.collection('organisations').doc(orgId);
+  const { result, audit } = await work(tx, orgRef);
+  if (audit) tx.set(orgRef.collection('audit_logs').doc(), {
+    actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+    orgId, action: audit.action, targetResourceType: audit.resourceType,
+    targetResourceId: audit.resourceId, before: audit.before, after: audit.after,
+    createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+    userAgent: req.headers?.['user-agent'] || '',
+  });
+  return result;
+});
+
 app.patch("/api/org/:orgId/suggestions/:id/respond", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, id } = req.params;
@@ -11493,20 +11513,25 @@ app.patch("/api/org/:orgId/suggestions/:id/respond", verifyAppCheck, authenticat
       return res.status(400).json({ error: "note must be a non-empty string (max 500 characters) if provided." });
     }
     const ref = db.collection("organisations").doc(orgId).collection("anonymous_suggestions").doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      return res.status(404).json({ error: "Suggestion not found." });
-    }
-    if (linkedInterventionId) {
-      const interventionSnap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").doc(linkedInterventionId).get();
-      if (!interventionSnap.exists) {
-        return res.status(400).json({ error: "That intervention doesn't exist in this organisation." });
+    const outcome = await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return { result: 404, audit: null };
+      if (linkedInterventionId) {
+        const intervention = await tx.get(orgRef.collection('work_design_interventions').doc(linkedInterventionId));
+        if (!intervention.exists) return { result: 400, audit: null };
       }
-      await ref.set({ linkedInterventionId, responseNote: null }, { merge: true });
-    } else {
-      await ref.set({ linkedInterventionId: null, responseNote: note }, { merge: true });
-    }
-    await logOrgAuditAction(req, orgId, "respond_to_suggestion", "anonymous_suggestion", id, null, { linkedInterventionId: linkedInterventionId || null, hasNote: !!note });
+      tx.set(ref, {
+        linkedInterventionId: linkedInterventionId || null,
+        responseNote: linkedInterventionId ? null : note,
+      }, { merge: true });
+      return { result: 200, audit: {
+        action: 'respond_to_suggestion', resourceType: 'anonymous_suggestion', resourceId: id,
+        before: { linkedInterventionId: snap.data()?.linkedInterventionId || null, hasNote: !!snap.data()?.responseNote },
+        after: { linkedInterventionId: linkedInterventionId || null, hasNote: !linkedInterventionId && !!note },
+      } };
+    });
+    if (outcome === 404) return res.status(404).json({ error: 'Suggestion not found.' });
+    if (outcome === 400) return res.status(400).json({ error: "That intervention doesn't exist in this organisation." });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -11592,18 +11617,18 @@ app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser
     }
     const db = getDb();
     const costInputs = { annualSicknessDays, avgDailyCostPerEmployee, headcount };
-    await db.collection("organisations").doc(orgId).update({
-      costInputs,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    await logOrgAuditAction(req, orgId, "update_cost_inputs", "organisation", orgId, org.costInputs || null, costInputs);
-    // Also appended to a real history log, not just overwritten - this is
-    // what makes the "track your trend over months" claim already shown in
-    // the UI an honest one rather than another insinuated-but-missing
-    // capability.
-    await db.collection("organisations").doc(orgId).collection("cost_input_history").add({
-      annualSicknessDays, avgDailyCostPerEmployee, headcount,
-      enteredAt: new Date().toISOString(),
+    await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef) => {
+      const current = await tx.get(orgRef);
+      if (!current.exists) throw new Error('Organisation not found.');
+      tx.update(orgRef, { costInputs, updatedAt: FieldValue.serverTimestamp() });
+      tx.set(orgRef.collection('cost_input_history').doc(), {
+        annualSicknessDays, avgDailyCostPerEmployee, headcount,
+        enteredAt: new Date().toISOString(),
+      });
+      return { result: null, audit: {
+        action: 'update_cost_inputs', resourceType: 'organisation', resourceId: orgId,
+        before: current.data()?.costInputs || null, after: costInputs,
+      } };
     });
     res.json({ success: true });
   } catch (err: any) {
@@ -12477,10 +12502,14 @@ app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, aut
       note,
       createdAt: new Date().toISOString(),
     };
-    await db.collection("organisations").doc(orgId).collection("team_escalation_acks").add(record);
-    // Never log the note text itself - only whether one was provided -
-    // matching the existing "structured diffs, never raw content" rule.
-    await logOrgAuditAction(req, orgId, "acknowledge_team_signal", "team_escalation_ack", team, null, { notePresent: !!note });
+    await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef) => {
+      // Do not include private note text in the audit document.
+      tx.set(orgRef.collection('team_escalation_acks').doc(), record);
+      return { result: null, audit: {
+        action: 'acknowledge_team_signal', resourceType: 'team_escalation_ack',
+        resourceId: team, before: null, after: { notePresent: !!note },
+      } };
+    });
     res.json({ success: true, ack: record });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
