@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, ArrowRight } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
-import { CURRENT_CHANGELOG_VERSION, isWhatsNewAutoOpenSafe } from '../lib/whats-new-auto-open';
+import { CURRENT_CHANGELOG_VERSION, canScheduleWhatsNew, isWhatsNewAutoOpenSafe } from '../lib/whats-new-auto-open';
 
 // Bump this string and replace CHANGELOG_ITEMS whenever new features ship
 // that existing users wouldn't otherwise discover. Shows the current full
@@ -68,7 +68,7 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, paused = false, onSeen 
   }, [paused, isOpen]);
 
   useEffect(() => {
-    if (!loaded || paused || deferForThisVisitRef.current || lastSeenVersion === CURRENT_CHANGELOG_VERSION) return;
+    if (!canScheduleWhatsNew(loaded, paused, deferForThisVisitRef.current, lastSeenVersion)) return;
 
     // This is informational, not a security/consent prompt. Previously
     // it could appear in the middle of typing or clicking because it
