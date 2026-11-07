@@ -31,8 +31,12 @@ vi.mock('firebase-admin/auth', () => ({
     verifyIdToken: async (t: string) => ({
       uid: t,
       email: `${t}@test.dev`,
-      role: t === 'owner_1' ? 'platform_owner' : (t === 'owner_2' ? 'platform_owner' : undefined),
-      admin: t === 'owner_2' ? true : undefined,
+      role: t === 'owner_1' ? 'platform_owner' :
+        (t === 'owner_2' ? 'platform_owner' :
+        (t === 'content_with_legacy_admin' ? 'content_admin' :
+        (t === 'support_with_legacy_admin' ? 'support_admin' : undefined))),
+      admin: t === 'owner_2' || t === 'content_with_legacy_admin' ||
+        t === 'support_with_legacy_admin' || t === 'legacy_roleless_admin' ? true : undefined,
       platformOwner: t === 'owner_2' ? true : undefined,
       // owner_2 simulates a temporary escalation that already expired -
       // the token itself still carries the old elevated claims (exactly
@@ -319,6 +323,27 @@ describe('POST /api/admin/users/:uid/role (app-level AuthRole)', () => {
     expect(h.revokeRefreshTokens).toHaveBeenCalledWith('target_uid');
     const stored = getDocRaw('users/target_uid/entitlements/status');
     expect(stored?.role).toBe('manager');
+  });
+});
+
+describe('granular permission enforcement despite legacy flags', () => {
+  it('rejects content_admin with admin:true on the customer directory', async () => {
+    const res = await request(app).get('/api/admin/users').set(auth('content_with_legacy_admin'));
+    expect(res.status).toBe(403);
+  });
+
+  it('permits support_admin with admin:true to read but not suspend customers', async () => {
+    const read = await request(app).get('/api/admin/users').set(auth('support_with_legacy_admin'));
+    expect(read.status).toBe(200);
+    const suspend = await request(app).post('/api/admin/users/target_uid/suspend')
+      .set(auth('support_with_legacy_admin')).send({ suspend: true });
+    expect(suspend.status).toBe(403);
+    expect(h.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('maintains compatibility for historic admin:true with no assigned role', async () => {
+    const res = await request(app).get('/api/admin/users').set(auth('legacy_roleless_admin'));
+    expect(res.status).toBe(200);
   });
 });
 
