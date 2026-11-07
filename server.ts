@@ -14490,6 +14490,9 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
   }
 });
 
+const isSafeOrgInviteEmail = (value: string): boolean =>
+  value.length <= 254 && /^[^\s@/]{1,64}@[^\s@/]{1,190}\.[^\s@/]{2,63}$/.test(value);
+
 // ============ Email Invites ============
 // Sends real invite emails via the existing Brevo integration and tracks
 // pending invites so an org admin can see who's been asked but hasn't
@@ -14506,7 +14509,7 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     const cleaned = Array.from(new Set(
       emailList
         .map(e => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
-        .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+        .filter(isSafeOrgInviteEmail)
     ));
 
     if (cleaned.length === 0) {
@@ -14640,6 +14643,9 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
     await requireOrgAdmin(req, orgId);
     const db = getDb();
     const normalizedEmail = email.trim().toLowerCase();
+    if (!isSafeOrgInviteEmail(normalizedEmail)) {
+      return res.status(400).json({ error: 'Invalid invitation email.' });
+    }
     const inviteRef = db.collection("organisations").doc(orgId).collection("pending_invites").doc(normalizedEmail);
     const existing = await inviteRef.get();
     if (!existing.exists) return res.status(404).json({ error: "That invitation is no longer pending." });
