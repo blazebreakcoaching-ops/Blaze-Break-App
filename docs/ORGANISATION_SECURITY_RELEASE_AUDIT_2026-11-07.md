@@ -10,9 +10,9 @@ Reviewed the actual Express/Firebase Admin SDK organisation endpoints, granular 
 ## Hardening implemented on this PR
 - Role resolution now requires an actual current company roster entry, not merely a leftover per-member document or legacy admin UID.
 - Last-owner protection excludes stale/off-roster owner entries and profiles assigned to other organisations. Full account deletion observes this protection before personal erasure.
-- Member leave, removal, suspension, role change, reactivation, HR designation and team-management audit evidence is committed atomically with membership changes.
+- Member leave, removal, suspension, role change, reactivation, HR designation and team-management audit evidence is committed atomically with membership changes. Shared joining codes cannot silently reactivate orphan membership documents.
 - Join-code rotation, individual invite cancellation, email-invitation issuance/resend and successful joins write per-company audit events in the transaction; codes/tokens are omitted from audit payloads.
-- Device registration and revocation, org data policy, billing, SSO config/enforcement, company settings and connector administrative actions use transactional audit writes.
+- Device registration and revocation, org data policy, billing, SSO config/enforcement, company settings and connector administrative actions use transactional audit writes. The twelve previously incomplete workplace workflow mutation paths, plus intervention create/status, now persist audit evidence in the state transaction.
 - SSO enforcement remains unavailable unless a real assertion-validation integration exists. A feature flag alone cannot enable it.
 - SSO metadata URL probing pins connections to a prevalidated DNS address, does not follow redirects and filters non-global IPv6/special-use IPv4 addresses.
 - The fake Firestore transaction harness now stages and rolls back writes if the callback throws. New regression scenarios cover stale memberships, ownership, join and invite audit, device and connector lifecycle, SSO, billing, policy and failure cases.
@@ -25,8 +25,8 @@ Reviewed the actual Express/Firebase Admin SDK organisation endpoints, granular 
 4. **Release composition:** PR #155 aggregates hundreds of unrelated changed files; review it in bounded subareas and demand an exact-SHA signoff. Do not treat this document as a certification or approval to merge.
 
 ### P1 — engineering follow-up
-1. **Remaining non-atomic audit paths:** At this review, the following twelve organisation workflow mutation routes still call the best-effort `logOrgAuditAction` after their state change: suggestions response; cost inputs; team acknowledgement; intervention outcome; work-design-debt create/owner/status; workplace-policy create/delete; signal promotion; enterprise search-resource create/delete. Decide and enforce transactional audit semantics for each, and add failed-audit tests.
-2. **Actor permission change races:** Several permission-gated mutations perform their initial actor-authorisation read outside the later state transaction. Recheck actor membership/permission inside the transaction where privilege revocation must be immediately effective.
+1. **Organisation audit mutation gaps — code FIXED, runtime UNVERIFIED:** The twelve originally identified workflow mutation routes now use transactional audit writes, with additional coverage for intervention creation/status. The join route also refuses to revive orphaned suspended/active member documents. Source scan reports zero organisation mutation routes still calling the original best-effort audit method. Regression tests were added but **have not been run**; this finding is not closed for release until emulator/staging evidence exists.
+2. **Actor permission change races:** The twelve repaired routes and intervention creation/status now recheck actor membership and role/management privilege inside the audited transaction. Audit other transactional and non-transactional endpoints for similar TOCTOU permission windows before enterprise signoff.
 3. **Device metadata after offboarding:** Member leave/remove/account erasure removes devices in a follow-up cleanup, not the same membership transaction. Authentication already must depend on active membership, not this metadata, but failed cleanup needs idempotent recovery and operational alerting.
 4. **Shared-code brute force:** The org-join limiter is currently in-memory per Cloud Run instance. Evaluate a shared, account/IP-aware distributed abuse counter, alerting and abnormal-join detection.
 5. **Billing:** Org-level `NullBillingProvider` is an internal record, not a verified payment/subscription provider. Company-editable plan/seat records must not be treated as external payment truth or entitlements until billing reconciliation is implemented.
@@ -43,3 +43,10 @@ Reviewed the actual Express/Firebase Admin SDK organisation endpoints, granular 
 For each P0 check, record: final commit SHA, command executed, environment, pass/fail result, any defects, a fix commit and a retest result. Confirm `main` and production remain unchanged until a human explicitly approves release. GitHub Actions are intentionally disabled and must not be automatically enabled for this review.
 
 **This report is a source-review/engineering worklog, not a completed independent audit.**
+
+## Subsequent closeout update — 2026-11-07
+- Source review found and repaired 12 separate-audit workflow mutations; a second scan exposed two further intervention paths that used transactions but logged afterward, now also repaired.
+- Shared audited-write helper now verifies actor roster presence, role status, cross-company profile and role/permission inside the same transaction. Specific team scope is additionally rechecked for applicable record updates.
+- Added focused rollback/security regression cases in work-design-debt, workplace-policy, org-search, team-escalation, intervention and joining tests.
+- **Important:** No TypeScript compilation, Vitest suite, Playwright run, real Firestore emulator run or staging acceptance has yet been executed for this exact final SHA. Static source scans cannot establish operational correctness.
+- Remaining release gates are unchanged: runtime tests, infrastructure/IAM/rules review, device-cleanup recovery, distributed rate limiting, real SSO validation/integration and independent enterprise security acceptance.
