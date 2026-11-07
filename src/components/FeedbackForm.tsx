@@ -52,17 +52,20 @@ export const FeedbackForm = () => {
       });
       if (!res.ok) throw new Error('Submission failed');
 
-      if (category === 'testimonial') {
-        // Same idiom ConsentMatrix.tsx already uses for a consent toggle -
-        // gives the user their own visible, tamper-resistant record of this
-        // decision in their personal audit trail, separate from the
-        // admin-only feedback_submissions record the server just wrote.
-        await logAuditAction({
-          userId: auth.currentUser?.email || 'anonymous',
-          action: `Consented to public-use review for testimonial (consent: ${publicUseConsent})`,
+      // A successfully accepted submission is successful even if the
+      // secondary audit trail is temporarily unavailable. Never tell a
+      // customer to resend an already accepted testimonial or bug report.
+      // No public-use authorisation exists unless they explicitly opted in.
+      if (category === 'testimonial' && publicUseConsent && auth.currentUser?.uid) {
+        void logAuditAction({
+          userId: auth.currentUser.uid,
+          action: 'Consented to optional testimonial public use',
           target: 'testimonial_public_use_consent',
           status: 'authorised',
-          details: `Category: testimonial. Public-use consent: ${publicUseConsent}.`,
+          details: 'Category: testimonial. Public-use consent: true.',
+        }).catch(() => {
+          // Server submission already includes the explicit consent bit.
+          // A missing secondary audit entry must not create a duplicate.
         });
       }
 
@@ -78,7 +81,8 @@ export const FeedbackForm = () => {
     <div className="space-y-6">
       <div className="space-y-1">
         <h3 className="text-xl font-display font-bold text-text-main">Feedback &amp; Testimonials</h3>
-        <p className="text-xs text-text-muted">Tell Tourae what's working, what isn't, or share a story about your experience. Submissions are reviewed privately.</p>
+        <p className="text-xs text-text-muted">Tell us what's working, what isn't, or share a story about your experience. Submissions are reviewed privately.</p>
+        <p className="text-xs text-text-muted">For bug reports, describe the screen and what happened. Please don't include passwords, private Nova conversations or sensitive personal information.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
