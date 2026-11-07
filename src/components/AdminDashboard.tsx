@@ -514,8 +514,9 @@ export const AdminDashboard = () => {
           if (usersRes.status === 429) rateLimited = true;
           fetchFailed = true;
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Could not reach user API:", e);
+        if (e?.status === 429) rateLimited = true;
         fetchFailed = true;
       }
 
@@ -530,8 +531,9 @@ export const AdminDashboard = () => {
           if (adminsRes.status === 429) rateLimited = true;
           fetchFailed = true;
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Could not reach admin users API:", e);
+        if (e?.status === 429) rateLimited = true;
         fetchFailed = true;
       }
 
@@ -546,8 +548,9 @@ export const AdminDashboard = () => {
           if (auditRes.status === 429) rateLimited = true;
           fetchFailed = true;
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Could not reach audit logs API:", e);
+        if (e?.status === 429) rateLimited = true;
         fetchFailed = true;
       }
 
@@ -685,9 +688,11 @@ export const AdminDashboard = () => {
       });
       setCommunications(data.communications ?? null);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Somatic aggregation failed: ", err);
-      setLoadError("Couldn't load live data — showing nothing rather than placeholders.");
+      setLoadError(err?.status === 429
+        ? 'Too many requests in a short time — please wait a few minutes and retry.'
+        : "Couldn't load live data — showing nothing rather than placeholders.");
       setMetrics(null);
       setCommunications(null);
       setSummaryAvailability(null);
