@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   auth: { currentUser: { uid: 'account-A' } as { uid: string } | null },
   getDocs: vi.fn(),
+  setDoc: vi.fn(),
 }));
 
 vi.mock('./firebase', () => ({
@@ -15,6 +16,8 @@ vi.mock('firebase/firestore', () => ({
   query: vi.fn(() => ({})),
   orderBy: vi.fn(() => ({})),
   getDocs: mocks.getDocs,
+  doc: vi.fn(() => ({})),
+  setDoc: mocks.setDoc,
 }));
 vi.mock('../../nova-memory-governance', () => ({
   NOVA_MEMORY_DATA_ZONE: 'personal',
@@ -24,6 +27,7 @@ vi.mock('../../nova-memory-governance', () => ({
 import {
   initNovaBrain, clearNovaBrainCache, getNovaBrain, addNovaMemory,
   isNovaLearningAllowed, setNovaLearningAllowedForUid,
+  isNovaBrainReadyForAutoSync, updateNovaMemoryBySourceAndType,
 } from './nova-brain';
 
 function deferred<T>() {
@@ -39,6 +43,7 @@ const snap = (id: string) => ({
 beforeEach(() => {
   mocks.auth.currentUser = { uid: 'account-A' };
   mocks.getDocs.mockReset();
+  mocks.setDoc.mockReset().mockResolvedValue(undefined);
   localStorage.clear();
   clearNovaBrainCache();
 });
@@ -95,6 +100,44 @@ describe('Nova local memory cache isolation', () => {
     readA.resolve(snap('A-secret'));
     await loadA;
     expect(getNovaBrain()).toEqual([]);
+  });
+
+  it('does not automatically sync when Firestore memory hydration failed', async () => {
+    mocks.getDocs.mockRejectedValueOnce(new Error('offline'));
+    await initNovaBrain('account-A');
+    expect(isNovaBrainReadyForAutoSync('account-A')).toBe(false);
+  });
+
+  it('only allows automatic profile sync once this UID has hydrated', async () => {
+    const pending = deferred<ReturnType<typeof snap>>();
+    mocks.getDocs.mockImplementationOnce(() => pending.promise);
+    const loading = initNovaBrain('account-A');
+    await vi.waitFor(() => expect(mocks.getDocs).toHaveBeenCalledTimes(1));
+    expect(isNovaBrainReadyForAutoSync('account-A')).toBe(false);
+    pending.resolve(snap('A-memory'));
+    await loading;
+    expect(isNovaBrainReadyForAutoSync('account-A')).toBe(true);
+    mocks.auth.currentUser = { uid: 'account-B' };
+    expect(isNovaBrainReadyForAutoSync('account-A')).toBe(false);
+  });
+
+  it('does not persist a memory again when its canonical values are identical', async () => {
+    mocks.getDocs.mockResolvedValueOnce({
+      docs: [{
+        id: 'memory-1',
+        data: () => ({
+          source: 'User Setup', type: 'profile',
+          content: 'Same profile', confidence: 'verified',
+          canEdit: true, canonicalKey: 'test-canonical',
+        }),
+      }],
+    });
+    await initNovaBrain('account-A');
+    setNovaLearningAllowedForUid('account-A', true);
+    updateNovaMemoryBySourceAndType('User Setup', 'profile', {
+      content: 'Same profile', confidence: 'verified', canEdit: true,
+    });
+    expect(mocks.setDoc).not.toHaveBeenCalled();
   });
 
   it('never imports another account\'s global learning choice, and defaults off', () => {
