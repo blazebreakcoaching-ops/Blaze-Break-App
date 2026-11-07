@@ -23,6 +23,14 @@ on:
         description: 'Verify Google Cloud identity only; do not deploy'
         type: boolean
         default: true
+      confirm_production:
+        description: 'I approve production deployment of the exact reviewed SHA'
+        type: boolean
+        default: false
+      approved_sha:
+        description: 'Exact reviewed 40-character commit SHA (required to deploy)'
+        type: string
+        default: ''
 
 env:
   GCP_PROJECT_ID: gen-lang-client-0537893432
@@ -40,6 +48,26 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+
+      - name: Block unapproved or non-main production deployment
+        if: ${{ inputs.auth_only == false }}
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Production deployment is permitted only from main."
+            exit 1
+          fi
+          if [ "$CONFIRM_PRODUCTION" != "true" ]; then
+            echo "::error::Explicit production approval is required."
+            exit 1
+          fi
+          if ! [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::Approved SHA must exactly match the selected main commit."
+            exit 1
+          fi
+          echo "Production deployment approval verified for $GITHUB_SHA."
 
       - name: Authenticate to Google Cloud with OIDC
         uses: google-github-actions/auth@v2
