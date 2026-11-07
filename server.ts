@@ -14339,15 +14339,6 @@ app.post("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser,
   }
 });
 
-const loadOrgConnector = async (db: any, orgId: string, connectorId: string) => {
-  const ref = db.collection("organisations").doc(orgId).collection("connectors").doc(connectorId);
-  const doc = await ref.get();
-  if (!doc.exists) {
-    throw new Error("Connector not found.");
-  }
-  return { ref, data: doc.data() };
-};
-
 // Every administrative connector mutation and its audit event must commit
 // together. Reading the current document inside the transaction also avoids
 // overwriting or auditing a stale connector state from a prior request.
