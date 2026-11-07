@@ -9290,23 +9290,58 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
   }
 });
 
+// Audit history is paginated by a Firestore document snapshot, not an
+// offset scan. Existing callers with no cursor still receive a logs array.
+const ADMIN_AUDIT_PAGE_SIZE = 50;
 app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePermission(req, "audit.read");
+    const cursor = req.query.cursor;
+    if (cursor !== undefined && (typeof cursor !== "string" ||
+        !/^[A-Za-z0-9_-]{1,160}$/.test(cursor))) {
+      return res.status(400).json({ error: "Invalid audit cursor." });
+    }
     const db = getDb();
-    const snap = await db.collection("admin_audit_logs").orderBy("createdAt", "desc").limit(100).get();
-    const logs = snap.docs.map((doc) => {
+    let query = db.collection("admin_audit_logs").orderBy("createdAt", "desc");
+    if (typeof cursor === "string") {
+      const anchor = await db.collection("admin_audit_logs").doc(cursor).get();
+      if (!anchor.exists || !anchor.data()?.createdAt) {
+        return res.status(400).json({ error: "Audit cursor is no longer valid. Start again." });
+      }
+      query = query.startAfter(anchor);
+    }
+    const snap = await query.limit(ADMIN_AUDIT_PAGE_SIZE + 1).get();
+    const hasMore = snap.docs.length > ADMIN_AUDIT_PAGE_SIZE;
+    const page = snap.docs.slice(0, ADMIN_AUDIT_PAGE_SIZE);
+    // Audit log metadata is not a safe place for private user content.
+    // Return only permitted operational provenance fields to the UI.
+    const logs = page.map((doc) => {
       const data = doc.data();
-      return { id: doc.id, ...data, createdAt: firestoreTimestampToIso(data.createdAt) };
+      const details = data.metadata || {};
+      const safeKeys = ['role', 'plan', 'previousPlan', 'status', 'planChange',
+        'durationDays', 'suspend', 'reason', 'reasonCategory'];
+      const metadata = Object.fromEntries(safeKeys
+        .filter(key => ['string', 'number', 'boolean'].includes(typeof details[key]))
+        .map(key => [key, details[key]]));
+      return {
+        id: doc.id, action: data.action || 'unknown', actorUid: data.actorUid || null,
+        actorEmail: data.actorEmail || null, actorRole: data.actorRole || null,
+        targetUid: data.targetUid || null, targetEmail: data.targetEmail || null,
+        createdAt: firestoreTimestampToIso(data.createdAt), metadata,
+        // Old audit entries may lack structured outcome. Absence is unknown,
+        // never evidence of completion or an authorised change succeeding.
+        outcome: data.outcome === 'failed' ? 'failed' :
+          data.outcome === 'succeeded' ? 'succeeded' : 'unrecorded',
+      };
     });
-    res.json({ logs });
+    res.json({ logs, nextCursor: hasMore ? page[page.length - 1].id : null,
+      pageSize: ADMIN_AUDIT_PAGE_SIZE, complete: !hasMore });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
-      res.status(403).json({ error: err.message });
-    } else {
-      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-      res.status(500).json({ error: GENERIC_SERVER_ERROR });
+      return res.status(403).json({ error: "You do not have permission to view audit history." });
     }
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
