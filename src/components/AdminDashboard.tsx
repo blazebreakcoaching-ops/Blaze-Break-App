@@ -1845,7 +1845,7 @@ export const AdminDashboard = () => {
               </div>
               <div className="text-xs uppercase tracking-wider font-black text-text-muted shrink-0">
                 Displaying {filteredUsers.length} of {users.length}{usersCapped ? '+' : ''} loaded accounts
-                {usersCapped && <span className="block normal-case font-medium text-[10px] mt-0.5">This is only the first {users.length} records. Search and filters do not cover accounts on later pages.</span>}
+                {usersCapped && <span className="block normal-case font-medium text-[10px] mt-0.5">The first {users.length} records hit the page limit; more accounts may exist. Search and filters cover only these loaded records.</span>}
               </div>
             </div>
 
