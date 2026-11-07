@@ -438,6 +438,7 @@ export const AdminDashboard = () => {
   });
   const [newViewName, setNewViewName] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const previousAdminUid = useRef<string | null | undefined>(undefined);
   const [selectedUserRole, setSelectedUserRole] = useState('user');
   const [pendingAction, setPendingAction] = useState<
     | { type: 'suspend'; uid: string; email: string | null; currentlyActive: boolean }
@@ -1500,6 +1501,16 @@ export const AdminDashboard = () => {
   };
 
   const closeAccountDrawer = () => setSelectedUser(null);
+  useEffect(() => {
+    const currentUid = authUser?.uid ?? null;
+    if (previousAdminUid.current !== undefined && previousAdminUid.current !== currentUid) {
+      // Do not display the previous administrator's selected identity when
+      // another account signs into the same browser.
+      setSelectedUser(null);
+      setPendingAction(null);
+    }
+    previousAdminUid.current = currentUid;
+  }, [authUser?.uid]);
 
   // Keeps the open drawer's snapshot in sync with the freshly reloaded
   // `users` list after an action (suspend/grant/role write all end in
@@ -3703,7 +3714,7 @@ export const AdminDashboard = () => {
                   <Key className="w-4 h-4 text-primary" /> Role & Claims
                 </h5>
                 <p className="text-xs text-text-muted">
-                  Current role: <strong className="text-text-main font-mono">{selectedUser.role || 'user'}</strong>. Assigning a new claim overrides it immediately in Firebase Authentication and is recorded in the Auditor Event log.
+                  Current role: <strong className="text-text-main font-mono">{selectedUser.role || 'user'}</strong>. Changing a claim is recorded in the audit log. Already-issued tokens may remain valid until they are refreshed; runtime permission enforcement must be verified separately.
                 </p>
                 <select
                   aria-label="Select new role"
