@@ -230,6 +230,7 @@ export const AdminDashboard = () => {
     estimatedCostUsd: { smsUsd: number; novaTextUsd: number; novaVoiceUsd: number; diagnoseUsd: number; totalUsd: number };
   } | null>(null);
   const [orgs, setOrgs] = useState<{ id: string; name: string; joinCode: string; privacyThreshold: number; memberCount: number; adminCount: number; createdAt?: string | null; billingPlan?: string }[]>([]);
+  const [orgsLoadError, setOrgsLoadError] = useState(false);
   // The same inactivity-retention decision the real nightly sweep acts on
   // (data-retention.ts's evaluateRetentionAction), read-only - fetched
   // lazily only when the Privacy Operations tab is first opened, not on
@@ -506,6 +507,7 @@ export const AdminDashboard = () => {
       }
 
       let loadedOrgs: typeof orgs = [];
+      setOrgsLoadError(false);
       try {
         // 3b. Fetch Organisations (not fatal if this fails - a fresh install
         // with no customer orgs yet is a normal, expected state)
@@ -513,9 +515,12 @@ export const AdminDashboard = () => {
         if (orgsRes.ok) {
           const orgData = await orgsRes.json();
           loadedOrgs = orgData.orgs || [];
+        } else {
+          setOrgsLoadError(true);
         }
       } catch (e) {
         console.error("Could not reach organisations API:", e);
+        setOrgsLoadError(true);
       }
       setOrgs(loadedOrgs);
 
@@ -658,10 +663,19 @@ export const AdminDashboard = () => {
         setNewOrgThreshold('5');
         setNewOrgAdminEmail('');
         setEditingOrgId(null);
-        const orgsRes = await secureApiFetch('/api/admin/orgs');
-        if (orgsRes.ok) {
-          const orgData = await orgsRes.json();
-          setOrgs(orgData.orgs || []);
+        // A successful save must stay successful even if refreshing the
+        // company list fails. Never tell the admin the write failed.
+        try {
+          const orgsRes = await secureApiFetch('/api/admin/orgs');
+          if (orgsRes.ok) {
+            const orgData = await orgsRes.json();
+            setOrgs(orgData.orgs || []);
+            setOrgsLoadError(false);
+          } else {
+            setOrgsLoadError(true);
+          }
+        } catch {
+          setOrgsLoadError(true);
         }
       }
     } catch (e) {
@@ -2329,7 +2343,12 @@ export const AdminDashboard = () => {
 
             <div className="lg:col-span-2 space-y-4">
               <h4 className="font-display text-lg font-bold text-text-main">Existing Organisations ({orgs.length})</h4>
-              {orgs.length === 0 ? (
+              {orgsLoadError ? (
+                <div role="alert" className="p-5 border border-border rounded-xl text-sm text-text-main">
+                  Could not load the company list. This does not mean that no companies exist.
+                  <button type="button" onClick={loadAllData} disabled={loading} className="ml-2 font-bold underline disabled:opacity-50">Retry</button>
+                </div>
+              ) : orgs.length === 0 ? (
                 <div className="p-12 text-center border-2 border-dashed border-border rounded-2xl">
                   <Building2 className="w-8 h-8 mx-auto text-text-muted mb-3 opacity-40" />
                   <p className="text-text-muted text-sm">No organisations provisioned yet.</p>
@@ -3363,6 +3382,13 @@ export const AdminDashboard = () => {
           </div>
         )}
 
+        {/* A failed summary fetch must not render a blank statistics tab. */}
+        {activeTab === 'somatic' && !metrics && (
+          <div role="alert" className="p-6 border border-border rounded-xl text-sm text-text-main">
+            Somatic statistics could not be loaded. No results are being shown.
+            <button type="button" onClick={fetchSomaticMetrics} className="ml-2 font-bold underline">Retry</button>
+          </div>
+        )}
         {/* Tab 4: Somatic & GAD Analytics */}
         {activeTab === 'somatic' && metrics && (
           <div className="space-y-8">
