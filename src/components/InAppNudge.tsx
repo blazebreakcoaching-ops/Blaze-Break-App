@@ -49,8 +49,13 @@ const NUDGE_CATEGORY_LABELS: Record<string, string> = {
   fuel_pattern_reminder: 'Open Fuel Log',
 };
 
-export const InAppNudge = () => {
+export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
   const { user } = useAuth();
+  // UI guidance and an active customer task take precedence over nudge cards.
+  // Check again after async eligibility reads to avoid opening a nudge
+  // halfway through an onboarding or help dialog.
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
   const [preferences, setPreferences] = useState<any>(null);
   const [currentNudge, setCurrentNudge] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
@@ -249,7 +254,7 @@ export const InAppNudge = () => {
   };
 
   const evaluateNudges = async () => {
-    if (!user || !preferences || !preferences.notificationsEnabled) return;
+    if (suspendedRef.current || !user || !preferences || !preferences.notificationsEnabled) return;
     if (currentNudge) return; // already showing one
 
     const now = new Date();
@@ -337,6 +342,9 @@ export const InAppNudge = () => {
       text = picked.message;
     }
 
+    // Reads can take time; never interrupt a guide or welcome that opened
+    // while we were fetching eligibility.
+    if (suspendedRef.current) return;
     // Show it
     const nudgeData = {
       category: cat,
@@ -398,7 +406,7 @@ export const InAppNudge = () => {
 
   return (
     <AnimatePresence>
-      {currentNudge && !isDismissing && (
+      {currentNudge && !isDismissing && !suspended && (
         <motion.div
           initial={{ opacity: 0, y: 50, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
