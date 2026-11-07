@@ -136,12 +136,9 @@ export const NovaChat = ({
   // Fixed, user-invoked UI help; never sends a message to the model.
   onShowMeHow?: () => void;
 }) => {
-  // How Nova should sound, re-tunable at any time. Source of truth for the
-  // chat's own context is localStorage's blaze_profile (what getDynamicContext
-  // reads); changing it here updates that immediately AND bubbles up via
-  // onToneChange so the canonical Firestore profile stays in sync. The
-  // `profile` prop (read first, below) covers the device/cache-miss case
-  // where localStorage itself was never populated.
+  // Tone is stored per signed-in account, not in the old browser-wide
+  // profile key. The canonical Firestore profile remains authoritative;
+  // the passed-in profile covers device cache misses.
   const readTone = (): string =>
     readAccountProfile(auth.currentUser?.uid).novaTone || "";
   const [novaTone, setNovaTone] = useState<string>(() => profile?.novaTone || readTone());
@@ -166,10 +163,8 @@ export const NovaChat = ({
   // How Nova questions the user - a separate, opt-in axis from tone above.
   // Purely a server-side concern (the chosen style is read fresh from
   // Firestore by both /api/nova/chat and the Nova Live voice route), so
-  // unlike novaTone this never needs to be threaded into getDynamicContext
-  // or the client-built systemInstruction below - only persisted (and kept
-  // in sync locally purely so this component's own controls show the
-  // right selection).
+  // unlike Nova's preferred tone, questioningStyle is read by the server
+  // and should only be persisted and reflected in the local control.
   const readStyle = (): NovaQuestioningStyle | undefined => {
     const style = readAccountProfile(auth.currentUser?.uid).questioningStyle;
     return QUESTIONING_STYLE_OPTIONS.some((s) => s.value === style)
