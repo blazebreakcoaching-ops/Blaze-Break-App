@@ -11108,7 +11108,7 @@ app.get("/api/org/:orgId/my-privacy-status", verifyAppCheck, authenticateFirebas
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
     const org = orgDoc.data();
-    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const threshold = org?.privacyThreshold || 5;
@@ -11157,7 +11157,7 @@ app.get("/api/org/:orgId/privacy-receipts", verifyAppCheck, authenticateFirebase
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
     const org = orgDoc.data();
-    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const snap = await db.collection("organisations").doc(orgId).collection("privacy_receipts")
@@ -11286,7 +11286,7 @@ app.post("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const { message, isAnonymous } = req.body;
@@ -11314,7 +11314,7 @@ app.get("/api/org/:orgId/recognition", verifyAppCheck, authenticateFirebaseUser,
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const snap = await db.collection("organisations").doc(orgId).collection("recognition_wall")
@@ -11344,7 +11344,7 @@ app.post("/api/org/:orgId/recognition/:recognitionId/react", verifyAppCheck, aut
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const ref = db.collection("organisations").doc(orgId).collection("recognition_wall").doc(recognitionId);
@@ -11377,7 +11377,7 @@ app.post("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const { message } = req.body;
@@ -11452,7 +11452,7 @@ app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser,
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
     const org = orgDoc.data();
-    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     // Same privacy reasoning as every other aggregate view: free-text
@@ -11547,7 +11547,7 @@ app.get("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser,
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const historySnap = await db.collection("organisations").doc(orgId).collection("cost_input_history")
@@ -11914,7 +11914,7 @@ app.get("/api/org/:orgId/challenges", verifyAppCheck, authenticateFirebaseUser, 
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const memberCount = (orgDoc.data()?.memberUids || []).length;
@@ -11946,7 +11946,7 @@ app.post("/api/org/:orgId/challenges/:challengeId/join", verifyAppCheck, authent
     const user = requireAuth(req);
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!orgDoc.exists || !(orgDoc.data()?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({
@@ -12534,7 +12534,7 @@ app.get("/api/org/:orgId/work-design-interventions-summary", verifyAppCheck, aut
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
     const org = orgDoc.data();
-    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const snap = await db.collection("organisations").doc(orgId).collection("work_design_interventions").get();
@@ -12568,7 +12568,7 @@ app.get("/api/org/:orgId/action-budget", verifyAppCheck, authenticateFirebaseUse
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
     const org = orgDoc.data();
-    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
@@ -13016,7 +13016,7 @@ app.get("/api/org/:orgId/what-works-here", verifyAppCheck, authenticateFirebaseU
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
     const org = orgDoc.data();
-    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const [interventionsSnap, principlesSnap] = await Promise.all([
@@ -13114,7 +13114,7 @@ app.get("/api/org/:orgId/work-design-drift", verifyAppCheck, authenticateFirebas
     const db = getDb();
     const orgDoc = await db.collection("organisations").doc(orgId).get();
     const org = orgDoc.data();
-    if (!orgDoc.exists || !(org?.memberUids || []).includes(user.uid)) {
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
       return res.status(403).json({ error: "You're not a member of this organisation." });
     }
     const principlesSnap = await db.collection("organisations").doc(orgId).collection("local_operating_principles").get();
