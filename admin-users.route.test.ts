@@ -13,6 +13,7 @@ const h = vi.hoisted(() => {
     setCustomUserClaims: vi.fn(async () => {}),
     getUserByEmail: vi.fn(async (email: string) => ({ uid: `uid_${email}`, email, displayName: null })),
     updateUser: vi.fn(async () => {}),
+    revokeRefreshTokens: vi.fn(async () => {}),
     // mergeCustomClaims/removeCustomClaimKeys (server.ts) read the
     // account's existing claims before writing, so every admin route
     // under test now calls getUser(uid) first - previously claims were
@@ -43,6 +44,7 @@ vi.mock('firebase-admin/auth', () => ({
     setCustomUserClaims: h.setCustomUserClaims,
     getUserByEmail: h.getUserByEmail,
     updateUser: h.updateUser,
+    revokeRefreshTokens: h.revokeRefreshTokens,
     getUser: h.getUser,
   }),
 }));
