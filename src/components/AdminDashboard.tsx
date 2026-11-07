@@ -296,6 +296,7 @@ export const AdminDashboard = () => {
   const [orgDetail, setOrgDetail] = useState<{
     billing: { plan: string; status: string; seatCount: number; billingContact: string | null };
     billingProvider: string;
+    seatSummary?: { allowance: number; members: number; pendingInvites: number; remaining: number; overCapacity: boolean; roleRecords: number; rosterMismatch: boolean; suspendedRecords: number };
     members: { uid: string; email: string | null; role: string; status: string; joinedAt: string | null }[];
   } | null>(null);
   const [isLoadingOrgDetail, setIsLoadingOrgDetail] = useState(false);
@@ -778,7 +779,7 @@ export const AdminDashboard = () => {
       const res = await secureApiFetch(`/api/admin/orgs/${orgId}`);
       const data = await res.json();
       if (requestId === orgDetailRequestId.current) {
-        setOrgDetail({ billing: data.billing, billingProvider: data.billingProvider, members: data.members || [] });
+        setOrgDetail({ billing: data.billing, billingProvider: data.billingProvider, seatSummary: data.seatSummary, members: data.members || [] });
       }
     } catch (e) {
       // A missing or inaccessible company must not be shown as an empty one.
@@ -2524,10 +2525,21 @@ export const AdminDashboard = () => {
                                   <span className="text-[10px] text-text-muted italic">(No real billing provider connected - admin-managed seat count only)</span>
                                 )}
                               </div>
+                              {orgDetail.seatSummary && (
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                  <div className="rounded-lg border border-border p-3"><span className="block text-text-muted">Staff</span><strong className="text-lg text-text-main">{orgDetail.seatSummary.members}</strong></div>
+                                  <div className="rounded-lg border border-border p-3"><span className="block text-text-muted">Invitations pending</span><strong className="text-lg text-text-main">{orgDetail.seatSummary.pendingInvites}</strong></div>
+                                  <div className="rounded-lg border border-border p-3"><span className="block text-text-muted">Seats available</span><strong className="text-lg text-text-main">{orgDetail.seatSummary.remaining}</strong></div>
+                                  <div className="rounded-lg border border-border p-3"><span className="block text-text-muted">Suspended records</span><strong className="text-lg text-text-main">{orgDetail.seatSummary.suspendedRecords}</strong></div>
+                                </div>
+                              )}
+                              {orgDetail.seatSummary?.overCapacity && (
+                                <p role="alert" className="text-xs text-warning">This company exceeds its configured seat allowance. Check billing and member records.</p>
+                              )}
                               <div>
                                 <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-2">Staff with role records ({orgDetail.members.length}) — account access only</p>
-                                <p className="text-[11px] text-text-muted mb-2">Owners: {orgDetail.members.filter(m => m.role === 'owner').map(m => m.email || m.uid).join(', ') || 'No owner record listed'} · Seats remaining: {Math.max(0, orgDetail.billing.seatCount - org.memberCount)}</p>
-                                {org.memberCount !== orgDetail.members.length && (
+                                <p className="text-[11px] text-text-muted mb-2">Owners: {orgDetail.members.filter(m => m.role === 'owner').map(m => m.email || m.uid).join(', ') || 'No owner record listed'} · Seats remaining: {orgDetail.seatSummary ? orgDetail.seatSummary.remaining : 'Not available'}</p>
+                                {(orgDetail.seatSummary?.rosterMismatch ?? (org.memberCount !== orgDetail.members.length)) && (
                                   <p role="alert" className="text-xs text-warning mb-2">Membership count and detailed staff records differ. Some older members may not have role records; review before changing access.</p>
                                 )}
                                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
