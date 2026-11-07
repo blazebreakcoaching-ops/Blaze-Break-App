@@ -165,11 +165,16 @@ export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boole
 // for coaching. Missing/failed consent reads must fail closed. Onboarding
 // may create a permissions document, and the user can change it in Settings.
 export const isCalendarSignalConsentGranted = async (uid: string): Promise<boolean> => {
+  if (!uid || auth.currentUser?.uid !== uid) return false;
   try {
     const db = await getDb();
+    if (auth.currentUser?.uid !== uid) return false;
     const { doc, getDoc } = await import('firebase/firestore');
     const snap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
-    return snap.exists() && hasExplicitCalendarSignalConsent(snap.data());
+    // Never let an old account's delayed read authorise a background sync
+    // after another Firebase identity has taken over the browser.
+    return auth.currentUser?.uid === uid && snap.exists() &&
+      hasExplicitCalendarSignalConsent(snap.data());
   } catch {
     return false;
   }
