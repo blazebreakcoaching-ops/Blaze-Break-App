@@ -15,7 +15,6 @@ import {
   History,
   Brain,
   Network,
-  RefreshCw,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -45,20 +44,15 @@ import { AnonymousSuggestionBox } from './AnonymousSuggestionBox.tsx';
 export const PrivacyVault = ({ 
   profile, 
   onProfileUpdate,
-  isGlobalSyncing,
-  onTriggerSync,
   onAwardPoints
 }: { 
   profile: UserProfileData, 
   onProfileUpdate: (p: UserProfileData) => void,
-  isGlobalSyncing?: boolean,
-  onTriggerSync?: () => Promise<void>,
   onAwardPoints?: (amount: number, reason: string) => void
 }) => {
   const [activeTab, setActiveTab] = useState<'zones' | 'compliance' | 'org' | 'consent' | 'governance' | 'audit' | 'policies'>('zones');
   const flags = useFeatureFlags();
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   const [orgStatus, setOrgStatus] = useState<{
     organisationId: string | null;
@@ -202,35 +196,6 @@ export const PrivacyVault = ({
   const [acknowledgedUnlink, setAcknowledgedUnlink] = useState(false);
   const [acknowledgedNoRecovery, setAcknowledgedNoRecovery] = useState(false);
 
-  // Combined Syncing Status
-  const isSyncActive = isGlobalSyncing !== undefined ? isGlobalSyncing : isSyncing;
-
-  const handleTriggerSync = async () => {
-    if (onTriggerSync) {
-      try {
-        await handleAuditAction('Initiated Firebase Sync', 'Firestore Schema', 'authorised');
-        await onTriggerSync();
-        await handleAuditAction('Firebase Synced Data Baseline to Cloud Vault', 'autonomic_sync_ledger', 'verified');
-      } catch (e) {
-        console.error("Firebase Sync error:", e);
-      }
-    } else {
-      setIsSyncing(true);
-      try {
-        await handleAuditAction('Initiated Local Save', 'Local Storage', 'authorised');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await handleAuditAction('Saved locally in this prototype', 'local_ledger', 'verified');
-        if (onAwardPoints) {
-          onAwardPoints(15, "Recovery data saved locally (+15 pts)");
-        }
-      } catch (e) {
-        console.error("Local Save error:", e);
-      } finally {
-        setIsSyncing(false);
-      }
-    }
-  };
-
   useEffect(() => {
     if (activeTab === 'audit') {
       getAuditLogs().then(setAuditLogs);
@@ -351,23 +316,6 @@ export const PrivacyVault = ({
               })}
             </div>
 
-            {/* Save Data Action with Subtle Pulse effect */}
-            <button
-              onClick={handleTriggerSync}
-              disabled={isSyncActive}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all duration-300 font-bold text-xs cursor-pointer relative overflow-hidden self-start lg:self-center",
-                isSyncActive 
-                  ? "bg-primary/10 border-primary/40 text-[#9a3412] dark:text-primary" 
-                  : "bg-surface/50 dark:bg-card/40 border-white/[0.04] text-text-muted hover:text-text-main"
-              )}
-            >
-              <RefreshCw className={cn("w-3.5 h-3.5", isSyncActive && "animate-spin text-primary")} />
-              <span role="status" aria-live="polite">{isSyncActive ? "Saving Locally..." : "Save Locally"}</span>
-              {isSyncActive && (
-                <span className="absolute inset-0 border border-primary/30 rounded-xl animate-pulse pointer-events-none bg-primary/5" />
-              )}
-            </button>
           </div>
         </div>
       </div>

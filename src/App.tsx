@@ -1203,14 +1203,7 @@ export default function App() {
   const [showMyBoundaries, setShowMyBoundaries] = useState(false);
 
   // Global Sync State
-  const [isGlobalSyncing, setIsGlobalSyncing] = useState(false);
 
-  const handleTriggerGlobalSync = async () => {
-    setIsGlobalSyncing(true);
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-    setIsGlobalSyncing(false);
-    awardPoints(15, "Recovery data saved locally (+15 pts)");
-  };
 
   // One persisted choice; System follows device changes in real time.
   const { mode: themeMode, setMode: setThemeMode, darkMode } = useAppearanceTheme();
@@ -3141,8 +3134,6 @@ export default function App() {
                   onProfileUpdate={(p) =>
                     setStats((prev) => ({ ...prev, profile: p }))
                   }
-                  isGlobalSyncing={isGlobalSyncing}
-                  onTriggerSync={handleTriggerGlobalSync}
                   onAwardPoints={awardPoints}
                 />
                 <TrustCentrePage onBack={() => {}} embedded />
@@ -3185,8 +3176,6 @@ export default function App() {
               <div className="space-y-32 max-w-7xl mx-auto">
                 <ExecutiveBoardReport
                   stats={stats}
-                  isGlobalSyncing={isGlobalSyncing}
-                  onTriggerSync={handleTriggerGlobalSync}
                   onAwardPoints={awardPoints}
                 />
                 <CalendarDefenseView isDemoSession={isDemoSession} onNavigate={safeSetActiveTab as any} />

@@ -1,45 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { Download, TrendingUp, Clock, ShieldAlert, Activity, FileText, RefreshCw, Loader2, Layers, Sparkles } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Download, TrendingUp, Clock, ShieldAlert, Activity, FileText, Layers, Sparkles } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { UserStats } from '../types';
 import { secureApiFetch } from '../lib/secure-api';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { buildExecutiveReportHtml } from '../lib/executive-report-document';
 
 export const ExecutiveBoardReport = ({
   stats: userStats,
-  isGlobalSyncing,
-  onTriggerSync,
   onAwardPoints
 }: {
   stats?: UserStats;
-  isGlobalSyncing?: boolean;
-  onTriggerSync?: () => Promise<void>;
   onAwardPoints?: (amount: number, reason: string) => void;
 }) => {
   const { user } = useAuth();
   const [isExporting, setIsExporting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
-  // Configuration states for PDF export
+  // Report options for the printable / Save-as-PDF summary
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [includeAICommentary, setIncludeAICommentary] = useState(true);
   const [includeMetricsGrid, setIncludeMetricsGrid] = useState(true);
   const [includeBurnRate, setIncludeBurnRate] = useState(true);
   const [includeCorporateSignature, setIncludeCorporateSignature] = useState(true);
 
-  // Progressive compiling step outputs
-  const [isProcessingProgress, setIsProcessingProgress] = useState(false);
   const configDialogRef = useFocusTrap(showConfigModal);
 
   useEffect(() => {
     if (!showConfigModal) return;
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isProcessingProgress) setShowConfigModal(false); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isExporting) setShowConfigModal(false); };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showConfigModal, isProcessingProgress]);
-  const [compilationProgress, setCompilationProgress] = useState(0);
-  const [compilationStatusText, setCompilationStatusText] = useState("");
+  }, [showConfigModal, isExporting]);
 
   const [reportData, setReportData] = useState<{
     deepWorkHours: number;
@@ -66,379 +58,64 @@ export const ExecutiveBoardReport = ({
     load();
   }, []);
 
-  const isSyncActive = isGlobalSyncing !== undefined ? isGlobalSyncing : isSyncing;
-
-  const handleSync = async () => {
-    if (onTriggerSync) {
-      await onTriggerSync();
-    } else {
-      setIsSyncing(true);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setIsSyncing(false);
-      if (onAwardPoints) {
-        onAwardPoints(15, "Recovery data saved locally (+15 pts)");
-      }
-    }
-  };
-
   const handleOpenConfig = () => {
+    setExportNotice(null);
     setShowConfigModal(true);
   };
 
-  const startPDFCompilationAndDownload = async () => {
-    setIsProcessingProgress(true);
-    
-    setCompilationProgress(15);
-    setCompilationStatusText("Securing sandbox data pipeline...");
-    await new Promise(r => setTimeout(r, 600));
-
-    setCompilationProgress(40);
-    setCompilationStatusText("Querying active recovery metrics from state store...");
-    let fetchedData = reportData;
-    if (!fetchedData) {
+  // Real PDF output with no extra dependency: the report is rendered in a
+  // hidden, script-less sandboxed frame and the browser's own print dialog
+  // is opened on it, where "Save as PDF" writes a genuine PDF file.
+  const printReport = async () => {
+    setIsExporting(true);
+    setExportNotice(null);
+    let liveData = reportData;
+    if (!liveData) {
       try {
         const res = await secureApiFetch('/api/signals/executive-report');
         if (res.ok) {
-          fetchedData = await res.json();
-          setReportData(fetchedData);
+          liveData = await res.json();
+          setReportData(liveData);
         }
-      } catch (e) {
-        // Falls through to the honest "not enough data yet" state below.
+      } catch {
+        // Falls through to the report's honest "not enough data yet" text.
       }
     }
-    await new Promise(r => setTimeout(r, 300));
-
-    setCompilationProgress(70);
-    setCompilationStatusText("Compiling autonomic print layouts and schemas...");
-    await new Promise(r => setTimeout(r, 650));
-
-    setCompilationProgress(90);
-    setCompilationStatusText(fetchedData?.aiAnalysis ? "Reviewed by Nova..." : "Finalising without AI commentary...");
-    await new Promise(r => setTimeout(r, 550));
-
-    setCompilationProgress(100);
-    setCompilationStatusText("Compiling final report package...");
-    await new Promise(r => setTimeout(r, 350));
-
-    setIsProcessingProgress(false);
-    setShowConfigModal(false);
-    setIsExporting(true);
-
-    // Call dynamic PDF construction
-    setTimeout(() => {
-      executeDownloadBlob(fetchedData);
-    }, 500);
-  };
-
-  const executeDownloadBlob = (liveReportData: typeof reportData) => {
-    const liveName = userStats?.profile?.fullName || user?.displayName || user?.email || "Executive Recovery Pro Client";
-    const liveRole = userStats?.profile?.role || "Not specified";
-    const liveOrg = userStats?.profile?.organization || "Not specified";
-    const pointsTotal = userStats?.points ?? 0;
-    const streak = userStats?.streak ?? 0;
-    const sleepDebtVal = liveReportData?.sleepDebtHours;
-    const compilationDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    const htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Blaze Break - Confidential Executive Board Summary</title>
-    <style>
-        body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            background-color: #ffffff;
-            color: #0c0f16;
-            margin: 0;
-            padding: 40px;
-            line-height: 1.6;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #edeff5;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        .title {
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-            color: #000000;
-        }
-        .subtitle {
-            font-size: 10px;
-            font-weight: 950;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: #6366f1;
-            margin-top: 5px;
-        }
-        .metadata {
-            text-align: right;
-            font-size: 11px;
-            font-family: monospace;
-            color: #64748b;
-        }
-        .stamp {
-            display: inline-block;
-            border: 2px solid #ef4444;
-            color: #ef4444;
-            font-family: monospace;
-            font-weight: bold;
-            font-size: 11px;
-            padding: 4px 10px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-bottom: 20px;
-            border-radius: 4px;
-        }
-        .summary-card {
-            background-color: #f8fafc;
-            border-left: 4px solid #6366f1;
-            padding: 25px;
-            border-radius: 0 12px 12px 0;
-            margin-bottom: 30px;
-        }
-        .summary-title {
-            font-size: 12px;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            color: #6366f1;
-            margin-bottom: 12px;
-        }
-        .summary-text {
-            font-style: italic;
-            font-size: 16px;
-            font-family: Georgia, serif;
-            color: #1e293b;
-            line-height: 1.7;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            border: 1px solid #e2e8f0;
-            padding: 20px;
-            border-radius: 12px;
-        }
-        .stat-label {
-            font-size: 11px;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #64748b;
-        }
-        .stat-value {
-            font-size: 32px;
-            font-weight: 800;
-            margin-top: 5px;
-            color: #0f172a;
-        }
-        .stat-desc {
-            font-size: 11px;
-            color: #64748b;
-            margin-top: 5px;
-        }
-        .table-title {
-            font-size: 13px;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            color: #0f172a;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #edeff5;
-            padding-bottom: 8px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-            margin-bottom: 40px;
-        }
-        th, td {
-            padding: 12px 15px;
-            text-align: left;
-            border-bottom: 1px solid #f1f5f9;
-        }
-        th {
-            background-color: #f8fafc;
-            font-weight: bold;
-            color: #475569;
-            text-transform: uppercase;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        .footer {
-            border-top: 1px solid #edeff5;
-            padding-top: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 11px;
-            color: #94a3b8;
-        }
-        .signature-block {
-            margin-top: 40px;
-            border-top: 1px dashed #cbd5e1;
-            padding-top: 20px;
-            display: flex;
-            justify-content: space-between;
-        }
-        .sig-box {
-            width: 45%;
-        }
-        .sig-line {
-            height: 40px;
-            border-bottom: 1px solid #475569;
-            margin-bottom: 5px;
-        }
-        .sig-meta {
-            font-size: 11px;
-            color: #64748b;
-            line-height: 1.3;
-        }
-        @media print {
-            body {
-                padding: 20px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div style="max-width: 800px; margin: 0 auto;">
-        <div class="stamp">Strictly Confidential - Board Only</div>
-        
-        <div class="header">
-            <div>
-                <div class="title">Blaze Break Executive Board Summary</div>
-                <div class="subtitle">AUTONOMIC ENERGY DESIGN & RELAPSE DEFENSIVE POSITIONING</div>
-            </div>
-            <div class="metadata">
-                <div>DATE: ${compilationDate}</div>
-                <div>EXECUTIVE: ${liveName}</div>
-                <div>ROLE: ${liveRole}</div>
-                <div>COMPANY: ${liveOrg}</div>
-                <div>STATUS: SECURED CONFIGURATION</div>
-            </div>
-        </div>
-
-        ${includeAICommentary ? `
-        <div class="summary-card">
-            <div class="summary-title">Nova Core AI Analysis</div>
-            <div class="summary-text">${liveReportData?.aiAnalysis
-              ? liveReportData.aiAnalysis
-              : "Not enough activity has been logged yet to generate a grounded analysis. This section will populate once you've used the app's recovery tools (deep work sessions, boundary rehearsal, workload check-ins)."}</div>
-        </div>
-        ` : ''}
-
-        ${includeBurnRate ? `
-        <div class="grid">
-            <div class="stat-card" style="border-left: 4px solid #6366f1;">
-                <div class="stat-label">Workload Intensity</div>
-                <div class="stat-value">${liveReportData?.burnRatePercent !== null && liveReportData?.burnRatePercent !== undefined ? `${liveReportData.burnRatePercent}%` : 'No data yet'}</div>
-                <div class="stat-desc">Active task energy drain relative to weekly capacity, from your Workload Reality Check.</div>
-            </div>
-
-            <div class="stat-card" style="border-left: 4px solid #10b981;">
-                <div class="stat-label">Boundaries Protected</div>
-                <div class="stat-value">${liveReportData ? `${liveReportData.boundariesProtected} Practised` : 'No data yet'}</div>
-                <div class="stat-desc">Boundary scripts rehearsed this week.</div>
-            </div>
-        </div>
-        ` : ''}
-
-        ${includeMetricsGrid ? `
-        <div class="table-title">Weekly Recovery Metrics</div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Core Indicator Metric</th>
-                    <th>Value / Capacity</th>
-                    <th>Defensive Context</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Deep Work Protected</td>
-                    <td><strong>${liveReportData ? `${liveReportData.deepWorkHours} hrs` : 'No data yet'}</strong></td>
-                    <td>High-value focus preservation, this week</td>
-                    <td style="color: #10b981; font-weight: bold;">${liveReportData && liveReportData.deepWorkHours > 0 ? 'Protected' : 'Not yet logged'}</td>
-                </tr>
-                <tr>
-                    <td>Sleep Debt Carried</td>
-                    <td><strong>${sleepDebtVal !== null && sleepDebtVal !== undefined ? `${sleepDebtVal} hrs` : 'Not logged'}</strong></td>
-                    <td>Cumulative sleep shortfalls carryover</td>
-                    <td style="color: ${sleepDebtVal !== null && sleepDebtVal !== undefined ? (sleepDebtVal > 3 ? '#ef4444' : '#f59e0b') : '#6b7280'}; font-weight: bold;">${sleepDebtVal !== null && sleepDebtVal !== undefined ? (sleepDebtVal > 3 ? 'Overloaded' : 'Caution') : 'No data'}</td>
-                </tr>
-                <tr>
-                    <td>Total Points</td>
-                    <td><strong>${pointsTotal} pts</strong></td>
-                    <td>Total points earned, with current streak</td>
-                    <td style="color: #10b981; font-weight: bold;">Active (Streak: ${streak}d)</td>
-                </tr>
-            </tbody>
-        </table>
-        ` : ''}
-
-        ${includeCorporateSignature ? `
-        <div class="signature-block">
-            <div class="sig-box">
-                <div class="sig-line"></div>
-                <div class="sig-meta">
-                    <strong>${liveName}</strong><br/>
-                    Executive Leader Signature
-                </div>
-            </div>
-            <div class="sig-box">
-                <div class="sig-line" style="font-family: Georgia, serif; font-style: italic; font-size: 20px; line-height: 40px; color: #6366f1; border-bottom: 1px solid #475569; user-select: none;">Nova Coach</div>
-                <div class="sig-meta">
-                    <strong>Coach Nova</strong><br/>
-                    Recovery Strategist, Blaze Break
-                </div>
-            </div>
-        </div>
-        ` : ''}
-
-        <div class="footer" style="margin-top: 40px;">
-            <div>Powered by Blaze Break Recovery Coach v2.4 (Security: Verified SSL Cryptographic Envelope)</div>
-            <div>https://ai.studio/build</div>
-        </div>
-    </div>
-
-    <script>
-        window.onload = function() {
-            setTimeout(function() {
-                window.print();
-            }, 600);
-        }
-    </script>
-</body>
-</html>
-    `;
-
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `blazebreak_executive_board_summary_${new Date().getTime()}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    setIsExporting(false);
-    
-    if (onAwardPoints) {
-      onAwardPoints(10, 'Executive Board PDF Exported (+10 pts)');
-    }
+    const html = buildExecutiveReportHtml({
+      name: userStats?.profile?.fullName || user?.displayName || user?.email || 'Blaze Break member',
+      role: userStats?.profile?.role || 'Not specified',
+      organisation: userStats?.profile?.organization || 'Not specified',
+      points: userStats?.points ?? 0,
+      streak: userStats?.streak ?? 0,
+      generatedAt: new Date(),
+      data: liveData,
+      includeAICommentary, includeMetricsGrid, includeBurnRate, includeCorporateSignature,
+    });
+    const frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', 'allow-modals allow-same-origin');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0;';
+    frame.srcdoc = html;
+    // Some browsers fire load more than once for a frame; never open two
+    // print dialogs or award points twice for one export.
+    let handled = false;
+    frame.onload = () => {
+      if (handled) return;
+      handled = true;
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+        setExportNotice('Your print window is open. Choose "Save as PDF" as the destination to keep a copy.');
+        setShowConfigModal(false);
+        if (onAwardPoints) onAwardPoints(10, 'Executive Board report exported (+10 pts)');
+      } catch {
+        setExportNotice('Your browser blocked the print window. Please allow printing for this site and try again.');
+      } finally {
+        setIsExporting(false);
+        setTimeout(() => frame.remove(), 60_000);
+      }
+    };
+    document.body.appendChild(frame);
   };
 
   return (
@@ -449,35 +126,19 @@ export const ExecutiveBoardReport = ({
           <p className="text-sm text-text-muted mt-2 font-mono uppercase tracking-widest">Confidential / Personal Recovery Summary</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
-          {/* Save Data Pulse Action */}
-          <button
-            onClick={handleSync}
-            disabled={isSyncActive}
-            className={cn(
-              "px-5 py-2.5 rounded-2xl border text-xs font-bold transition-all duration-300 flex items-center gap-2.5 cursor-pointer relative overflow-hidden",
-              isSyncActive 
-                ? "bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary" 
-                : "bg-surface/60 border-border hover:border-primary/50 text-text-muted hover:text-text-main"
-            )}
-            title="Save recovery data"
-          >
-            <RefreshCw className={cn("w-4 h-4 text-primary", isSyncActive && "animate-spin")} />
-            <span role="status" aria-live="polite">{isSyncActive ? "Saving Locally..." : "Save Locally"}</span>
-            {isSyncActive && (
-              <span className="absolute inset-0 rounded-2xl border border-primary/30 bg-primary/5 animate-pulse" />
-            )}
-          </button>
-
           <button 
             onClick={handleOpenConfig}
             disabled={isExporting}
             className="btn-primary flex items-center gap-2 cursor-pointer"
           >
-            <Download className={cn("w-4 h-4", isExporting && "animate-bounce")} />
-            <span role="status" aria-live="polite">{isExporting ? "Preparing Report..." : "Export Report Summary"}</span>
+            <Download className="w-4 h-4" aria-hidden="true" />
+            <span>{isExporting ? "Preparing report..." : "Save as PDF"}</span>
           </button>
         </div>
       </div>
+      {exportNotice && (
+        <p role="status" aria-live="polite" className="text-sm text-text-muted -mt-4">{exportNotice}</p>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Nova's Executive Summary */}
@@ -566,7 +227,7 @@ export const ExecutiveBoardReport = ({
         <div 
           className="fixed inset-0 z-[120] flex items-center justify-center bg-card/85 backdrop-blur-md p-4 animate-in fade-in duration-300"
           onClick={() => {
-            if (!isProcessingProgress) setShowConfigModal(false);
+            if (!isExporting) setShowConfigModal(false);
           }}
         >
           <div
@@ -584,12 +245,11 @@ export const ExecutiveBoardReport = ({
                   <Layers className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 id="config-modal-title" className="text-xl font-display font-bold text-text-main">Executive Compile Engine</h3>
-                  <p className="text-xs text-text-muted">Customise reports prior to printing or PDF compilation</p>
+                  <h3 id="config-modal-title" className="text-xl font-display font-bold text-text-main">Report options</h3>
+                  <p className="text-xs text-text-muted">Choose what to include, then save it as a PDF from your print window.</p>
                 </div>
               </div>
 
-              {!isProcessingProgress ? (
                 <div className="space-y-6">
                   {/* Option toggles */}
                   <div className="space-y-4 bg-surface border border-white/[0.04] p-5 rounded-2xl">
@@ -658,57 +318,14 @@ export const ExecutiveBoardReport = ({
                       Cancel
                     </button>
                     <button
-                      onClick={startPDFCompilationAndDownload}
+                      onClick={printReport}
+                      disabled={isExporting}
                       className="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark text-primary-foreground border border-primary/20 rounded-xl font-bold transition text-xs cursor-pointer"
                     >
-                      Compile Summary
+                      {isExporting ? 'Opening print window...' : 'Open print window'}
                     </button>
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="py-6 flex flex-col items-center justify-center space-y-4">
-                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                    
-                    <div
-                      role="progressbar"
-                      aria-valuenow={compilationProgress}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label="Report compilation progress"
-                      className="w-full bg-surface h-2 rounded-full overflow-hidden border border-border"
-                    >
-                      <div
-                        className="bg-primary h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${compilationProgress}%` }}
-                      />
-                    </div>
-
-                    <p role="status" aria-live="polite" className="text-xs font-medium text-[#9a3412] dark:text-primary font-mono tracking-wider animate-pulse text-center">
-                      {compilationStatusText}
-                    </p>
-                  </div>
-
-                  {/* Progress trace */}
-                  <div className="bg-background p-4 rounded-lg border border-border space-y-2 font-mono text-[10px] text-text-muted/70 leading-relaxed text-left max-h-36 overflow-y-auto">
-                    <p className={cn("transition-all duration-300", compilationProgress >= 15 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 15 ? "✓ Connected securely" : "○ Connecting..."}
-                    </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 40 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 40 ? `✓ Fetched ${userStats?.profile?.fullName || 'your'} recovery data` : "○ Fetching recovery metrics..."}
-                    </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 70 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 70 ? "✓ Formatted your report" : "○ Formatting report..."}
-                    </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 90 ? "text-[#9a3412] dark:text-primary font-bold" : "text-text-muted/40")}>
-                      {compilationProgress >= 90 ? "✓ Reviewed by Nova" : "○ Nova reviewing..."}
-                    </p>
-                    <p className={cn("transition-all duration-300", compilationProgress >= 100 ? "text-[#166534] dark:text-[#4ade80] font-bold animate-pulse" : "text-text-muted/40")}>
-                      {compilationProgress >= 100 ? "✓ Report ready — opening print dialog..." : "○ Finishing up..."}
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
