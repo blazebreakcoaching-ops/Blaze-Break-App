@@ -11066,6 +11066,10 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
     // through the same function used server-side everywhere else means
     // this can never drift from what the backend actually enforces again.
     const callerRole = await getOrgMemberRole(db, orgId, org, user.uid);
+    // A stale profile link is not proof of active company membership.
+    // Do not disclose the organisation name or its permissions to a
+    // removed, suspended or otherwise unlinked account.
+    if (!callerRole) return res.json({ organisationId: null });
     const isOrgAdmin = callerRole === 'owner' || callerRole === 'admin';
     res.json({
       organisationId: orgId,
