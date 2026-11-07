@@ -10343,31 +10343,36 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
     }
 
     const orgRef = db.collection("organisations").doc(orgId);
-    const orgDoc = await orgRef.get();
-    if (!orgDoc.exists) {
-      return res.status(404).json({ error: "That organisation no longer exists. Contact support to unlink the account." });
-    }
-    const org = orgDoc.data()!;
-    // Leaving is not a way to remove the final active company owner.
-    await assertNotLastOrgOwner(db, orgId, org, user.uid);
-
-    await db.collection("users").doc(user.uid).set({
-      organisationId: FieldValue.delete(),
-      shareAnonymizedDataWithOrg: false,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-
-    await orgRef.update({
-      memberUids: FieldValue.arrayRemove(user.uid),
-      adminUids: FieldValue.arrayRemove(user.uid),
-      hrViewerUids: FieldValue.arrayRemove(user.uid),
-      [`memberTeams.${user.uid}`]: FieldValue.delete(),
-      [`teamManagers.${user.uid}`]: FieldValue.delete(),
+    const profileRef = db.collection("users").doc(user.uid);
+    const memberRef = orgRef.collection("members").doc(user.uid);
+    const outcome = await db.runTransaction(async (tx) => {
+      const currentOrg = await tx.get(orgRef);
+      const currentProfile = await tx.get(profileRef);
+      if (!currentOrg.exists) {
+        return { status: 404, error: "That organisation no longer exists. Contact support to unlink the account." };
+      }
+      if (!currentProfile.exists || currentProfile.data()?.organisationId !== orgId) {
+        return { status: 409, error: "Your company membership changed. Reload and try again." };
+      }
+      // Check the LAST-owner rule against the same transaction snapshot
+      // that writes the roster and role deletion.
+      await assertNotLastOrgOwner(db, orgId, currentOrg.data()!, user.uid, tx);
+      tx.set(profileRef, {
+        organisationId: FieldValue.delete(),
+        shareAnonymizedDataWithOrg: false,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      tx.update(orgRef, {
+        memberUids: FieldValue.arrayRemove(user.uid),
+        adminUids: FieldValue.arrayRemove(user.uid),
+        hrViewerUids: FieldValue.arrayRemove(user.uid),
+        [`memberTeams.${user.uid}`]: FieldValue.delete(),
+        [`teamManagers.${user.uid}`]: FieldValue.delete(),
+      });
+      tx.delete(memberRef);
+      return { status: 200 };
     });
-    // Clean up the granular Enterprise role record too - otherwise it
-    // silently outlives the membership it describes, the same class of bug
-    // user-data-collections.ts's own history warns against.
-    await db.collection("organisations").doc(orgId).collection("members").doc(user.uid).delete();
+    if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
     // Same reasoning for any desktop-deployment device this user registered
     // under the org they're leaving (organisations/{orgId}/devices, keyed by
     // ownerUid) - otherwise it silently outlives the membership too.
@@ -10469,8 +10474,9 @@ const requireOrgPermission = async (req: any, orgId: string, permission: OrgPerm
 // members doc at all. Querying the subcollection alone would find zero
 // owners for such an org and silently let its actual last owner be
 // demoted or removed with no protection whatsoever.
-const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid: string) => {
-  const membersSnap = await db.collection("organisations").doc(orgId).collection("members").get();
+const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid: string, tx?: any) => {
+  const membersRef = db.collection("organisations").doc(orgId).collection("members");
+  const membersSnap = tx ? await tx.get(membersRef) : await membersRef.get();
   const resolvedRoleByUid = new Map<string, string>();
   membersSnap.docs.forEach((d: any) => {
     const role = d.data()?.role;
@@ -11711,22 +11717,41 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       return res.status(400).json({ error: "Use 'Leave Organisation' from your own Privacy Centre to remove yourself." });
     }
     const db = getDb();
-    await assertNotLastOrgOwner(db, orgId, org, memberUid);
-    await db.collection("users").doc(memberUid).set({
-      organisationId: FieldValue.delete(),
-      shareAnonymizedDataWithOrg: false,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    await db.collection("organisations").doc(orgId).update({
-      memberUids: FieldValue.arrayRemove(memberUid),
-      adminUids: FieldValue.arrayRemove(memberUid),
-      hrViewerUids: FieldValue.arrayRemove(memberUid),
-      [`memberTeams.${memberUid}`]: FieldValue.delete(),
-      [`teamManagers.${memberUid}`]: FieldValue.delete(),
+    const orgRef = db.collection("organisations").doc(orgId);
+    const profileRef = db.collection("users").doc(memberUid);
+    const memberRef = orgRef.collection("members").doc(memberUid);
+    const outcome = await db.runTransaction(async (tx) => {
+      const currentOrg = await tx.get(orgRef);
+      const currentProfile = await tx.get(profileRef);
+      if (!currentOrg.exists) return { status: 404, error: "Organisation not found." };
+      const roster = currentOrg.data()!;
+      if (!(roster.memberUids || []).includes(memberUid)) {
+        return { status: 404, error: "That employee is not on this company's roster." };
+      }
+      if (currentProfile.exists && currentProfile.data()?.organisationId &&
+          currentProfile.data()?.organisationId !== orgId) {
+        // Stale org roster must NEVER clear another company's profile.
+        return { status: 409, error: "That account now belongs to another company. Review the stale roster before removing it." };
+      }
+      await assertNotLastOrgOwner(db, orgId, roster, memberUid, tx);
+      if (currentProfile.exists) {
+        tx.set(profileRef, {
+          organisationId: FieldValue.delete(),
+          shareAnonymizedDataWithOrg: false,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+      tx.update(orgRef, {
+        memberUids: FieldValue.arrayRemove(memberUid),
+        adminUids: FieldValue.arrayRemove(memberUid),
+        hrViewerUids: FieldValue.arrayRemove(memberUid),
+        [`memberTeams.${memberUid}`]: FieldValue.delete(),
+        [`teamManagers.${memberUid}`]: FieldValue.delete(),
+      });
+      tx.delete(memberRef);
+      return { status: 200 };
     });
-    // Clean up the granular Enterprise role record too - see /api/org/leave
-    // above for why this matters.
-    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).delete();
+    if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
     // Same reasoning for any desktop-deployment device this member
     // registered under the org (organisations/{orgId}/devices, keyed by
     // ownerUid) - otherwise it silently outlives the membership too.
