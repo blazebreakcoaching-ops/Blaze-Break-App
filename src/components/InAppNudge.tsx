@@ -4,7 +4,7 @@ import { Sparkles, X, ChevronRight } from "lucide-react";
 import { useAuth } from '../lib/auth';
 import { getDb } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
-import { isNudgeVisibleForAccount, nudgeHistoryKey, parseNudgeHistory } from '../lib/nudge-visibility';
+import { isNudgeVisibleForAccount, nudgeHistoryKey, parseNudgeHistory, nudgeInteractionUpdate } from '../lib/nudge-visibility';
 import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
 
 // InAppNudge is always mounted from app start (it polls every 60s), not a
@@ -416,7 +416,7 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
     }
   };
 
-  const dismiss = async (reason?: string) => {
+  const dismiss = async (interaction: 'not_now' | 'action_taken') => {
     if (!currentNudge || !user || nudgeOwnerUid !== user.uid) return;
     const ownerUid = user.uid;
     setIsDismissing(true);
@@ -424,18 +424,12 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
     if (currentNudge.id) {
       try {
         const { db, doc, updateDoc } = await getFirestoreApi();
-        // "acted_on" (not "action_taken") matches firestore.rules' status
-        // enum. Firestore's SDK also throws client-side on an explicit
-        // `undefined` field value, so dismissedAt/actionTakenAt/
-        // reasonCategory are only included when they actually apply,
-        // rather than always present with one side undefined - both bugs
-        // meant this write always failed, silently, before either field
-        // mismatch even reached the server.
-        await updateDoc(doc(db, 'users', user.uid, 'nudge_history', currentNudge.id), {
-          status: reason ? "dismissed" : "acted_on",
-          ...(reason ? { dismissedAt: new Date().toISOString(), reasonCategory: reason } : { actionTakenAt: new Date().toISOString() }),
-          updatedAt: new Date().toISOString()
-        });
+        // A click on the nudge's CTA means "acted_on"; clicking X means
+        // "dismissed". Neither outcome claims the recovery task is done.
+        await updateDoc(
+          doc(db, 'users', user.uid, 'nudge_history', currentNudge.id),
+          nudgeInteractionUpdate(interaction, new Date().toISOString()),
+        );
       } catch (e) {
         // ignore
       }
