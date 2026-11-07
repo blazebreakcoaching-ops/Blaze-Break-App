@@ -37,8 +37,8 @@ describe('per-account audit isolation and history contract', () => {
   });
 
   it('signals audit persistence failures for successful account mutations', () => {
-    expect(server).toContain('return true;\n  } catch (err: any) {');
-    expect(server).toContain('logger.error("Failed to write admin audit log"');
+    expect(server).toContain('await eventRef.set(entry)');
+    expect(server).toContain("AUDIT LOSS RISK: primary and recovery writes both failed");
     expect(server).toContain('res.json({ success: true, auditRecorded })');
     expect(ui).toContain("auditResult?.auditRecorded === false");
     expect(ui).toContain('The account change succeeded, but the audit event was NOT saved.');
