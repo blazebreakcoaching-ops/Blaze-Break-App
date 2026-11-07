@@ -30,6 +30,14 @@ describe('platform audit history pagination and data boundaries', () => {
     expect(route).toContain("outcome: data.outcome === 'failed'");
     expect(route).toContain("'unrecorded'");
   });
+  it('records an explicit success only after the three supported account mutations', () => {
+    expect(server).toContain("outcome?: 'succeeded' | 'failed'");
+    expect(server).toContain('...(outcome ? { outcome } : {})');
+    expect(server).toContain(`{ role }, 'succeeded'`);
+    expect(server).toContain(`{ plan, status, durationDays: durationDays ?? null, previousPlan, planChange }, 'succeeded'`);
+    expect(server).toContain(`{ suspend }, 'succeeded'`);
+  });
+
   it('gives the Audit Trail independent page navigation and explicit missing-proof semantics', () => {
     expect(dashboard).toContain('<AdminAuditHistory key={authUser?.uid');
     expect(view).toContain('onClick={() => void load(nextCursor, [...history, cursor])}');
