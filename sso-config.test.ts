@@ -222,6 +222,20 @@ describe('isBlockedIpAddress — SSRF guard for the metadataUrl reachability che
     expect(isBlockedIpAddress('::ffff:127.0.0.1')).toBe(true);
   });
 
+  it('blocks non-global IPv6 variants and IPv4-mapped addresses in hexadecimal form', () => {
+    expect(isBlockedIpAddress('0:0:0:0:0:0:0:1')).toBe(true);
+    expect(isBlockedIpAddress('::ffff:7f00:1')).toBe(true);
+    expect(isBlockedIpAddress('0:0:0:0:0:ffff:c0a8:0101')).toBe(true);
+    expect(isBlockedIpAddress('ff02::1')).toBe(true);
+    expect(isBlockedIpAddress('2001:4860:4860::8888')).toBe(false);
+  });
+
+  it('blocks special-use or non-routable IPv4 addresses', () => {
+    for (const ip of ['192.0.2.1', '198.18.0.1', '198.51.100.2', '203.0.113.7']) {
+      expect(isBlockedIpAddress(ip)).toBe(true);
+    }
+  });
+
   it('allows an ordinary public IPv6 address', () => {
     expect(isBlockedIpAddress('2001:4860:4860::8888')).toBe(false); // Google public DNS
   });
