@@ -8191,14 +8191,21 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     const db = getDb();
     
     // Fetch users and metrics
-    let totalUsersCount = 0;
-    let usersList: any[] = [];
+    let totalUsersCount: number | null = null;
+    const dataAvailability = {
+      users: false,
+      diagnostics: false,
+      featureFlags: false,
+      organisations: false,
+      anxietyResets: false,
+    };
     try {
       const usersSnap = await db.collection("users").limit(100).get();
-      totalUsersCount = Math.max(usersSnap.size, 1);
-      usersList = usersSnap.docs.map(doc => doc.data());
+      totalUsersCount = usersSnap.size;
+      dataAvailability.users = true;
     } catch (e) {
-      totalUsersCount = 1;
+      // Unknown is not 0, and never a fabricated minimum of 1.
+      totalUsersCount = null;
     }
 
     // Diagnostic completions
@@ -8206,6 +8213,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     try {
       const fingerprintsSnap = await db.collectionGroup("fingerprint").get();
       diagnosticCompletions = fingerprintsSnap.size;
+      dataAvailability.diagnostics = true;
     } catch (e) {
       // This admin-stats endpoint reports several independent metrics;
       // one query failing shouldn't take the others down, so this one
@@ -8217,6 +8225,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     try {
       const flagsSnap = await db.collection("public_feature_flags").where("enabled", "==", true).get();
       activeFeatureFlags = flagsSnap.size;
+      dataAvailability.featureFlags = true;
     } catch (e) {
       // Same reasoning as the diagnosticCompletions query above - degrade
       // to the 0 default rather than failing the whole stats response.
@@ -8227,6 +8236,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     try {
       const orgsSnap = await db.collection("organisations").get();
       orgsCount = orgsSnap.size;
+      dataAvailability.organisations = true;
     } catch (e) {
       // Same reasoning as the diagnosticCompletions query above - degrade
       // to the 0 default rather than failing the whole stats response.
@@ -8247,6 +8257,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
 
     try {
       const resetsSnap = await db.collection("anxiety_reset_events").get();
+      dataAvailability.anxietyResets = true;
       totalResets = resetsSnap.size;
       const todayStart = new Date();
       todayStart.setHours(0,0,0,0);
@@ -8293,6 +8304,10 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
     const mostUsedResetTool = Object.keys(toolCounts).reduce((a, b) => toolCounts[a] > toolCounts[b] ? a : b, 'None');
 
     res.json({
+      // All counts below are sampled/read-limited where documented;
+      // dataAvailability makes partial Firestore outages explicit.
+      dataAvailability,
+      usersCountCapped: totalUsersCount !== null && totalUsersCount >= 100,
       totalUsers: totalUsersCount,
       burnoutDiagnosticCompletions: diagnosticCompletions,
       safetyEvents: safetyEscalations,
@@ -8324,7 +8339,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
       mostCommonTrigger,
       mostUsedResetTool,
       toolCounts,
-      completionRate: totalResets > 0 ? Math.round((completedCount / totalResets) * 100) : 100,
+      completionRate: totalResets > 0 ? Math.round((completedCount / totalResets) * 100) : 0,
       totalResets,
       safetyEscalations,
       crisisReferrals
