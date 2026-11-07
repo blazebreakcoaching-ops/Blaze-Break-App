@@ -369,6 +369,10 @@ export const NovaChat = ({
         // An old request must not leave the new account stuck on "thinking".
         setLoading(false);
         setInput('');
+        stopAudio();
+        setShowVoiceCall(false);
+        setSpeakingIndex(null);
+        setAudioLoading(false);
       }
       setCurrentUid(nextUid);
     });
@@ -389,7 +393,18 @@ export const NovaChat = ({
     // targets whatever identity is live *by then* - not the one this
     // reload actually read from - overwriting that identity's real saved
     // history with the stale/empty state this reload produced.
-    setMessages(loadMessages(currentUid));
+    const restored = loadMessages(currentUid);
+    if (restored.length > 0) {
+      setMessages(restored);
+    } else {
+      const savedProfile = readAccountProfile(currentUid);
+      const firstName = savedProfile.useNameInGreetings && typeof savedProfile.fullName === 'string'
+        ? savedProfile.fullName.trim().split(/\s+/)[0] : '';
+      setMessages([{
+        role: 'model',
+        parts: [{ text: initialMessage || `I'm Nova. ${firstName ? `Welcome, ${firstName}. ` : ''}What's on your mind today?` }],
+      }]);
+    }
     setMessagesOwnerUid(currentUid);
     setRatings(loadRatings(currentUid));
     setFeedbackNotes(loadFeedbackNotes(currentUid));
@@ -658,7 +673,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
   };
 
-  const playPcmAudio = async (base64Audio: string) => {
+  const playPcmAudio = async (base64Audio: string, shouldPlay: () => boolean = () => true) => {
+    if (!shouldPlay()) return;
     if (!audioCtxRef.current) {
       audioCtxRef.current = new window.AudioContext({ sampleRate: 24000 });
     }
@@ -666,6 +682,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     if (audioCtx.state === "suspended") {
       await audioCtx.resume();
     }
+    if (!shouldPlay()) return;
 
     stopAudio();
 
@@ -692,11 +709,22 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     source.onended = () => {
       setSpeakingIndex(null);
     };
+    if (!shouldPlay()) {
+      source.disconnect();
+      return;
+    }
     source.start(0);
     activeSourceRef.current = source;
   };
 
   const speakText = async (text: string, index: number) => {
+    const requestUid = currentUid;
+    const requestEpoch = identityEpochRef.current;
+    const stillCurrentPlayback = () =>
+      auth.currentUser?.uid === requestUid &&
+      observedUidRef.current === requestUid &&
+      identityEpochRef.current === requestEpoch;
+    if (!stillCurrentPlayback()) return;
     if (speakingIndex === index) {
       stopAudio();
       setSpeakingIndex(null);
@@ -713,16 +741,18 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
       });
 
       const data = await response.json();
+      if (!stillCurrentPlayback()) return;
       setAudioLoading(false);
 
       if (data.error) throw new Error(data.error);
 
       if (data.audio) {
-        await playPcmAudio(data.audio);
+        await playPcmAudio(data.audio, stillCurrentPlayback);
       } else {
         setSpeakingIndex(null);
       }
     } catch (error: any) {
+      if (!stillCurrentPlayback()) return;
       console.error("Playback error:", error);
       setAudioLoading(false);
       setSpeakingIndex(null);
