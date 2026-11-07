@@ -250,6 +250,7 @@ export const AdminDashboard = () => {
   const [expandedTimelineUid, setExpandedTimelineUid] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersCapped, setUsersCapped] = useState(false);
+  const [directoryPageUsers, setDirectoryPageUsers] = useState<AdminUser[]>([]);
   const [directoryRefreshRevision, setDirectoryRefreshRevision] = useState(0);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -1415,7 +1416,7 @@ export const AdminDashboard = () => {
 
   // Put identifiable accounts first so a large number of temporary demo
   // sessions cannot bury actual staff and customer accounts in the list.
-  const filteredUsers = users.filter(u =>
+  const filteredUsers = directoryPageUsers.filter(u =>
     ((u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (u.displayName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (u.organisationId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1441,7 +1442,7 @@ export const AdminDashboard = () => {
   // platform-admin role list - most accounts are plain end-users with a
   // mix of app-level AuthRole values (individual/employee/manager/...),
   // not platform-staff roles, so this filter reflects what's really there.
-  const rolesInView = Array.from(new Set(users.map((u) => u.role || 'user'))).sort();
+  const rolesInView = Array.from(new Set(directoryPageUsers.map((u) => u.role || 'user'))).sort();
 
   const lifecycleOf = (u: AdminUser): { label: string; tone: 'active' | 'muted' | 'warning' | 'destructive' } => {
     if (u.accessStatus === 'unknown') return { label: 'Orphaned (no Auth record)', tone: 'warning' };
@@ -1492,6 +1493,12 @@ export const AdminDashboard = () => {
   // and entitlement pickers from its real current values - replaces the
   // two separate "Edit Claims" / "Grant Access" buttons and their own
   // independent inline panels with one consolidated per-account surface.
+  const receiveDirectoryPage = (accounts: DirectoryUser[]) => {
+    // Runtime contract comes from GET /api/admin/directory. This is an
+    // operational projection, never the raw Firestore user profile.
+    setDirectoryPageUsers(accounts as unknown as AdminUser[]);
+  };
+
   const openAccountDrawer = (u: AdminUser) => {
     setSelectedUser(u);
     setSelectedUserRole(u.role && ROLE_HIERARCHY.some((r) => r.value === u.role) ? u.role : 'user');
@@ -1820,7 +1827,8 @@ export const AdminDashboard = () => {
             <AdminPeopleDirectory
               key={authUser?.uid || 'signed-out'}
               refreshRevision={directoryRefreshRevision}
-              onManageAccount={(account: DirectoryUser) => openAccountDrawer(account as AdminUser)}
+              onAccountsChange={receiveDirectoryPage}
+              onManageAccount={(account: DirectoryUser) => openAccountDrawer(account as unknown as AdminUser)}
             />
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
               <div className="flex flex-col sm:flex-row gap-3 w-full flex-wrap">
@@ -1881,13 +1889,13 @@ export const AdminDashboard = () => {
                 </select>
               </div>
               <div className="text-xs uppercase tracking-wider font-black text-text-muted shrink-0">
-                Displaying {filteredUsers.length} of {users.length}{usersCapped ? '+' : ''} loaded accounts
-                {usersCapped && <span className="block normal-case font-medium text-[10px] mt-0.5">The first {users.length} records hit the page limit; more accounts may exist. Search and filters cover only these loaded records.</span>}
+                Displaying {filteredUsers.length} of {directoryPageUsers.length} current-page accounts
+                <span className="block normal-case font-medium text-[10px] mt-0.5">Search and filters apply to this Firebase page only. Use exact email or UID search above for other accounts.</span>
               </div>
             </div>
 
             <div className="text-xs text-text-muted rounded-xl bg-surface border border-border px-4 py-3 space-y-1">
-              <p><strong className="text-text-main">Account directory:</strong> {users.filter(u => !u.isAnonymous && u.accessStatus !== 'unknown').length} registered, {users.filter(u => u.isAnonymous).length} demo sessions and {users.filter(u => u.accessStatus === 'unknown').length} orphaned records in the loaded page.</p>
+              <p><strong className="text-text-main">Current Firebase page:</strong> {directoryPageUsers.filter(u => !u.isAnonymous).length} registered and {directoryPageUsers.filter(u => u.isAnonymous).length} demo accounts. Orphaned Firestore-only records require a separate reconciliation process.</p>
               <p>Registered accounts are shown by default; use Account Category to inspect demos or orphaned records. Dates come from Firebase Authentication in your device's time zone. Last sign-in is not a full activity history.</p>
             </div>
 
@@ -2031,8 +2039,16 @@ export const AdminDashboard = () => {
         {activeTab === 'entitlements' && (
           <div className="space-y-6">
             <p className="text-xs text-text-muted leading-relaxed max-w-2xl">
-              Every row below is this account's real stored entitlement record - not a derived guess. "Effective" shows whether that grant is live right now; a "Live" grant can still show "Expired" here once its end date passes, even though nothing else about the record changed.
+              Plans and access are shown for the Firebase page below, or an exact account lookup. These are operational records, not a whole-platform total. Effective access can differ from an expired stored grant.
             </p>
+            <AdminPeopleDirectory
+              key={authUser?.uid || 'signed-out'}
+              compact
+              refreshRevision={directoryRefreshRevision}
+              onAccountsChange={receiveDirectoryPage}
+              onManageAccount={(account: DirectoryUser) => openAccountDrawer(account as unknown as AdminUser)}
+            />
+            <p className="text-xs text-text-muted">The access timeline uses a separately limited audit-log query and may omit older events. A zero count here does not prove that no prior grants exist.</p>
             {loading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-4">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -2135,7 +2151,7 @@ export const AdminDashboard = () => {
                       {filteredUsers.length === 0 && (
                         <tr>
                           <td colSpan={7} className="py-12 text-center text-text-muted text-sm italic">
-                            No matching user accounts registered on this node.
+                            No accounts match the current Firebase page or exact lookup.
                           </td>
                         </tr>
                       )}
