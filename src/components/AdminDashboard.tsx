@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { ConfirmDialog } from './ConfirmDialog';
 import { AdminPeopleDirectory, type DirectoryUser } from './AdminPeopleDirectory';
+import { AdminAuditHistory } from './AdminAuditHistory';
 import { formatFeedbackCategory } from '../lib/feedback-format';
 import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole } from '../../admin-roles';
 import { DEVICE_CHANNELS } from '../../desktop-deployment';
@@ -2779,69 +2780,11 @@ export const AdminDashboard = () => {
           </div>
         )}
 
-        {/* Tab 3: Audit Timeline */}
+        {/* Audit History: a paginated server-backed operational ledger.
+            Legacy auditLogs remain temporarily for the limited Plans
+            timeline until an exact-account history endpoint is available. */}
         {activeTab === 'audit' && (
-          <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-6">
-              <div>
-                <h4 className="text-sm font-bold text-text-main">Audit Event Trail</h4>
-                <p className="text-xs text-text-muted mt-0.5">
-                  Immutable administrative security activity registry - firestore.rules denies all client writes to this collection (<code className="font-mono">allow write: if false</code>); only server-side admin actions can ever append to it.
-                </p>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <select
-                  aria-label="Filter by category"
-                  value={auditCategoryFilter}
-                  onChange={(e) => setAuditCategoryFilter(e.target.value as typeof auditCategoryFilter)}
-                  className="px-3 py-2 bg-surface dark:bg-card border border-border rounded-xl text-xs text-text-main focus:outline-none focus:border-primary"
-                >
-                  <option value="all">All categories</option>
-                  {Object.keys(AUDIT_CATEGORIES).map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-                <div className="text-xs uppercase font-black tracking-widest text-text-muted">
-                  Showing {filteredAuditLogs.length} of {auditLogs.length}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {filteredAuditLogs.map((log) => (
-                <div key={log.id} className="p-4 bg-card hover:bg-white/[0.01] rounded-xl border border-white/5 transition-all flex items-start gap-4">
-                  <div className={`p-2 rounded-lg shrink-0 ${
-                    log.action.includes('suspend') 
-                      ? 'bg-destructive/10 text-destructive' 
-                      : log.action.includes('role')
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-success/10 text-success dark:text-[#4ade80]'
-                  }`}>
-                    <Activity className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 space-y-1 min-w-0">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-xs font-black uppercase tracking-wider text-text-main font-mono">{log.action.replace(/_/g, ' ')}</span>
-                      <span className="text-[10px] text-text-muted shrink-0 font-mono">{new Date(log.createdAt).toLocaleString()}</span>
-                    </div>
-                    <p className="text-xs text-text-muted leading-relaxed">
-                      Admin <span className="font-bold text-text-main">{log.actorEmail}</span> executed action targeting <span className="font-mono text-text-main select-all">{log.targetUid || log.targetEmail}</span>.
-                    </p>
-                    {log.metadata && Object.keys(log.metadata).length > 0 && (
-                      <div className="p-2.5 bg-surface rounded-lg text-[10px] font-mono text-text-muted mt-2 border border-white/5 max-w-lg truncate">
-                        Details: {JSON.stringify(log.metadata)}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {filteredAuditLogs.length === 0 && (
-                <div className="py-12 text-center text-text-muted text-sm italic">
-                  {auditLogs.length === 0 ? 'No administrative actions are logged in this ledger yet.' : 'No events in this category.'}
-                </div>
-              )}
-            </div>
-          </div>
+          <AdminAuditHistory key={authUser?.uid || 'signed-out'} refreshRevision={directoryRefreshRevision} />
         )}
 
         {/* Tab: System Health */}
