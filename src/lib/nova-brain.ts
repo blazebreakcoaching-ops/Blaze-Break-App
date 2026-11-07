@@ -130,45 +130,33 @@ export const NOVA_PERMISSION_DEFAULTS = {
 // who never separately visits Settings > Nova Privacy Controls would
 // otherwise leave Nova completely context-blind. allowMemory carries
 // through exactly what the user chose on the onboarding consent step.
+// The entrypoint and existing-user backfill use the SAME create-only
+// transaction. A late onboarding write cannot reset someone's revoked
+// permissions from Settings or the Privacy Centre.
 export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean) => {
-  (async () => {
-    try {
-      const db = await getDb();
-      const { doc, setDoc } = await import('firebase/firestore');
-      await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
-        ...NOVA_PERMISSION_DEFAULTS,
-        allowNovaMemory: allowMemory,
-        allowNovaUseSavedMemories: allowMemory,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-    } catch {
-      // Non-fatal - Nova just stays context-blind for this session; the next
-      // successful write (e.g. a later Settings change) will fix it.
-    }
-  })();
+  void ensureNovaPermissionsExist(uid, allowMemory);
 };
 
-// Backfills the same defaults for anyone who onboarded before this existed
-// and has never visited Settings > Nova Privacy Controls, so they aren't
-// stuck context-blind forever. Only fills in what's missing - never
-// overwrites a doc that already exists, since someone may have
-// deliberately turned individual categories off.
+/** Atomic create-only defaults: a concurrent consent edit always wins. */
 export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boolean) => {
   try {
     const db = await getDb();
-    const { doc, getDoc, setDoc } = await import('firebase/firestore');
+    const { doc, runTransaction } = await import('firebase/firestore');
     const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, {
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      if (snap.exists()) return;
+      transaction.set(ref, {
         ...NOVA_PERMISSION_DEFAULTS,
-        allowNovaMemory: allowMemory,
-        allowNovaUseSavedMemories: allowMemory,
+        allowNovaMemory: allowMemory === true,
+        allowNovaUseSavedMemories: allowMemory === true,
         updatedAt: new Date().toISOString(),
       });
-    }
-  } catch (e) {
-    // Non-fatal, same reasoning as initNovaPermissionsForNewUser.
+    });
+  } catch {
+    // Failure leaves the permission unset. Nova's context builder fails
+    // closed; a later eligible page load can retry without overwriting
+    // any preference the customer already saved.
   }
 };
 
