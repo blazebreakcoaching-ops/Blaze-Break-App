@@ -11034,6 +11034,7 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       // joins conflict/retry against the same seat-allocation version.
       const orgSnap = await tx.get(orgRef);
       const profileSnap = await tx.get(userRef);
+      const memberSnap = await tx.get(memberRef);
       const pending = await tx.get(pendingRef);
       if (!orgSnap.exists || (!inviteMatch && orgSnap.data()?.joinCode !== normalizedCode)) {
         return { status: 404, error: "The company joining code has changed, or the company no longer exists." };
@@ -11045,6 +11046,13 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       const members = new Set<string>(Array.isArray(org.memberUids) ? org.memberUids : []);
       if (members.has(user.uid)) {
         return { status: 409, error: "This account already appears on the company roster. Contact its administrator to correct the membership." };
+      }
+      // Never let a shared code or emailed invitation reactivate a
+      // suspended/removed membership document that was left behind by a
+      // partial or legacy offboarding workflow. Only an administrator may
+      // resolve that authoritative membership record.
+      if (memberSnap.exists) {
+        return { status: 409, error: "An earlier company membership must be reviewed by an administrator before you can join again." };
       }
       const activeInvites = pending.docs.filter((d: any) => isActivePendingOrgInvite(d.data()));
       const matchingInvite = email ? pending.docs.find((d: any) => d.id === email) : undefined;
