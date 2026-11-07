@@ -6,6 +6,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import dns from "dns";
+import https from "https";
 import { GoogleGenAI, Type, Modality, LiveServerMessage } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -14891,11 +14892,26 @@ app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, a
         if (isBlocked) {
           metadataReachable = false;
         } else {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 5000);
-          const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal, redirect: "error" });
-          clearTimeout(timeout);
-          metadataReachable = response.ok;
+          // Bind the socket to the exact IP address vetted above. A normal
+          // fetch would resolve the hostname a SECOND time, permitting
+          // DNS rebinding between our pre-check and the real connection.
+          // Node's https.request does not follow HTTP redirects.
+          const approved = addresses[0];
+          metadataReachable = await new Promise<boolean>((resolve, reject) => {
+            const probe = https.request(config.metadataUrl, {
+              method: 'GET',
+              timeout: 5000,
+              lookup: (_hostname, _options, callback) =>
+                callback(null, approved.address, approved.family),
+            }, (response) => {
+              const reachable = (response.statusCode || 0) >= 200 && (response.statusCode || 0) < 300;
+              response.destroy(); // Check headers only; never download IdP metadata.
+              resolve(reachable);
+            });
+            probe.on('timeout', () => probe.destroy(new Error('SSO metadata probe timed out')));
+            probe.on('error', reject);
+            probe.end();
+          });
         }
       } catch {
         metadataReachable = false;
