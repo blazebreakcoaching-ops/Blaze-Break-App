@@ -70,6 +70,17 @@ describe('verified settings and consent persistence', () => {
     });
   });
 
+  it('records onboarding complete only when the same permissions batch commits', async () => {
+    mocks.getDoc.mockResolvedValueOnce({ exists: () => false });
+    await saveVerifiedProfileSettings('account-A', profile, {
+      lastSeenChangelogVersion: 'beta-release',
+    });
+    expect(mocks.commit).toHaveBeenCalledOnce();
+    const saved = mocks.set.mock.calls.find(([path]) => path === 'users/account-A/user_stats/core')?.[1];
+    expect(saved).toHaveProperty('lastSeenChangelogVersion', 'beta-release');
+    expect(mocks.set).toHaveBeenCalledTimes(2);
+  });
+
   it('does not reset an existing account\'s other Nova privacy choices', async () => {
     await saveVerifiedProfileSettings('account-A', profile);
     const saved = mocks.set.mock.calls.find(([path]) => path === 'users/account-A/nova_permissions/current')?.[1];
