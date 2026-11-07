@@ -10,6 +10,7 @@ import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { useAuth } from '../lib/auth';
 import { saveCalendarSignalConsent } from '../lib/nova-brain';
+import { hasExplicitCalendarSignalConsent } from '../lib/calendar-signal-consent';
 
 // Two toggle mechanisms exist side by side here, deliberately:
 // - flagId (localStorage, src/lib/feature-flags.ts) for UI-only display
@@ -62,7 +63,7 @@ export const DataPrivacyDashboard = ({
     }
     getDoc(doc(db, 'users', uid, 'nova_permissions', 'current')).then((snap) => {
       if (cancelled || auth.currentUser?.uid !== uid) return;
-      setAllowCalendarSignals(snap.exists() && snap.data().allowCalendarSignals === true);
+      setAllowCalendarSignals(snap.exists() && hasExplicitCalendarSignalConsent(snap.data()));
       setCalendarOwnerUid(uid);
       setCalendarStatus('ready');
     }).catch(() => {
