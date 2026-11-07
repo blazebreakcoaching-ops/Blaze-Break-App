@@ -4,7 +4,7 @@ import { Sparkles, X, ChevronRight } from "lucide-react";
 import { useAuth } from '../lib/auth';
 import { getDb } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
-import { isNudgeVisibleForAccount, nudgeHistoryKey } from '../lib/nudge-visibility';
+import { isNudgeVisibleForAccount, nudgeHistoryKey, parseNudgeHistory } from '../lib/nudge-visibility';
 import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
 
 // InAppNudge is always mounted from app start (it polls every 60s), not a
@@ -65,6 +65,7 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
   liveUidRef.current = user?.uid ?? null;
   const [history, setHistory] = useState<any[]>([]);
   const [isDismissing, setIsDismissing] = useState(false);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const orgStatusCache = useRef<{ checked: boolean; organisationId: string | null; organisationName?: string; shareAnonymizedDataWithOrg?: boolean }>({ checked: false, organisationId: null });
   const lastDetailedCheckRef = useRef<number>(0);
 
@@ -76,9 +77,18 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
     setNudgeOwnerUid(null);
     setPreferences(null);
     setPreferencesOwnerUid(null);
+    setIsDismissing(false);
+    if (dismissTimerRef.current !== null) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
     lastDetailedCheckRef.current = 0;
     orgStatusCache.current = { checked: false, organisationId: null };
   }, [user?.uid]);
+
+  useEffect(() => () => {
+    if (dismissTimerRef.current !== null) clearTimeout(dismissTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -300,8 +310,12 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
     }
 
     // Local frequency limits check (using simple local storage to avoid extra DB calls)
-    const storedHistory = localStorage.getItem(nudgeHistoryKey(user.uid)) || "[]";
-    const localHistory = JSON.parse(storedHistory);
+    let localHistory: { shownAt: string }[] = [];
+    try {
+      localHistory = parseNudgeHistory(localStorage.getItem(nudgeHistoryKey(user.uid)));
+    } catch {
+      // Private browsing may block storage. Never block the entire app.
+    }
     const today = now.toDateString();
     
     const nudgesToday = localHistory.filter((n: any) => new Date(n.shownAt).toDateString() === today);
@@ -389,14 +403,19 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
       
       // update local 
       const nextLocal = [...localHistory, histItem];
-      localStorage.setItem(nudgeHistoryKey(user.uid), JSON.stringify(nextLocal));
+      try {
+        localStorage.setItem(nudgeHistoryKey(user.uid), JSON.stringify(nextLocal));
+      } catch {
+        // Missing storage affects local cooldown only, not app access.
+      }
     } catch (e) {
       console.warn("Nudge history save failed");
     }
   };
 
   const dismiss = async (reason?: string) => {
-    if (!currentNudge || !user) return;
+    if (!currentNudge || !user || nudgeOwnerUid !== user.uid) return;
+    const ownerUid = user.uid;
     setIsDismissing(true);
     
     if (currentNudge.id) {
@@ -418,8 +437,15 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
         // ignore
       }
     }
-    setTimeout(() => {
+    // A delayed dismissal must not hide the next person's reminder after
+    // an account switch on the same browser.
+    if (liveUidRef.current !== ownerUid) return;
+    if (dismissTimerRef.current !== null) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => {
+      dismissTimerRef.current = null;
+      if (liveUidRef.current !== ownerUid) return;
       setCurrentNudge(null);
+      setNudgeOwnerUid(null);
       setIsDismissing(false);
     }, 300);
   };
