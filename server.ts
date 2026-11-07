@@ -16964,32 +16964,40 @@ async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> 
   // Remove this user from any organisation they belong to first, so a
   // deleted account can't linger in an org's memberUids/adminUids and
   // count toward its aggregate dashboards after the person is gone.
-  try {
-    const rootSnap = await userRef.get();
-    const orgId = rootSnap.exists ? (rootSnap.data() as any)?.organisationId : null;
-    if (orgId) {
-      await db.collection("organisations").doc(orgId).update({
+  const rootSnapForOrg = await userRef.get();
+  const linkedOrgId = rootSnapForOrg.exists ? (rootSnapForOrg.data() as any)?.organisationId : null;
+  if (linkedOrgId) {
+    const orgRef = db.collection("organisations").doc(linkedOrgId);
+    const memberRef = orgRef.collection("members").doc(uid);
+    // Do not erase the profile while leaving a company role or HR grant
+    // behind. A missing organisation needs no cleanup; a real write failure
+    // must surface so the caller can retry rather than report success.
+    await db.runTransaction(async (tx) => {
+      const orgSnap = await tx.get(orgRef);
+      if (!orgSnap.exists) return;
+      tx.update(orgRef, {
         memberUids: FieldValue.arrayRemove(uid),
         adminUids: FieldValue.arrayRemove(uid),
+        hrViewerUids: FieldValue.arrayRemove(uid),
         [`memberTeams.${uid}`]: FieldValue.delete(),
+        [`teamManagers.${uid}`]: FieldValue.delete(),
       });
-      // Clean up the granular Enterprise role record too - see
-      // /api/org/leave for why this matters.
-      await db.collection("organisations").doc(orgId).collection("members").doc(uid).delete();
-      // Same reasoning for any desktop-deployment device this user
-      // registered under the org (organisations/{orgId}/devices, keyed by
-      // ownerUid) - otherwise a device record carrying this user's uid and
-      // deviceName would silently outlive the account it belongs to,
-      // exactly the class of bug the member-record cleanup above exists
-      // to prevent.
-      const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
-        .where("ownerUid", "==", uid).get();
-      await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
-    }
-  } catch (e) {
-    // Non-fatal - if the org record is already gone or malformed, the
-    // user's own data should still be deleted below rather than the
-    // whole request failing over org bookkeeping.
+      tx.delete(memberRef);
+      const auditRef = orgRef.collection("audit_logs").doc();
+      tx.set(auditRef, {
+        actorUid: uid, actorEmail: null, orgId: linkedOrgId,
+        action: 'erase_account_membership',
+        targetResourceType: 'member', targetResourceId: uid,
+        before: { linked: true }, after: { accessRemoved: true },
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    });
+    // A device is only an organisation metadata record, not an
+    // authentication credential. Remove it after the membership transaction.
+    // If this fails, do not claim account erasure completed successfully.
+    const devicesSnap = await orgRef.collection("devices")
+      .where("ownerUid", "==", uid).get();
+    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
   }
 
   // recursiveDelete removes the user document and every subcollection
