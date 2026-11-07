@@ -55,6 +55,7 @@ export const DataPrivacyDashboard = ({
     setCalendarOwnerUid(null);
     setCalendarStatus('loading');
     setCalendarSaveError(false);
+    setCalendarSaving(false);
     if (!uid) {
       setCalendarStatus('error');
       return () => { cancelled = true; };
@@ -161,7 +162,7 @@ export const DataPrivacyDashboard = ({
 
       {calendarStatus === 'error' && (
         <div role="alert" className="rounded-xl border border-border p-3 text-sm text-text-main">
-          Calendar privacy settings could not be loaded. Calendar signal sharing remains off.
+          Calendar privacy settings could not be loaded, so the current setting is unknown. Changes are paused until we reconnect.
           <button type="button" className="ml-2 underline font-semibold"
             onClick={() => setCalendarRetry(n => n + 1)}>Try again</button>
         </div>
