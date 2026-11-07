@@ -30,7 +30,7 @@ export const NOVA_COACH_MARKS: Record<NovaGuideTab, readonly NovaCoachMark[]> = 
   ],
   plan: [
     { id: 'plan', target: 'plan-content', title: 'Your plan, your pace',
-      explanation: 'This area brings your recovery actions together. Pick just one step when you are ready.' },
+      explanation: 'If your plan is locked, the card explains what to complete first. Once it opens, choose just one action.' },
   ],
 };
 
