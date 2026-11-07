@@ -15130,17 +15130,15 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
 app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
-    const { org } = await requireOrgAdmin(req, orgId);
+    await requireOrgAdmin(req, orgId);
     const { name, privacyThreshold, maxConcurrentActiveInterventions } = req.body;
     const update: any = { updatedAt: FieldValue.serverTimestamp() };
-    const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
     if (name !== undefined) {
       if (typeof name !== 'string' || name.trim().length === 0 || name.length > 100) {
         return res.status(400).json({ error: "Name must be 1-100 characters." });
       }
       update.name = name.trim();
-      before.name = org.name;
       after.name = update.name;
     }
     if (privacyThreshold !== undefined) {
@@ -15148,7 +15146,6 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
         return res.status(400).json({ error: "Minimum cohort size must be between 3 and 100." });
       }
       update.privacyThreshold = privacyThreshold;
-      before.privacyThreshold = org.privacyThreshold || 5;
       after.privacyThreshold = privacyThreshold;
     }
     if (maxConcurrentActiveInterventions !== undefined) {
@@ -15157,17 +15154,37 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
         return res.status(400).json({ error: validation.error });
       }
       update.actionBudget = { maxConcurrentActiveInterventions };
-      before.maxConcurrentActiveInterventions = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
       after.maxConcurrentActiveInterventions = maxConcurrentActiveInterventions;
     }
     const db = getDb();
-    await db.collection("organisations").doc(orgId).update(update);
-    await logOrgAuditAction(req, orgId, "update_org_settings", "organisation", orgId, before, after);
-    if (privacyThreshold !== undefined && before.privacyThreshold !== after.privacyThreshold) {
+    const orgRef = db.collection("organisations").doc(orgId);
+    const beforeCommitted = await db.runTransaction(async (tx) => {
+      const current = await tx.get(orgRef);
+      if (!current.exists) throw new Error('Organisation not found.');
+      // Compare against the actual committed snapshot, not a possibly
+      // stale admin-authorisation read from the start of this request.
+      const now = current.data()!;
+      const previous: Record<string, unknown> = {};
+      if (name !== undefined) previous.name = now.name;
+      if (privacyThreshold !== undefined) previous.privacyThreshold = now.privacyThreshold || 5;
+      if (maxConcurrentActiveInterventions !== undefined) {
+        previous.maxConcurrentActiveInterventions =
+          getEffectiveActionBudget(now.actionBudget?.maxConcurrentActiveInterventions);
+      }
+      tx.update(orgRef, update);
+      tx.set(orgRef.collection('audit_logs').doc(), {
+        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        orgId, action: 'update_org_settings', targetResourceType: 'organisation', targetResourceId: orgId,
+        before: previous, after, createdAt: FieldValue.serverTimestamp(),
+        ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
+      });
+      return previous;
+    });
+    if (privacyThreshold !== undefined && beforeCommitted.privacyThreshold !== after.privacyThreshold) {
       await recordPrivacyChangeReceipt(
         orgId,
         "privacy_threshold",
-        `The minimum group size required before your organisation can see any aggregate report changed from ${before.privacyThreshold} to ${after.privacyThreshold} people.`,
+        `The minimum group size required before your organisation can see any aggregate report changed from ${beforeCommitted.privacyThreshold} to ${after.privacyThreshold} people.`,
       );
     }
     res.json({ success: true });
