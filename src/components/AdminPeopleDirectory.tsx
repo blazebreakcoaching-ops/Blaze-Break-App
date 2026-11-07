@@ -1,11 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
 
-type DirectoryUser = {
+export type DirectoryUser = {
   uid: string; email: string | null; displayName: string | null;
   organisationId: string | null; emailVerified: boolean; isAnonymous: boolean;
   createdAt: string | null; lastSignIn: string | null; accessStatus: string;
   role: string; plan: string; profilePresent: boolean;
+  entitlementStatus?: 'active' | 'trial' | 'grace' | 'past_due' | 'cancelled' | 'expired';
+  storedPlan?: 'free' | 'core' | 'performance' | 'executive' | 'legacy_premium';
+  billingSource?: 'stripe' | 'apple' | 'google' | 'organisation' | 'admin' | null;
+  entitlementEnd?: string | null; cancelAtPeriodEnd?: boolean; lastVerifiedAt?: string | null;
 };
 type DirectoryResponse = {
   users: DirectoryUser[]; nextCursor: string | null; pageSize: number;
@@ -15,7 +19,10 @@ const dateOrUnknown = (value: string | null) => value && Number.isFinite(Date.pa
   ? new Date(value).toLocaleString() : 'Not recorded';
 
 /** Auth-authoritative account browser. Never uses customer wellbeing fields. */
-export function AdminPeopleDirectory() {
+export function AdminPeopleDirectory({ onManageAccount, refreshRevision = 0 }: {
+  onManageAccount: (account: DirectoryUser) => void;
+  refreshRevision?: number;
+}) {
   const [accounts, setAccounts] = useState<DirectoryUser[]>([]);
   const [lookupInput, setLookupInput] = useState('');
   const [activeLookup, setActiveLookup] = useState('');
@@ -25,6 +32,7 @@ export function AdminPeopleDirectory() {
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const lastRefreshRevision = useRef(refreshRevision);
   const load = async (page: string | null = null, exact = '', previous: (string | null)[] = []) => {
     const current = ++generation.current;
     setPending(true);
@@ -54,6 +62,11 @@ export function AdminPeopleDirectory() {
     void load();
     return () => { generation.current += 1; };
   }, []);
+  useEffect(() => {
+    if (lastRefreshRevision.current === refreshRevision) return;
+    lastRefreshRevision.current = refreshRevision;
+    void load(cursor, activeLookup, history);
+  }, [refreshRevision]);
   return <section aria-label="Full account directory" className="rounded-2xl border border-border bg-surface p-4 sm:p-6 space-y-4">
     <div className="space-y-1">
       <h3 className="font-bold text-text-main">Account Directory — Firebase</h3>
@@ -74,7 +87,7 @@ export function AdminPeopleDirectory() {
         <table className="w-full text-left text-sm">
           <thead><tr className="border-b border-border">
             <th scope="col" className="py-2 pr-3">Account</th><th scope="col" className="py-2 pr-3">Company</th>
-            <th scope="col" className="py-2 pr-3">Access</th><th scope="col" className="py-2 pr-3">Created</th><th scope="col" className="py-2">Last sign-in</th>
+            <th scope="col" className="py-2 pr-3">Access</th><th scope="col" className="py-2 pr-3">Created</th><th scope="col" className="py-2 pr-3">Last sign-in</th><th scope="col" className="py-2">Manage</th>
           </tr></thead>
           <tbody>{accounts.map(account => <tr key={account.uid} className="border-b border-border">
             <td className="py-3 pr-3">
@@ -85,7 +98,11 @@ export function AdminPeopleDirectory() {
             </td><td className="py-3 pr-3">{account.organisationId || 'None'}</td>
             <td className="py-3 pr-3">{account.accessStatus} · {account.role} · {account.plan}</td>
             <td className="py-3 pr-3 whitespace-nowrap">{dateOrUnknown(account.createdAt)}</td>
-            <td className="py-3 whitespace-nowrap">{dateOrUnknown(account.lastSignIn)}</td>
+            <td className="py-3 pr-3 whitespace-nowrap">{dateOrUnknown(account.lastSignIn)}</td>
+            <td className="py-3"><button type="button" aria-label={`Manage ${account.email || account.uid}`}
+              onClick={() => onManageAccount(account)} className="rounded-lg bg-primary/10 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/20">
+              Manage
+            </button></td>
           </tr>)}</tbody>
         </table>
         {!accounts.length && <p className="py-5 text-sm text-text-muted">No account found in this result.</p>}
@@ -95,6 +112,6 @@ export function AdminPeopleDirectory() {
         <button type="button" disabled={!nextCursor} onClick={() => void load(nextCursor, '', [...history, cursor])} className="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-40">Next</button>
       </div>}
     </>}
-    <p className="text-xs text-text-muted">Legacy account management controls below still use a separately limited Firestore list. They are not yet connected to this complete directory.</p>
+    <p className="text-xs text-text-muted">Manage opens the existing account controls for this Firebase account, even if it is beyond the first 100 Firestore records. The legacy list below still has its own limit.</p>
   </section>;
 }
