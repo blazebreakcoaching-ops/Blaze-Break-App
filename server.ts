@@ -4421,8 +4421,14 @@ const requirePermission = (req: any, permission: string) => {
   // at all - getPermissionsForRole(undefined) defaults to [], which would
   // wrongly deny these accounts the exact blanket access requireAdmin
   // just granted them. Treated as full access, the same as platform_owner.
-  const isLegacyOrBootstrapSuperAdmin = user.platform_admin === true || user.admin === true || isOwnerBootstrapEmail(user.email);
-  if (isLegacyOrBootstrapSuperAdmin) {
+  // An explicit role always wins over legacy boolean flags. Previously
+  // admin:true on a content_admin or support_admin bypassed ALL granular
+  // permissions, including account suspension and billing management.
+  // Only role-less historical accounts and the bootstrap owner retain
+  // compatibility access until migrated.
+  const isRolelessLegacyAdmin = !user.role &&
+    (user.platform_admin === true || user.admin === true);
+  if (isOwnerBootstrapEmail(user.email) || isRolelessLegacyAdmin) {
     return user;
   }
   const perms = getPermissionsForRole(user.role);
