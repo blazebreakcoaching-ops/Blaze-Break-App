@@ -143,8 +143,13 @@ describe('canEnableSsoEnforcement', () => {
     expect(canEnableSsoEnforcement(false)).toBe(false);
   });
 
-  it('is true only when the flag is explicitly on', () => {
-    expect(canEnableSsoEnforcement(true)).toBe(true);
+  it('does not allow a feature flag alone to enable nonfunctional SSO', () => {
+    expect(canEnableSsoEnforcement(true)).toBe(false);
+  });
+
+  it('requires both a feature flag and a real assertion validator', () => {
+    expect(canEnableSsoEnforcement(true, true)).toBe(true);
+    expect(canEnableSsoEnforcement(false, true)).toBe(false);
   });
 });
 
