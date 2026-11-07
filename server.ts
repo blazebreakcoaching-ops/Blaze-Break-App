@@ -4432,6 +4432,28 @@ const requirePermission = (req: any, permission: string) => {
   return user;
 };
 
+// Opportunistic repair runs after a later successful audit write. Bounded
+// to three old events per call; no timer, cron or unbounded scan. A full
+// Firestore outage still needs external monitoring and durable recovery.
+const repairPendingAdminAudit = async (db: any): Promise<void> => {
+  try {
+    const pending = await db.collection("admin_audit_recovery").limit(3).get();
+    for (const item of pending.docs) {
+      try {
+        const entry = item.data().entry;
+        if (!entry || typeof entry.action !== "string" || !entry.createdAt) continue;
+        const original = db.collection("admin_audit_logs").doc(item.id);
+        if (!(await original.get()).exists) await original.set(entry);
+        await item.ref.delete();
+      } catch (error: any) {
+        logger.error("Opportunistic audit repair failed", { eventId: item.id, ...errorFields(error) });
+      }
+    }
+  } catch (error: any) {
+    logger.error("Pending audit repair check failed", errorFields(error));
+  }
+};
+
 // Idempotent operational audit events. A stable Firestore-generated ID lets
 // the recovery path replay without inventing a second event for one action.
 // A completely unavailable Firestore service cannot provide durable audit
@@ -4455,6 +4477,7 @@ const logAdminAction = async (
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await eventRef.set(entry);
+      await repairPendingAdminAudit(db);
       return true;
     } catch (err: any) {
       if (attempt === 0) continue;
