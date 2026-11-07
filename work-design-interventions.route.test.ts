@@ -275,3 +275,33 @@ describe('intervention outcome writes are audit atomic', () => {
     } finally { restore(); }
   });
 });
+
+
+describe('action-budget transactions also commit their audit events', () => {
+  it('does not create a new intervention when transaction or audit fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const restore = forceTransactionError(new Error('simulated transaction failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/work-design-interventions`)
+        .set(auth('owner_1')).send(validBody);
+      expect(res.status).toBe(500);
+      const list = await request(app).get(`/api/org/${ORG}/work-design-interventions`)
+        .set(auth('owner_1'));
+      expect(list.body.interventions).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it('does not change intervention status on failed audit transaction', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedDoc(`organisations/${ORG}/work_design_interventions/one`, {
+      team: 'Team A', signalKey: 'meeting_pressure', status: 'trialling',
+    });
+    const restore = forceTransactionError(new Error('simulated transaction failure'));
+    try {
+      const res = await request(app).patch(`/api/org/${ORG}/work-design-interventions/one/status`)
+        .set(auth('owner_1')).send({ status: 'paused' });
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/work_design_interventions/one`)?.status).toBe('trialling');
+    } finally { restore(); }
+  });
+});
