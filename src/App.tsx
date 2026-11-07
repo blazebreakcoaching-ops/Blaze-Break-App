@@ -130,6 +130,7 @@ import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
 import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
 import { shouldPausePassivePrompts } from "./lib/quiet-first-visit";
 import { statsForSafeWrite } from "./lib/user-stats-persistence";
+import { hasExplicitNovaLearningConsent } from './lib/nova-learning-consent';
 import { writeAccountProfile, clearAccountProfile } from "./lib/account-profile-storage";
 import { mayApplyAccountLoad, parsePulseHistory, pulseHistoryKey, pulseAlertKey, lastCheckInKey, type PulseHistoryEntry } from "./lib/pulse-account-storage";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
@@ -1788,7 +1789,7 @@ export default function App() {
         }
         // A missing/failed Firestore profile read cannot opt Nova into
         // learning. Only a verified account profile may restore consent.
-        const verifiedConsent = persistedProfileVerified && loadedStats.profile?.letNovaLearn !== false;
+        const verifiedConsent = persistedProfileVerified && hasExplicitNovaLearningConsent(loadedStats.profile?.letNovaLearn);
         setNovaLearningAllowedForUid(user.uid, verifiedConsent);
         // Load the current account's saved memory only after a successful
         // Firestore identity/profile read. Memory edits stay consent-gated.
@@ -1831,7 +1832,7 @@ export default function App() {
       // already-onboarded users (a fresh onboarding flow creates its own
       // via initNovaPermissionsForNewUser).
       if (user && loadedStats.profile?.fullName) {
-        ensureNovaPermissionsExist(user.uid, loadedStats.profile?.letNovaLearn !== false);
+        ensureNovaPermissionsExist(user.uid, hasExplicitNovaLearningConsent(loadedStats.profile?.letNovaLearn));
       }
 
       // Only restore the current account's Firestore-backed assessment.
@@ -2446,7 +2447,7 @@ export default function App() {
             // Only a confirmed save may enter the customer dashboard.
             setStats((prev) => ({ ...prev, profile, lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION }));
             writeAccountProfile(uid, profile);
-            setNovaLearningAllowedForUid(uid, profile.letNovaLearn !== false);
+            setNovaLearningAllowedForUid(uid, hasExplicitNovaLearningConsent(profile.letNovaLearn));
             initNovaBrain(uid).then(() => {
               if (auth.currentUser?.uid === uid && isNovaBrainReadyForAutoSync(uid)) {
                 setNovaBrainReadyUid(uid);
@@ -2474,7 +2475,7 @@ export default function App() {
               action: "Completed onboarding",
               target: "onboarding_consent",
               status: "authorised",
-              details: `useNameInGreetings=${profile.useNameInGreetings !== false}, letNovaLearn=${profile.letNovaLearn !== false}, sendNovaNudges=${profile.sendNovaNudges !== false}`,
+              details: `useNameInGreetings=${profile.useNameInGreetings !== false}, letNovaLearn=${hasExplicitNovaLearningConsent(profile.letNovaLearn)}, sendNovaNudges=${profile.sendNovaNudges !== false}`,
             });
           }}
         />
@@ -3407,7 +3408,7 @@ export default function App() {
                 if (auth.currentUser?.uid !== uid) return;
                 setStats((prev) => ({ ...prev, profile }));
                 writeAccountProfile(uid, profile);
-                setNovaLearningAllowedForUid(uid, profile.letNovaLearn !== false);
+                setNovaLearningAllowedForUid(uid, hasExplicitNovaLearningConsent(profile.letNovaLearn));
               }}
               onOpenPrivacyCentre={() => {
                 setShowSettings(false);
