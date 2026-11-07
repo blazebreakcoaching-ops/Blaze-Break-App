@@ -19,9 +19,11 @@ const dateOrUnknown = (value: string | null) => value && Number.isFinite(Date.pa
   ? new Date(value).toLocaleString() : 'Not recorded';
 
 /** Auth-authoritative account browser. Never uses customer wellbeing fields. */
-export function AdminPeopleDirectory({ onManageAccount, refreshRevision = 0 }: {
+export function AdminPeopleDirectory({ onManageAccount, onAccountsChange, refreshRevision = 0, compact = false }: {
   onManageAccount: (account: DirectoryUser) => void;
+  onAccountsChange?: (accounts: DirectoryUser[]) => void;
   refreshRevision?: number;
+  compact?: boolean;
 }) {
   const [accounts, setAccounts] = useState<DirectoryUser[]>([]);
   const [lookupInput, setLookupInput] = useState('');
@@ -48,6 +50,7 @@ export function AdminPeopleDirectory({ onManageAccount, refreshRevision = 0 }: {
       const data = await response.json() as DirectoryResponse;
       if (current !== generation.current) return;
       setAccounts(data.users);
+      onAccountsChange?.(data.users);
       setNextCursor(data.nextCursor);
       setCursor(page);
       setHistory(previous);
@@ -69,7 +72,7 @@ export function AdminPeopleDirectory({ onManageAccount, refreshRevision = 0 }: {
   }, [refreshRevision]);
   return <section aria-label="Full account directory" className="rounded-2xl border border-border bg-surface p-4 sm:p-6 space-y-4">
     <div className="space-y-1">
-      <h3 className="font-bold text-text-main">Account Directory — Firebase</h3>
+      <h3 className="font-bold text-text-main">{compact ? "Browse accounts for plans and access" : "Account Directory — Firebase"}</h3>
       <p className="text-xs text-text-muted">Browse every account page by page, including accounts without a Firestore profile. For a person not on this page, search their complete email or account ID. Counts below are page-only.</p>
     </div>
     <form className="flex flex-wrap gap-2" onSubmit={event => {
@@ -112,6 +115,6 @@ export function AdminPeopleDirectory({ onManageAccount, refreshRevision = 0 }: {
         <button type="button" disabled={!nextCursor} onClick={() => void load(nextCursor, '', [...history, cursor])} className="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-40">Next</button>
       </div>}
     </>}
-    <p className="text-xs text-text-muted">Manage opens the existing account controls for this Firebase account, even if it is beyond the first 100 Firestore records. The legacy list below still has its own limit.</p>
+    <p className="text-xs text-text-muted">Manage opens the existing account controls. Filters in the detailed tables below operate on the displayed Firebase page or exact lookup only.</p>
   </section>;
 }
