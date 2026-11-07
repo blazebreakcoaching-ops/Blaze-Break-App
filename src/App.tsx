@@ -128,6 +128,7 @@ import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigat
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
 import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
 import { shouldPausePassivePrompts } from "./lib/quiet-first-visit";
+import { mayApplyAccountLoad, parsePulseHistory, pulseHistoryKey, pulseAlertKey, lastCheckInKey, type PulseHistoryEntry } from "./lib/pulse-account-storage";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
 import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
@@ -157,7 +158,7 @@ const WhatsNewModal = lazy(() => import("./components/WhatsNewModal.tsx").then(m
 import { secureApiFetch } from "./lib/secure-api";
 import { isRealGuardian } from "../guardian-alert";
 import { syncCalendarSignal } from "./lib/calendar-signals";
-import { subscribeToPushNotifications, reportPulseStatus } from "./lib/push-notifications";
+import { reportPulseStatus } from "./lib/push-notifications";
 import { logAuditAction } from "./lib/audit-logger";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
@@ -1423,15 +1424,36 @@ export default function App() {
   // handleUpdatePulseHistory below). A brand-new user with no saved history
   // yet starts at a genuinely empty array rather than a synthetic 30-day
   // sine-wave chart that would have looked exactly like a real trend.
-  const [pulseHistory, setPulseHistory] = useState(() => {
-    try {
-      const saved = localStorage.getItem("blaze_break_pulse_history");
-      if (saved) return JSON.parse(saved);
-    } catch(e) {
-      // Non-fatal - falls through to the honest empty default below.
+  const [pulseHistory, setPulseHistory] = useState<PulseHistoryEntry[]>([]);
+  const [pulseOwnerUid, setPulseOwnerUid] = useState<string | null>(null);
+
+  // Do not load the old browser-global history: it has no provable owner
+  // and could expose a different person's wellbeing data on shared devices.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) {
+      setPulseOwnerUid(null);
+      setPulseHistory([]);
+      return;
     }
-    return [];
-  });
+    let history: PulseHistoryEntry[] = [];
+    try {
+      history = parsePulseHistory(localStorage.getItem(pulseHistoryKey(uid)));
+    } catch {
+      // Disabled local storage must not prevent using Today.
+    }
+    setPulseHistory(history);
+    setPulseOwnerUid(uid);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || pulseOwnerUid !== user.uid) return;
+    try {
+      localStorage.setItem(pulseHistoryKey(user.uid), JSON.stringify(pulseHistory));
+    } catch {
+      // History stays available in memory for this session.
+    }
+  }, [pulseHistory, pulseOwnerUid, user?.uid]);
 
   // A daily check-in is always voluntary. Opening it automatically on
   // mount covered the brand-new account's welcome screen with a second
@@ -1520,20 +1542,9 @@ export default function App() {
   // NOVA_AGENTIC_JOURNEY_ENABLED in server.ts.
   const novaAgenticJourneyEnabled = useNovaAgenticJourneyEnabled();
 
-  // Pulse Alert System
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission().then((permission) => {
-        if (permission === "granted") {
-          // Real push subscription — this is what lets a notification reach
-          // this person even after they've stopped opening the app, unlike
-          // the foreground-only notification below which only fires while
-          // this tab is already open and looking at it.
-          subscribeToPushNotifications();
-        }
-      });
-    }
-  }, []);
+  // Browser notification permission must come from an explicit customer
+  // choice in Settings, never a surprise prompt on first page load.
+  // Leave previously granted foreground notifications unchanged.
 
   useEffect(() => {
     // The server-side scheduled check (low score sustained, or check-in gone
@@ -1547,38 +1558,36 @@ export default function App() {
     // JSON.stringify silently drops an undefined property, so the server
     // received an empty body and correctly 400'd on every sign-in - a real
     // request that never had anything useful to report in the first place.
-    if (user && typeof stats.recoveryScore === "number") {
+    if (user && statsOwnerUid === user.uid && typeof stats.recoveryScore === "number") {
       reportPulseStatus(stats.recoveryScore);
     }
-  }, [stats.recoveryScore, user]);
+  }, [stats.recoveryScore, statsOwnerUid, user?.uid]);
 
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      const history = JSON.parse(localStorage.getItem("blaze_break_pulse_history") || "[]");
-      const isConsecutiveLow = history.length >= 2 && 
-                               history[history.length - 1].score < 30 && 
-                               history[history.length - 2].score < 30;
-                               
-      if (stats.recoveryScore < 30 || isConsecutiveLow) {
-        const lastAlert = localStorage.getItem("lastPulseAlert");
-        const today = new Date().toISOString().split("T")[0];
-        
-        if (lastAlert !== today) {
-          const notification = new Notification("Nova: Critical Pulse Alert", {
-            body: "Your Recovery Score has dropped below 30 for two consecutive days. A 60-second Somatic Reset is highly recommended."
-          });
-          
-          notification.onclick = () => {
-             setShowSomaticReset(true);
-             window.focus();
-             notification.close();
-          };
-          
-          localStorage.setItem("lastPulseAlert", today);
-        }
-      }
+    if (!user?.uid || isDemoSession || pulseOwnerUid !== user.uid ||
+        statsOwnerUid !== user.uid || typeof stats.recoveryScore !== 'number' ||
+        !('Notification' in window) || Notification.permission !== 'granted') return;
+    const isConsecutiveLow = pulseHistory.length >= 2 &&
+      pulseHistory[pulseHistory.length - 1].score < 30 &&
+      pulseHistory[pulseHistory.length - 2].score < 30;
+    if (stats.recoveryScore >= 30 && !isConsecutiveLow) return;
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const key = pulseAlertKey(user.uid);
+      if (localStorage.getItem(key) === today) return;
+      const notification = new Notification('Nova: Recovery check-in', {
+        body: 'Your recent recovery score suggests checking in. A short reset is available whenever you want.'
+      });
+      notification.onclick = () => {
+        setShowSomaticReset(true);
+        window.focus();
+        notification.close();
+      };
+      localStorage.setItem(key, today);
+    } catch {
+      // Notifications and local storage can be unsupported on mobile.
     }
-  }, [stats.recoveryScore]);
+  }, [stats.recoveryScore, statsOwnerUid, pulseHistory, pulseOwnerUid, user?.uid, isDemoSession]);
 
   // Track previous flow / auth changes to detect transitions
   const prevUserRef = useRef<any>(null);
