@@ -32,6 +32,23 @@ beforeEach(() => {
   resetStore();
 });
 
+describe('company privacy threshold validation', () => {
+  it('rejects fractional cohort minimums without changing stored policy', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org',
+      adminUids: ['owner_1'],
+      memberUids: ['owner_1'],
+      privacyThreshold: 5,
+    });
+    const res = await request(app)
+      .post(`/api/org/${ORG}/settings`)
+      .set(auth('owner_1'))
+      .send({ privacyThreshold: 3.5 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/minimum cohort size/i);
+  });
+});
+
 describe('GET /api/org/me', () => {
   it('returns organisationId: null when the user is not in an org', async () => {
     seedDoc('users/lone_user', {});
