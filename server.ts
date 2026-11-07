@@ -10572,53 +10572,68 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
   try {
     const user = requireAuth(req);
     const { joinCode } = req.body;
-    if (!joinCode || typeof joinCode !== 'string') {
-      return res.status(400).json({ error: "A join code is required." });
+    if (typeof joinCode !== 'string' || !/^[A-Z0-9]{6}$/.test(joinCode.trim().toUpperCase())) {
+      return res.status(400).json({ error: "Enter a valid six-character company joining code." });
     }
+    const normalizedCode = joinCode.trim().toUpperCase();
     const db = getDb();
-
-    const existingUserDoc = await db.collection("users").doc(user.uid).get();
-    if (existingUserDoc.exists && existingUserDoc.data()?.organisationId) {
-      return res.status(400).json({ error: "You're already part of an organisation. Contact support to switch." });
-    }
-
-    const orgsSnap = await db.collection("organisations").where("joinCode", "==", joinCode.trim().toUpperCase()).limit(1).get();
+    const orgsSnap = await db.collection("organisations").where("joinCode", "==", normalizedCode).limit(1).get();
     if (orgsSnap.empty) {
       return res.status(404).json({ error: "That join code doesn't match any organisation. Double-check with your admin." });
     }
-    const orgDoc = orgsSnap.docs[0];
+    const orgRef = db.collection("organisations").doc(orgsSnap.docs[0].id);
+    const userRef = db.collection("users").doc(user.uid);
+    const memberRef = orgRef.collection("members").doc(user.uid);
+    const pendingRef = orgRef.collection("pending_invites");
+    const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+    // A verified identity may use its own reserved invite seat. An
+    // unverified email may not claim a different person's reserved seat.
+    const verifiedEmail = !!email && user.email_verified === true;
 
-    await db.collection("users").doc(user.uid).set({
-      organisationId: orgDoc.id,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-
-    await db.collection("organisations").doc(orgDoc.id).update({
-      memberUids: FieldValue.arrayUnion(user.uid),
-    });
-    // Real per-member Enterprise role record, not just the legacy array -
-    // a fresh join always starts at 'member'; an owner/admin upgrades them
-    // later via the role-management route below.
-    await db.collection("organisations").doc(orgDoc.id).collection("members").doc(user.uid).set({
-      role: 'member',
-      status: 'active',
-      email: user.email || '',
-      joinedAt: FieldValue.serverTimestamp(),
-      invitedBy: 'join_code',
-    }, { merge: true });
-
-    // If this person was invited by email, that invite is now resolved -
-    // clean it up so the admin's pending list only shows people still
-    // waiting to join, not everyone who's ever been invited.
-    if (user.email) {
-      try {
-        await db.collection("organisations").doc(orgDoc.id).collection("pending_invites").doc(user.email.toLowerCase()).delete();
-      } catch (e) {
-        // Non-critical - joining itself already succeeded above.
+    const result = await db.runTransaction(async (tx) => {
+      // Reads BEFORE writes. Every join changes orgRef, so simultaneous
+      // joins conflict/retry against the same seat-allocation version.
+      const orgSnap = await tx.get(orgRef);
+      const profileSnap = await tx.get(userRef);
+      const pending = await tx.get(pendingRef);
+      if (!orgSnap.exists || orgSnap.data()?.joinCode !== normalizedCode) {
+        return { status: 404, error: "The company joining code has changed. Ask your company administrator for the latest code." };
       }
-    }
+      if (profileSnap.exists && profileSnap.data()?.organisationId) {
+        return { status: 400, error: "You're already part of an organisation. Contact support to switch." };
+      }
+      const org = orgSnap.data()!;
+      const members = new Set<string>(Array.isArray(org.memberUids) ? org.memberUids : []);
+      if (members.has(user.uid)) {
+        return { status: 409, error: "This account already appears on the company roster. Contact its administrator to correct the membership." };
+      }
+      const reservedInvite = verifiedEmail ? pending.docs.find((d: any) => d.id === email) : undefined;
+      const seatAllowance = billingProvider.getSeatAllowance(getEffectiveBillingState(org.billing));
+      const seatCheck = checkSeatLimit(members.size, pending.size, reservedInvite ? 0 : 1, seatAllowance);
+      if (!seatCheck.allowed) {
+        return { status: 400, error: seatCheck.error || "This company has no available staff seats." };
+      }
+      tx.set(userRef, {
+        organisationId: orgRef.id,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      tx.update(orgRef, {
+        memberUids: FieldValue.arrayUnion(user.uid),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(memberRef, {
+        role: 'member',
+        status: 'active',
+        email,
+        joinedAt: FieldValue.serverTimestamp(),
+        invitedBy: reservedInvite ? 'email_invite' : 'join_code',
+      }, { merge: true });
+      if (reservedInvite) tx.delete(reservedInvite.ref);
+      return { status: 200, organisationId: orgRef.id, organisationName: org.name };
+    });
 
-    res.json({ success: true, organisationId: orgDoc.id, organisationName: orgDoc.data().name });
+    if (result.status !== 200) return res.status(result.status).json({ error: result.error });
+    res.json({ success: true, organisationId: result.organisationId, organisationName: result.organisationName });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
