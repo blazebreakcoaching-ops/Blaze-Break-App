@@ -10259,10 +10259,15 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
       if (currentOrg && currentOrg !== orgId) {
         return { status: 409, error: 'That account already belongs to another company. Use a verified, audited transfer process instead.' };
       }
-      // Do not let a normal edit silently promote another user to owner.
-      // Ownership handover needs its own audited, last-owner-safe workflow.
-      if (existingOrgDoc.exists && initialAdminUid) {
-        return { status: 409, error: 'Company ownership cannot be changed through Edit Company. Use the owner-transfer workflow.' };
+      // An unclaimed company (zero staff AND zero owners) may receive its
+      // first owner. Once anybody has joined, ownership changes require
+      // a separate audited workflow, not a generic edit/upsert.
+      const existingOrg = existingOrgDoc.exists ? existingOrgDoc.data()! : null;
+      const unclaimed = !!existingOrg &&
+        (!Array.isArray(existingOrg.memberUids) || existingOrg.memberUids.length === 0) &&
+        (!Array.isArray(existingOrg.adminUids) || existingOrg.adminUids.length === 0);
+      if (existingOrg && initialAdminUid && !unclaimed) {
+        return { status: 409, error: 'Company ownership cannot be changed through Edit Company. Contact support for an audited owner transfer.' };
       }
 
       const joinCode = existingOrgDoc.exists && existingOrgDoc.data()?.joinCode
@@ -10276,6 +10281,8 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
       };
       if (!existingOrgDoc.exists) {
         updatePayload.createdAt = FieldValue.serverTimestamp();
+      }
+      if (!existingOrgDoc.exists || (unclaimed && initialAdminUid)) {
         updatePayload.memberUids = initialAdminUid ? [initialAdminUid] : [];
         updatePayload.adminUids = initialAdminUid ? [initialAdminUid] : [];
       }
