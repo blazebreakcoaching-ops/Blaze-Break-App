@@ -104,3 +104,29 @@ container on 2026-11-07:
 
 Not covered by this gate (by design): production deployment, real
 Firebase project, real devices/app stores, live AI providers, Stripe.
+
+## 6. Batch 2 — Organisation security and Command Centre (2026-11-07)
+
+Commits: `6317aac` (org security), `c4a2e58` (org screens), `61aef3f` (Command Centre).
+
+| Area | Item | Status |
+|---|---|---|
+| Invitations | Cancelled / replaced / expired / used / other-person codes refused; hashes never returned | DONE (verified, regression-locked) |
+| Joining code | Rotation invalidates old code; unverified emails refused | DONE (verified, regression-locked) |
+| Joining code | Removed employees could rejoin with the shared code | DONE (fixed) |
+| Joining code | SSO allowed domains enforced when SSO enforcement is on | DONE (fixed ahead of SSO launch) |
+| Offboarding | Admin could remove an owner or security admin | DONE (fixed: owner-only) |
+| Offboarding | Devices, roster, teams, consent removed in one transaction | DONE (verified) |
+| Roles | Acting admin re-checked inside every membership/invite/code/settings transaction | DONE (fixed on 10 routes) |
+| Roles | Ownership transfer (promote, step down) + audit | DONE (verified) |
+| Audit | Removal audit recorded wrong prior state; recognition deletion unaudited | DONE (fixed) |
+| Isolation | Company A owner refused on 13 company-B routes, B unchanged | DONE (verified) |
+| Screens | Refusal reasons hidden behind generic errors; code rotation failed silently | DONE (fixed) |
+| Command Centre | platform_admin could suspend the Platform Owner / other admins | DONE (fixed: owner-only) |
+| Command Centre | Audit log searchable across full history (action / administrator) | DONE (new) |
+| Command Centre | Evolution Engine audit view lost older actions | DONE (fixed) |
+| Command Centre | Unknown account IDs returned 500 | DONE (404) |
+| Release | Deploy the two new Firestore indexes with the release | BLOCKED — needs release approval |
+
+Gate: `verify:integration:offline` on `61aef3f` → OFFLINE_CHECKS_PASS (vitest 5,339;
+components 134; emulator 52; Playwright preview 66, real app 38; mobile and Functions pass).
