@@ -1146,3 +1146,95 @@ describe('membership teardown and reactivation are audit-safe', () => {
     expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('suspended');
   });
 });
+
+
+describe('device registration and revocation audit boundaries', () => {
+  const registration = { channel: 'stable', appVersion: '1.2.3', deviceName: 'Test laptop' };
+
+  it('registers a device with a matching durable organisation audit entry', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'member_1', 'member');
+    const response = await request(app).post(`/api/org/${ORG}/devices/register`)
+      .set(auth('member_1')).send(registration);
+    expect(response.status).toBe(200);
+    expect(response.body.device.ownerUid).toBe('member_1');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'register_device', actorUid: 'member_1',
+        targetResourceId: response.body.device.id,
+      }),
+    ]));
+  });
+
+  it('does not register a device when the transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'member_1', 'member');
+    const restore = forceTransactionError(new Error('simulated failure'));
+    try {
+      const response = await request(app).post(`/api/org/${ORG}/devices/register`)
+        .set(auth('member_1')).send(registration);
+      expect(response.status).toBe(500);
+      const devices = await request(app).get(`/api/org/${ORG}/devices`).set(auth('owner_1'));
+      expect(devices.body.devices).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it('does not let suspended staff register devices', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'member_1', 'member', 'suspended');
+    const response = await request(app).post(`/api/org/${ORG}/devices/register`)
+      .set(auth('member_1')).send(registration);
+    expect(response.status).toBe(403);
+  });
+
+  it('revokes a device and records the status change in the same transaction', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'member_1', 'member');
+    seedDoc(`organisations/${ORG}/devices/device_1`, {
+      ownerUid: 'member_1', status: 'active', channel: 'stable', appVersion: '1.2.3',
+    });
+    const response = await request(app).post(`/api/org/${ORG}/devices/device_1/revoke`).set(auth('owner_1'));
+    expect(response.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/devices/device_1`)?.status).toBe('revoked');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'revoke_device', targetResourceId: 'device_1',
+        before: { status: 'active' }, after: { status: 'revoked' },
+      }),
+    ]));
+  });
+
+  it('does not revoke a device when the transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/devices/device_1`, {
+      ownerUid: 'owner_1', status: 'active', channel: 'stable', appVersion: '1.2.3',
+    });
+    const restore = forceTransactionError(new Error('simulated failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/devices/device_1/revoke`).set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/devices/device_1`)?.status).toBe('active');
+    } finally { restore(); }
+  });
+
+  it('rejects check-ins from revoked devices without rewriting lastCheckIn', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'member_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'member_1', 'member');
+    seedDoc(`organisations/${ORG}/devices/device_1`, {
+      ownerUid: 'member_1', status: 'revoked', channel: 'stable',
+      appVersion: '1.2.3', lastCheckIn: 'old-value',
+    });
+    const res = await request(app).post(`/api/org/${ORG}/devices/device_1/check-for-update`)
+      .set(auth('member_1'));
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/devices/device_1`)?.lastCheckIn).toBe('old-value');
+  });
+});
