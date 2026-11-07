@@ -4453,6 +4453,7 @@ const logAdminAction = async (
   try {
     const db = getDb();
     await db.collection("admin_audit_logs").add(entry);
+    return true;
   } catch (err: any) {
     // The admin action this logs already happened by the time we get here -
     // we can't roll it back, and blocking the response on a retry would
@@ -4462,6 +4463,7 @@ const logAdminAction = async (
     // inline - not just the error - so it's recoverable from Cloud Run logs
     // even though it never reached Firestore.
     logger.error("Failed to write admin audit log", { ...errorFields(err), entry });
+    return false;
   }
 };
 
@@ -8781,8 +8783,8 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
       updatedAt: new Date().toISOString()
     }, { merge: true });
     
-    await logAdminAction(req, "update_user_role", targetUid, "", { role }, 'succeeded');
-    res.json({ success: true });
+    const auditRecorded = await logAdminAction(req, "update_user_role", targetUid, "", { role }, 'succeeded');
+    res.json({ success: true, auditRecorded });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       return res.status(403).json({ error: "You do not have permission to update account roles." });
@@ -8827,8 +8829,8 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
     }, { merge: true });
 
     const planChange = isUpgrade(previousPlan, plan) ? 'upgrade' : isDowngrade(previousPlan, plan) ? 'downgrade' : 'lateral';
-    await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange }, 'succeeded');
-    res.json({ success: true });
+    const auditRecorded = await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange }, 'succeeded');
+    res.json({ success: true, auditRecorded });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
@@ -9109,8 +9111,8 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     const { suspend } = parsed.data;
 
     await getAuth().updateUser(targetUid, { disabled: suspend });
-    await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", { suspend }, 'succeeded');
-    res.json({ success: true });
+    const auditRecorded = await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", { suspend }, 'succeeded');
+    res.json({ success: true, auditRecorded });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
