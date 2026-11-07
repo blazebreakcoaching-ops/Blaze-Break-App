@@ -18,11 +18,11 @@ async function gotoAppAsAnonymousUser(page: Page) {
   await mockAvatarRequests(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 15_000 });
 }
 
 async function openNovaTab(page: Page) {
-  await page.getByRole('button', { name: 'Nova' }).click();
+  await page.getByRole('button', { name: 'Nova', exact: true }).click();
 }
 
 async function mockChatOnce(page: Page, body: { text: string; planTrace?: unknown[] }) {
@@ -39,7 +39,7 @@ test.describe('Real app (directive §3): Flag ON - isolated test configuration o
     // mounts (see real-app-nova-journey.spec.ts's own comment) - only
     // NovaAgenticJourney renders this.
     await expect(page.getByLabel('Journey stage')).toBeVisible();
-    await expect(page.getByPlaceholder(/./).first()).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Message Nova' })).toBeVisible();
   });
 
   // Directive §3's "approved development journeys become accessible" -
@@ -54,7 +54,7 @@ test.describe('Real app (directive §3): Flag ON - isolated test configuration o
       text: 'Want help getting this off your plate?',
       planTrace: [{ tool: 'offer_practical_assistance', result: { offered: true, reason: 'User said they are behind on three deadlines this week.' } }],
     });
-    await page.getByPlaceholder(/./).first().fill('I am so behind on everything.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('I am so behind on everything.');
     await page.getByRole('button', { name: 'Send message' }).click();
 
     await expect(page.getByText('User said they are behind on three deadlines this week.')).toBeVisible();

@@ -34,11 +34,11 @@ async function gotoAppAsAnonymousUser(page: Page) {
   // real project) - "Prefer to look around first? View a demo" is the real, unauthenticated-looking
   // entry point real visitors use, requiring no password of any kind.
   await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 15_000 });
 }
 
 async function openNovaTab(page: Page) {
-  await page.getByRole('button', { name: 'Nova' }).click();
+  await page.getByRole('button', { name: 'Nova', exact: true }).click();
 }
 
 async function mockChatOnce(page: Page, body: { text: string; planTrace?: unknown[] }) {
@@ -100,7 +100,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
   test('Flag OFF (default): the real Nova tab mounts plain NovaChat, not the Agentic Journey wrapper', async ({ page }) => {
     await gotoAppAsAnonymousUser(page);
     await openNovaTab(page);
-    await expect(page.getByPlaceholder(/./).first()).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Message Nova' })).toBeVisible();
     await expect(page.getByLabel('Journey stage')).toHaveCount(0);
   });
 
@@ -116,6 +116,9 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
       const sendButton = page.getByRole('button', { name: 'Send message' });
       const mobileNav = page.getByTestId('mobile-bottom-nav');
       await expect(mobileNav).toBeVisible();
+      // The floating nav-collapse toggle used to sit on top of Send on
+      // phones (it intercepted every tap). It must not render on Nova.
+      await expect(page.getByRole('button', { name: /^(Hide|Show) navigation$/ })).toHaveCount(0);
       await expect.poll(async () => {
         const [sendRect, navRect] = await Promise.all([
           sendButton.boundingBox(),
@@ -127,7 +130,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
     }
 
     await mockChatOnce(page, { text: 'Thanks for sharing that - tell me more.' });
-    await page.getByPlaceholder(/./).first().fill('I feel stretched thin this week.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('I feel stretched thin this week.');
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText('Thanks for sharing that - tell me more.')).toBeVisible();
   });
@@ -143,7 +146,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
       text: 'Want to try Boundary Architect?',
       planTrace: [{ tool: 'suggest_feature', result: { suggested: true, featureId: 'communicate', label: 'Boundary Architect', reason: 'User described needing to say no without feeling guilty.' } }],
     });
-    await page.getByPlaceholder(/./).first().fill('I keep saying yes to things I do not have capacity for.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('I keep saying yes to things I do not have capacity for.');
     await page.getByRole('button', { name: 'Send message' }).click();
 
     await expect(page.getByText('Start Boundary Architect?')).toBeVisible();
@@ -168,7 +171,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
       text: 'Want to try Reset Studio?',
       planTrace: [{ tool: 'suggest_feature', result: { suggested: true, featureId: 'reset', label: 'Reset Studio', reason: 'User described feeling scattered and unable to focus.' } }],
     });
-    await page.getByPlaceholder(/./).first().fill('I cannot focus on anything right now.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('I cannot focus on anything right now.');
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText('Start Reset Studio?')).toBeVisible();
 
@@ -179,7 +182,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
       text: 'Want to try Reset Studio?',
       planTrace: [{ tool: 'suggest_feature', result: { suggested: true, featureId: 'reset', label: 'Reset Studio', reason: 'User described feeling scattered and unable to focus.' } }],
     });
-    await page.getByPlaceholder(/./).first().fill('Still cannot focus.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('Still cannot focus.');
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText('Still cannot focus.')).toBeVisible();
     await expect(page.getByText('Start Reset Studio?')).not.toBeVisible();
@@ -204,13 +207,13 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
     await gotoAppAsAnonymousUser(page);
     await openNovaTab(page);
     await mockChatOnce(page, { text: 'Got it, noted.' });
-    await page.getByPlaceholder(/./).first().fill('Remember this exact sentence please.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('Remember this exact sentence please.');
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText('Got it, noted.')).toBeVisible();
 
     await page.reload();
     await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
-    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 15_000 });
     await openNovaTab(page);
     await expect(page.getByText('Remember this exact sentence please.')).toBeVisible();
     await expect(page.getByText('Got it, noted.')).toBeVisible();
@@ -235,22 +238,35 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
     await gotoAppAsAnonymousUser(page);
     await openNovaTab(page);
     await mockChatOnce(page, { text: 'Noted for a real account.' });
-    await page.getByPlaceholder(/./).first().fill('A real accounts message.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('A real accounts message.');
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText('Noted for a real account.')).toBeVisible();
 
-    // Simulate the exact real trigger point: auth.tsx sets this the
+    // Simulate the exact real trigger point: auth.tsx sets these the
     // instant a real (non-anonymous) account's onAuthStateChanged fires.
-    await page.evaluate(() => { (window as any).__ACTIVE_USER_EMAIL__ = 'real-account-test@example.com'; });
+    await page.evaluate(() => {
+      (window as any).__ACTIVE_USER_EMAIL__ = 'real-account-test@example.com';
+      (window as any).__ACTIVE_USER_UID__ = 'real_account_uid';
+    });
 
-    // The real interceptor must still let a NEW nova_chat_history write
-    // through (the bug: it silently dropped this before this phase's fix).
+    // Secure Account mode allows ONLY this account's own UID-scoped Nova
+    // history key, so a real account's conversation is kept...
     const writeSucceeded = await page.evaluate(() => {
       const probe = JSON.stringify([{ role: 'model', parts: [{ text: 'probe-after-real-account' }] }]);
-      localStorage.setItem('nova_chat_history', probe);
-      return localStorage.getItem('nova_chat_history') === probe;
+      localStorage.setItem('nova_chat_history::real_account_uid', probe);
+      return localStorage.getItem('nova_chat_history::real_account_uid') === probe;
     });
     expect(writeSucceeded).toBe(true);
+
+    // ...while the legacy unscoped key, and another account's scoped key,
+    // stay blocked so nothing leaks between accounts on a shared device.
+    const otherKeysBlocked = await page.evaluate(() => {
+      localStorage.setItem('nova_chat_history', '"legacy"');
+      localStorage.setItem('nova_chat_history::someone_else', '"other"');
+      return localStorage.getItem('nova_chat_history') === null &&
+        localStorage.getItem('nova_chat_history::someone_else') === null;
+    });
+    expect(otherKeysBlocked).toBe(true);
 
     // And a genuinely unrelated, still-blocked key (blaze_profile is far
     // broader than Nova and deliberately NOT unblocked this phase - see
@@ -335,7 +351,7 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
 
           const replyText = `Reply for ${viewport.width}x${viewport.height} ${colorScheme}`;
           await mockChatOnce(page, { text: replyText });
-          const input = page.getByPlaceholder(/./).first();
+          const input = page.getByRole('textbox', { name: 'Message Nova' });
           await input.scrollIntoViewIfNeeded();
           await input.fill(`Testing ${viewport.width}x${viewport.height} ${colorScheme}`);
           await dismissWhatsNewModalIfOpen(page);

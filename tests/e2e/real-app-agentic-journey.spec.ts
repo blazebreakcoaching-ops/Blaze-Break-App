@@ -65,12 +65,12 @@ async function gotoFlagOnApp(page: Page) {
   await mockAvatarRequests(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 15_000 });
   await dismissAnyOpenModal(page);
 }
 
 async function openNovaTab(page: Page) {
-  await clickRobustly(page, page.getByRole('button', { name: 'Nova' }));
+  await clickRobustly(page, page.getByRole('button', { name: 'Nova', exact: true }));
 }
 
 async function mockChatOnce(page: Page, body: { text: string; planTrace?: unknown[] }) {
@@ -84,7 +84,7 @@ async function openInvisibleLoadViaPracticalAssistance(page: Page, userText: str
     text: 'Want help getting this off your plate?',
     planTrace: [{ tool: 'offer_practical_assistance', result: { offered: true, reason: userText } }],
   });
-  await page.getByPlaceholder(/./).first().fill(userText);
+  await page.getByRole('textbox', { name: 'Message Nova' }).fill(userText);
   await clickRobustly(page, page.getByRole('button', { name: 'Send message' }));
   await clickRobustly(page, page.getByRole('button', { name: /review what's on my plate/i }));
   await expect(page.getByLabel('Describe an obligation, commitment, or friction')).toBeVisible();
@@ -208,13 +208,13 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     await gotoFlagOnApp(page);
     await openNovaTab(page);
     await mockChatOnce(page, { text: 'Got it, noted for the agentic journey.' });
-    await page.getByPlaceholder(/./).first().fill('Remember this exact sentence in the agentic journey.');
+    await page.getByRole('textbox', { name: 'Message Nova' }).fill('Remember this exact sentence in the agentic journey.');
     await clickRobustly(page, page.getByRole('button', { name: 'Send message' }));
     await expect(page.getByText('Got it, noted for the agentic journey.')).toBeVisible();
 
     await page.reload();
     await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
-    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 15_000 });
     await dismissAnyOpenModal(page);
     await openNovaTab(page);
     await expect(page.getByText('Remember this exact sentence in the agentic journey.')).toBeVisible();
@@ -276,7 +276,7 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     // must independently re-enable the journey, and it must start on a
     // clean Invisible Load with no trace of the first identity's item.
     await clickRobustly(page, page.getByRole('button', { name: 'Prefer to look around first? View a demo' }));
-    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 15_000 });
     await dismissAnyOpenModal(page);
     await openNovaTab(page);
     await expect(page.getByLabel('Journey stage')).toBeVisible({ timeout: 15_000 });
@@ -298,15 +298,16 @@ test.describe('Real app (flag ON): advanced journey against real routes and emul
     // (SettingsModal.tsx's activeTab==='consent' panel) - "Profile" is
     // the default tab, so this click is required, not cosmetic.
     await clickRobustly(page, page.getByRole('tab', { name: /consent (&|and) privacy/i }));
+    // Memory learning is opt-in per account: it starts OFF.
     const toggle = page.getByRole('switch', { name: 'Behavioural Learning' });
-    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
 
     await clickRobustly(page, toggle);
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
     await page.keyboard.press('Escape');
     await clickRobustly(page, page.getByRole('button', { name: /settings/i }).first());
     await clickRobustly(page, page.getByRole('tab', { name: /consent (&|and) privacy/i }));
-    await expect(page.getByRole('switch', { name: 'Behavioural Learning' })).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByRole('switch', { name: 'Behavioural Learning' })).toHaveAttribute('aria-checked', 'true');
   });
 });

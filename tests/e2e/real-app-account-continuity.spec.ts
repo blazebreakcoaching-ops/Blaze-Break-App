@@ -97,7 +97,7 @@ async function startAnonymousDemo(page: Page) {
   await mockAvatarRequests(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
-  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 25_000 });
   // This helper safely dismisses any optional UI from older state or a
   // delayed animation. Anonymous demo accounts do not receive What's New.
   await dismissPostOnboardingModals(page);
@@ -115,7 +115,7 @@ async function openSignUpModal(page: Page) {
 }
 
 async function submitRealSignUp(page: Page, email: string) {
-  await page.getByRole('dialog').getByRole('checkbox').check();
+  await page.getByRole('dialog').getByRole('checkbox', { name: /To create an account, I agree/ }).check();
   await page.getByPlaceholder('Email address').fill(email);
   await page.getByPlaceholder('Password', { exact: true }).fill(PASSWORD);
   await page.getByPlaceholder('Confirm password').fill(PASSWORD);
@@ -134,12 +134,10 @@ async function submitRealSignUp(page: Page, email: string) {
 }
 
 async function submitRealSignIn(page: Page, email: string) {
-  // The same legal-agreement checkbox gates the submit button in BOTH
-  // auth modes (LandingPage.tsx's own disabled={emailAuthSubmitting ||
-  // !legalAgreed} applies to sign-in and sign-up alike) - easy to miss
-  // since only the sign-up form shows it with real content underneath to
-  // agree to, but a returning sign-in needs it checked too.
-  await page.getByRole('dialog').getByRole('checkbox').check();
+  // Returning email sign-in is NOT gated on the legal checkbox (the
+  // account already agreed at sign-up): LandingPage.tsx disables submit
+  // only for authMode === 'signup'. In sign-in mode that checkbox applies
+  // to social sign-in only, so it is deliberately left untouched here.
   await page.getByPlaceholder('Email address').fill(email);
   await page.getByPlaceholder('Password', { exact: true }).fill(PASSWORD);
   await page.locator('[role="dialog"] button[type="submit"]').click();
@@ -175,7 +173,7 @@ async function completeRealOnboarding(page: Page, fullName: string, options: { d
   await page.getByLabel('Full Name / Alias').fill(fullName);
   await page.getByRole('button', { name: 'Get started' }).click();
 
-  await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 25_000 });
   if (options.dismissModals !== false) {
     await dismissPostOnboardingModals(page);
     await dismissFeedbackModalIfOpen(page);
@@ -195,12 +193,12 @@ async function dismissPostOnboardingModals(page: Page) {
 }
 
 async function openNovaTab(page: Page) {
-  await clickRobustly(page, page.getByRole('button', { name: 'Nova' }));
+  await clickRobustly(page, page.getByRole('button', { name: 'Nova', exact: true }));
 }
 
 async function sendNovaMessage(page: Page, userText: string, replyText: string) {
   await mockChatOnce(page, replyText);
-  await page.getByPlaceholder(/./).first().fill(userText);
+  await page.getByRole('textbox', { name: 'Message Nova' }).fill(userText);
   await clickRobustly(page, page.getByRole('button', { name: 'Send message' }));
   await expect(page.getByText(replyText)).toBeVisible({ timeout: 10_000 });
 }
@@ -237,6 +235,9 @@ test.describe('Real app (Phase 5N directive §3): registration and onboarding jo
     // synthetic onNavigate call. The sidebar groups tabs under collapsible
     // section buttons ("Recovery Tools" etc.) - Recover is the individual
     // tab inside that group, so the group opens first, same as a real user.
+    // Progressive disclosure: customers see Today / My Plan / Nova first;
+    // the grouped tool sections appear after "Explore all tools".
+    await clickRobustly(page, page.getByRole('button', { name: 'Explore all available tools' }).first());
     await clickRobustly(page, page.getByRole('button', { name: 'Recovery Tools' }));
     await clickRobustly(page, page.getByRole('button', { name: 'Recover', exact: true }));
     await expect(page.getByRole('button', { name: 'Recover', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -251,7 +252,7 @@ test.describe('Real app (Phase 5N directive §3): registration and onboarding jo
     await clickRobustly(page, page.getByRole('button', { name: /access account|sign in/i }).first());
     await submitRealSignIn(page, email);
 
-    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 25_000 });
     await dismissPostOnboardingModals(page);
     await dismissFeedbackModalIfOpen(page);
     await openNovaTab(page);
@@ -371,7 +372,7 @@ test.describe('Real app (Phase 5N directive §4): shared-device and account-swit
     // A fresh anonymous visitor - the real "Prefer to look around first? View a demo" path, a new
     // Firebase anonymous uid, never account A's.
     await clickRobustly(page, page.getByRole('button', { name: 'Prefer to look around first? View a demo' }));
-    await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 25_000 });
     await dismissAnyOpenModal(page);
     await openNovaTab(page);
     await expect(page.getByText(secretA)).toHaveCount(0);
@@ -421,7 +422,7 @@ test.describe('Real app (Phase 5N directive §4): shared-device and account-swit
     await submitRealSignIn(page, email);
 
     await expect(page.getByText("Welcome. Let's take this one step at a time.")).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByRole('button', { name: 'Nova' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Nova', exact: true })).toHaveCount(0);
   });
 });
 

@@ -1375,6 +1375,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [postOnboardingProfile]);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
+  // On the Nova screen the chat shell is sized around the EXPANDED mobile
+  // nav, and the floating collapse toggle would sit on top of Nova's Send
+  // button. Keep the nav expanded there (and hide the toggle below) so the
+  // composer is always tappable and navigation is never stranded.
+  useEffect(() => {
+    if (activeTab === "nova") setIsMobileNavCollapsed(false);
+  }, [activeTab]);
   const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
   const mobileNavRef = useRef<HTMLDivElement>(null);
   const novaShellRef = useRef<HTMLDivElement>(null);
@@ -3255,8 +3262,12 @@ export default function App() {
         >
           <LifeBuoy className="w-5 h-5" />
         </button>
+        {activeTab !== "nova" && (
         <button
+          type="button"
           onClick={() => setIsMobileNavCollapsed(!isMobileNavCollapsed)}
+          aria-label={isMobileNavCollapsed ? "Show navigation" : "Hide navigation"}
+          aria-expanded={!isMobileNavCollapsed}
           className={cn(
             "fixed w-12 h-12 rounded-full glass border border-border text-text-main flex items-center justify-center shadow-2xl transition-all duration-300 z-50",
             isMobileNavCollapsed
@@ -3271,11 +3282,12 @@ export default function App() {
           }}
         >
           {isMobileNavCollapsed ? (
-            <Menu className="w-6 h-6" />
+            <Menu className="w-6 h-6" aria-hidden="true" />
           ) : (
-            <ChevronRight className="w-6 h-6 rotate-90" />
+            <ChevronRight className="w-6 h-6 rotate-90" aria-hidden="true" />
           )}
         </button>
+        )}
         <motion.div
           ref={mobileNavRef}
           initial={false}
