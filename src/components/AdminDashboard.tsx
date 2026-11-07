@@ -211,6 +211,7 @@ export const AdminDashboard = () => {
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [feedbackSubmissions, setFeedbackSubmissions] = useState<FeedbackSubmission[]>([]);
+  const [feedbackLoadError, setFeedbackLoadError] = useState(false);
   const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<'all' | FeedbackSubmission['category']>('all');
   const [metrics, setMetrics] = useState<ResetMetrics | null>(null);
   // Support Circle messaging cost visibility (Master Support Circle spec):
@@ -525,6 +526,7 @@ export const AdminDashboard = () => {
       setOrgs(loadedOrgs);
 
       let loadedFeedback: FeedbackSubmission[] = [];
+      setFeedbackLoadError(false);
       try {
         // Not fatal if this fails, same reasoning as organisations above -
         // no feedback submitted yet is a normal, expected state, not an
@@ -533,9 +535,12 @@ export const AdminDashboard = () => {
         if (feedbackRes.ok) {
           const feedbackData = await feedbackRes.json();
           loadedFeedback = feedbackData.submissions || [];
+        } else {
+          setFeedbackLoadError(true);
         }
       } catch (e) {
         console.error("Could not reach feedback API:", e);
+        setFeedbackLoadError(true);
       }
       setFeedbackSubmissions(loadedFeedback);
 
@@ -996,7 +1001,11 @@ export const AdminDashboard = () => {
       const data = await res.json();
       setNheiEntries(data.entries || []);
     } catch (e: any) {
-      setNheiError(e.message || "Couldn't load knowledge entries.");
+      // secureApiFetch throws SecureApiError on 403, so checking
+      // res.status after the call cannot handle a denied reviewer.
+      setNheiError(e?.status === 403
+        ? "You don't hold NHEI knowledge reviewer access. A Platform Owner can grant it from the Promote Platform Admins tab."
+        : (e.message || "Couldn't load knowledge entries."));
     } finally {
       setIsLoadingNheiEntries(false);
     }
@@ -1020,7 +1029,9 @@ export const AdminDashboard = () => {
       showSuccess(`Import complete: ${report.imported} imported, ${report.alreadyImported} already imported, ${report.conflicts} conflicts, ${report.rejected} rejected.`);
       await fetchNheiEntries();
     } catch (e: any) {
-      setNheiError(e.message || 'Import failed.');
+      setNheiError(e?.status === 403
+        ? "You don't hold NHEI knowledge reviewer access."
+        : (e.message || 'Import failed.'));
     } finally {
       setIsRunningNheiImport(false);
     }
@@ -3313,6 +3324,13 @@ export const AdminDashboard = () => {
               </div>
             </div>
 
+            {feedbackLoadError && (
+              <div role="alert" className="p-3 mb-4 border border-border rounded-xl text-sm text-text-main">
+                Feedback could not be loaded. This does not mean there are no submissions.
+                <button type="button" onClick={loadAllData} disabled={loading} className="ml-2 font-bold underline disabled:opacity-50">Retry</button>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2 mb-5">
               {(['all', 'general', 'bug', 'feature_request', 'testimonial'] as const).map((cat) => (
                 <button
@@ -3368,7 +3386,7 @@ export const AdminDashboard = () => {
                     <p className="text-[10px] text-text-muted mt-2 font-mono">{item.userEmail}</p>
                   </div>
                 ))}
-              {feedbackSubmissions.length === 0 && (
+              {feedbackSubmissions.length === 0 && !feedbackLoadError && (
                 <div className="py-12 text-center text-text-muted text-sm italic">
                   No feedback or testimonials submitted yet.
                 </div>
