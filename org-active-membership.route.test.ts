@@ -65,3 +65,21 @@ describe('organisation routes reject stale membership arrays', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('challenge-leave tenant boundary', () => {
+  it('rejects cross-company writes even for a valid Firebase user', async () => {
+    seedDoc('organisations/company_b', { name: 'Company B', memberUids: ['outsider'], adminUids: [] });
+    seedDoc('organisations/company_b/members/outsider', { role: 'member', status: 'active' });
+    const res = await request(app)
+      .post(`/api/org/${ORG}/challenges/challenge_1/leave`)
+      .set(auth('outsider'));
+    expect(res.status).toBe(403);
+  });
+
+  it('blocks a suspended member from leaving a company challenge', async () => {
+    const res = await request(app)
+      .post(`/api/org/${ORG}/challenges/challenge_1/leave`)
+      .set(auth('former_employee'));
+    expect(res.status).toBe(403);
+  });
+});
