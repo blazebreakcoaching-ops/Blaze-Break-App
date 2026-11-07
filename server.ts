@@ -10661,7 +10661,10 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
       }
       // Check the LAST-owner rule against the same transaction snapshot
       // that writes the roster and role deletion.
+      const devicesSnap = await tx.get(orgRef.collection("devices").where("ownerUid", "==", user.uid));
+      if (devicesSnap.docs.length > 400) return { status: 409, error: "Too many registered devices; contact company support for offboarding." };
       await assertNotLastOrgOwner(db, orgId, currentOrg.data()!, user.uid, tx);
+      devicesSnap.docs.forEach((d: any) => tx.delete(d.ref));
       tx.set(profileRef, {
         organisationId: FieldValue.delete(),
         shareAnonymizedDataWithOrg: false,
@@ -10680,12 +10683,6 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
       return { status: 200 };
     });
     if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
-    // Same reasoning for any desktop-deployment device this user registered
-    // under the org they're leaving (organisations/{orgId}/devices, keyed by
-    // ownerUid) - otherwise it silently outlives the membership too.
-    const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
-      .where("ownerUid", "==", user.uid).get();
-    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Operation Rejected")) {
@@ -12183,7 +12180,10 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
         // Stale org roster must NEVER clear another company's profile.
         return { status: 409, error: "That account now belongs to another company. Review the stale roster before removing it." };
       }
+      const devicesSnap = await tx.get(orgRef.collection("devices").where("ownerUid", "==", memberUid));
+      if (devicesSnap.docs.length > 400) return { status: 409, error: "Too many registered devices; use a supported company offboarding process." };
       await assertNotLastOrgOwner(db, orgId, roster, memberUid, tx);
+      devicesSnap.docs.forEach((d: any) => tx.delete(d.ref));
       if (currentProfile.exists) {
         tx.set(profileRef, {
           organisationId: FieldValue.delete(),
@@ -12204,12 +12204,6 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       return { status: 200 };
     });
     if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
-    // Same reasoning for any desktop-deployment device this member
-    // registered under the org (organisations/{orgId}/devices, keyed by
-    // ownerUid) - otherwise it silently outlives the membership too.
-    const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
-      .where("ownerUid", "==", memberUid).get();
-    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -17307,10 +17301,13 @@ async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> 
     await db.runTransaction(async (tx) => {
       const orgSnap = await tx.get(orgRef);
       if (!orgSnap.exists) return;
+      const devicesSnap = await tx.get(orgRef.collection("devices").where("ownerUid", "==", uid));
+      if (devicesSnap.docs.length > 400) throw new Error("Operation Rejected: Too many registered devices to erase safely in one transaction.");
       // Account erasure must obey the same last-active-owner protection as
       // voluntary departure and administrator removal. Check inside the
       // transaction, before any irreversible personal-data deletion.
       await assertNotLastOrgOwner(db, linkedOrgId, orgSnap.data()!, uid, tx);
+      devicesSnap.docs.forEach((d: any) => tx.delete(d.ref));
       tx.update(orgRef, {
         memberUids: FieldValue.arrayRemove(uid),
         adminUids: FieldValue.arrayRemove(uid),
@@ -17328,12 +17325,6 @@ async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> 
         createdAt: FieldValue.serverTimestamp(),
       });
     });
-    // A device is only an organisation metadata record, not an
-    // authentication credential. Remove it after the membership transaction.
-    // If this fails, do not claim account erasure completed successfully.
-    const devicesSnap = await orgRef.collection("devices")
-      .where("ownerUid", "==", uid).get();
-    await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
   }
 
   // recursiveDelete removes the user document and every subcollection
