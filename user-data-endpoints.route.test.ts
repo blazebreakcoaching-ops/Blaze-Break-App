@@ -85,7 +85,9 @@ function seedFullUser() {
   seedDoc(`feedback_submissions/fbX`, { userId: OTHER, category: 'general', message: 'Someone else entirely' });
   seedDoc(`admin_audit_logs/aalX`, { actorUid: 'some_admin', actorEmail: 'admin@test.dev', targetUid: OTHER, targetEmail: 'other@test.dev', action: 'suspend_user' });
   // The org the user belongs to:
-  seedDoc(`organisations/org_1`, { memberUids: [USER, OTHER], adminUids: [USER], memberTeams: { [USER]: 'team_a' } });
+  // The second active legacy owner permits this fixture's deletion tests to
+  // exercise ordinary erasure without abandoning the company.
+  seedDoc(`organisations/org_1`, { memberUids: [USER, OTHER], adminUids: [USER, OTHER], memberTeams: { [USER]: 'team_a' } });
 }
 
 describe('GET /api/user/export — portability (GDPR Art. 15/20)', () => {
@@ -462,14 +464,14 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     await request(app).post('/api/user/delete-account').set(auth(USER));
     const org = getDocRaw('organisations/org_1');
     expect(org?.memberUids).toEqual([OTHER]);   // USER removed
-    expect(org?.adminUids).toEqual([]);         // USER removed
+    expect(org?.adminUids).toEqual([OTHER]);    // USER removed, other owner retained
   });
 
 
   it('clears HR viewer, manager, team and device metadata during account deletion', async () => {
     seedFullUser();
     seedDoc('organisations/org_1', {
-      memberUids: [USER, OTHER], adminUids: [USER],
+      memberUids: [USER, OTHER], adminUids: [USER, OTHER],
       hrViewerUids: [USER], memberTeams: { [USER]: 'Support' },
       teamManagers: { [USER]: ['Support'] },
     });
@@ -508,6 +510,44 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
       restore();
       errorSpy.mockRestore();
     }
+  });
+
+
+  it('refuses to delete the final active company owner before personal erasure', async () => {
+    seedFullUser();
+    seedDoc('organisations/org_1', {
+      memberUids: [USER, OTHER], adminUids: [USER], memberTeams: {},
+    });
+    seedDoc(`organisations/org_1/members/${USER}`, { role: 'owner', status: 'active' });
+    seedDoc(`organisations/org_1/members/${OTHER}`, { role: 'member', status: 'active' });
+    const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(getDocRaw(`users/${USER}`)).toBeDefined();
+    expect(getDocRaw(`users/${USER}/mood_pulses/mp1`)).toBeDefined();
+    expect(getDocRaw('organisations/org_1')?.memberUids).toContain(USER);
+    expect(getDocRaw(`organisations/org_1/members/${USER}`)?.role).toBe('owner');
+    expect(h.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('does not count a suspended second owner when deciding whether deletion is safe', async () => {
+    seedFullUser();
+    seedDoc(`organisations/org_1/members/${USER}`, { role: 'owner', status: 'active' });
+    seedDoc(`organisations/org_1/members/${OTHER}`, { role: 'owner', status: 'suspended' });
+    const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+    expect(res.status).toBe(500);
+    expect(getDocRaw(`users/${USER}`)).toBeDefined();
+    expect(h.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('allows one owner to delete their account while another active owner remains', async () => {
+    seedFullUser();
+    seedDoc(`organisations/org_1/members/${USER}`, { role: 'owner', status: 'active' });
+    seedDoc(`organisations/org_1/members/${OTHER}`, { role: 'owner', status: 'active' });
+    const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`users/${USER}`)).toBeUndefined();
+    expect(getDocRaw('organisations/org_1')?.adminUids).toEqual([OTHER]);
+    expect(getDocRaw(`organisations/org_1/members/${OTHER}`)?.role).toBe('owner');
   });
 
   it('deletes the Firebase Auth account and reports it', async () => {
