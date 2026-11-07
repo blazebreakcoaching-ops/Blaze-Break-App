@@ -19,6 +19,7 @@ import {
 } from 'firebase/auth';
 import { auth, getDb } from './firebase';
 import { classifyNativeAccountSecurity, type NativeAccountSecurity } from './native-account-security';
+import { mayCommitNativeAuthCallback } from './native-auth-callback';
 
 interface AuthContextType {
   user: User | null;
@@ -52,14 +53,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // immediately spins up a fresh anonymous session, discarding the real
   // one's data from view.
   const explicitSignOutRef = useRef(false);
+  const settledAuthUidRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
     let generation = 0;
     const unsubscribe = onAuthStateChanged(auth, async (userRecord) => {
       const current = ++generation;
+      const nextUid = userRecord?.uid ?? null;
+      if (nextUid !== settledAuthUidRef.current) {
+        setUser(null);
+        setSecurityGate('unverified');
+      }
       setLoading(true);
-      const stillCurrent = () => active && generation === current;
+      const stillCurrent = () => mayCommitNativeAuthCallback(
+        current, generation, nextUid, auth.currentUser?.uid ?? null, active,
+      );
       if (userRecord) {
         let gate: NativeAccountSecurity = 'clear';
         if (!userRecord.isAnonymous) {
@@ -73,6 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
         if (!stillCurrent()) return;
+        settledAuthUidRef.current = userRecord.uid;
         setSecurityGate(gate);
         setUser(userRecord);
         if (gate !== 'clear') {
@@ -102,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else if (explicitSignOutRef.current) {
         explicitSignOutRef.current = false;
         if (!stillCurrent()) return;
+        settledAuthUidRef.current = null;
         setSecurityGate('clear');
         setUser(null);
         setLoading(false);
