@@ -9,7 +9,7 @@
  * Logs remain under release-gate-logs/ (gitignored; mode 0600).
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,7 +41,7 @@ if (expected !== head) {
   console.error('BLOCKED: checkout SHA differs from EXPECTED_RELEASE_SHA.');
   process.exit(2);
 }
-const output = join(root, 'release-gate-logs', 'integrated');
+// Do not certify a candidate if a future edit silently re-enables automatic\n// GitHub Actions deploys. This check inspects only the top-level YAML trigger\n// block, not nested keys elsewhere in the workflow. No workflow is executed.\nconst deployWorkflow = readFileSync(join(root, '.github/workflows/deploy.yml'), 'utf8');\nconst triggerMatch = deployWorkflow.match(/^on:\\s*\\n([\\s\\S]*?)(?=^[^\\s#][^\\n]*:|\\s*$)/m);\nconst triggers = triggerMatch?.[1].split('\\n')\n  .filter(line => /^ {2}[a-zA-Z_][\\w-]*:/.test(line))\n  .map(line => line.trim().split(':', 1)[0]);\nif (!triggers || triggers.length !== 1 || triggers[0] !== 'workflow_dispatch' ||\n    !/^[ ]{8}default: true\\s*$/m.test(triggerMatch[1])) {\n  console.error('BLOCKED: deployment workflow must be manual-only with auth_only default true.');\n  process.exit(2);\n}\n\nconst output = join(root, 'release-gate-logs', 'integrated');
 mkdirSync(output, { recursive: true, mode: 0o700 });
 chmodSync(output, 0o700);
 const checks = [];
@@ -95,7 +95,7 @@ const report = {
   notCovered: [
     'MFA session enforcement on direct Firestore SDK access',
     'Authenticated staging Firebase/GCloud project verification',
-    'PR #140 and production merge approval',
+    'PR #155 and production merge approval',
     'Real Stripe/OAuth/Twilio delivery and legal/safeguarding sign-offs',
     'Native EAS signed builds, physical devices and app-store acceptance',
     'Cloud Run deployment/rollback and actual production smoke checks',
