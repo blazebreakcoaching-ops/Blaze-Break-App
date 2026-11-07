@@ -21,7 +21,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, getDocRaw, forceTransactionError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -163,5 +163,20 @@ describe('audit logging', () => {
     expect(entry.action).toBe('update_data_policy');
     expect(entry.before.allowModelTraining).toBe(false);
     expect(entry.after.allowProductAnalytics).toBe(true);
+  });
+});
+
+
+describe('company policy changes are transactionally audited', () => {
+  it('does not update the policy if the audit transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const restore = forceTransactionError(new Error('simulated transaction outage'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/data-policy`)
+        .set(auth('owner_1')).send(fullPolicy);
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}`)?.dataPolicy).toBeUndefined();
+    } finally { restore(); }
   });
 });
