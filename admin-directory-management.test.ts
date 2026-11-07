@@ -34,6 +34,23 @@ describe('People Directory account management integration — source checks', ()
     expect(directory).toContain('generation.current += 1');
   });
 
+  it('drives People and Plans tables from the current Auth directory page', () => {
+    expect(dashboard).toContain('const filteredUsers = directoryPageUsers.filter(u =>');
+    expect(dashboard).toContain('const rolesInView = Array.from(new Set(directoryPageUsers.map');
+    expect(dashboard).toContain('onAccountsChange={receiveDirectoryPage}');
+    expect(dashboard).toContain('of {directoryPageUsers.length} current-page accounts');
+    expect(dashboard).toContain('Current Firebase page:');
+    expect(dashboard).toContain('The access timeline uses a separately limited audit-log query');
+    expect(directory).toContain('onAccountsChange?.(data.users)');
+    expect(directory).toContain('compact = false');
+  });
+
+  it('does not preserve old directory rows across platform admin account changes', () => {
+    expect(dashboard).toContain('previousAdminUid.current !== currentUid');
+    expect(dashboard).toContain('setDirectoryPageUsers([])');
+    expect(dashboard).toContain("key={authUser?.uid || 'signed-out'}");
+  });
+
   it('does not fetch recovery fields or use unfounded global totals', () => {
     const route = api.slice(api.indexOf('app.get("/api/admin/directory"'), api.indexOf('app.get("/api/admin/users/:uid"'));
     expect(route).not.toContain('collection("recovery")');
