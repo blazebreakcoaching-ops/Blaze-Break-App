@@ -178,6 +178,14 @@ class CollectionRef {
     return q;
   }
 
+  // Firestore aggregation count() reports matching documents without
+  // applying a limited first page. Fake mirrors the public .data().count API.
+  count() {
+    const unbounded = this.clone();
+    unbounded.limitN = null;
+    return { get: async () => ({ data: () => ({ count: (await unbounded.get()).size }) }) };
+  }
+
   private clone() {
     const q = new CollectionRef(this.store, this.path);
     q.clauses = this.clauses.slice();
