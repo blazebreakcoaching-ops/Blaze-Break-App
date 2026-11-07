@@ -21,4 +21,12 @@ describe('platform admin dashboard error handling', () => {
     expect(admin).toContain('Somatic statistics could not be loaded.');
     expect(admin).toContain('onClick={fetchSomaticMetrics}');
   });
+  it('does not mistake a failed feedback request for an empty inbox', () => {
+    expect(admin).toContain('const [feedbackLoadError, setFeedbackLoadError] = useState(false)');
+    expect(admin).toContain('Feedback could not be loaded.');
+    expect(admin).toContain('feedbackSubmissions.length === 0 && !feedbackLoadError');
+  });
+  it('reports reviewer permission denial using the thrown API error status', () => {
+    expect(admin).toContain('setNheiError(e?.status === 403');
+  });
 });
