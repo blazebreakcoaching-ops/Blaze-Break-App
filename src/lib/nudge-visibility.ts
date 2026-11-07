@@ -18,3 +18,21 @@ export function isNudgeVisibleForAccount(
 export function nudgeHistoryKey(uid: string): string {
   return `blaze_nudge_history_v2:${encodeURIComponent(uid)}`;
 }
+
+/** A corrupt/blocked browser store must never crash reminder evaluation.
+ * These records are used for local frequency limits, not personal content. */
+export function parseNudgeHistory(raw: string | null): { shownAt: string }[] {
+  if (!raw) return [];
+  try {
+    const entries: unknown = JSON.parse(raw);
+    if (!Array.isArray(entries)) return [];
+    return entries.filter(
+      (entry): entry is { shownAt: string } =>
+        entry !== null && typeof entry === 'object' &&
+        typeof (entry as { shownAt?: unknown }).shownAt === 'string' &&
+        Number.isFinite(Date.parse((entry as { shownAt: string }).shownAt)),
+    ).slice(-100);
+  } catch {
+    return [];
+  }
+}
