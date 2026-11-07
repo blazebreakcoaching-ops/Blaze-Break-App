@@ -987,3 +987,82 @@ describe('HR access changes require active membership and durable audit', () => 
     ]));
   });
 });
+
+
+describe('team access writes are auditable and require current membership', () => {
+  it('refuses assigning a suspended employee to a team', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/team`)
+      .set(auth('owner_1')).send({ team: 'Support' });
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberTeams).toBeUndefined();
+  });
+
+  it('refuses giving a suspended employee team-manager access', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'target'], memberTeams: { owner_1: 'Support' },
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/manage-teams`)
+      .set(auth('owner_1')).send({ teams: ['Support'] });
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}`)?.teamManagers).toBeUndefined();
+  });
+
+  it('saves a normal team assignment and its audit record together', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/team`)
+      .set(auth('owner_1')).send({ team: 'Support' });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberTeams?.target).toBe('Support');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'assign_member_team', actorUid: 'owner_1',
+        before: { team: null }, after: { team: 'Support' },
+      }),
+    ]));
+  });
+
+  it('saves a manager assignment and its audit record together', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', adminUids: ['owner_1'],
+      memberUids: ['owner_1', 'target'], memberTeams: { target: 'Support' },
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/manage-teams`)
+      .set(auth('owner_1')).send({ teams: ['Support'] });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}`)?.teamManagers?.target).toEqual(['Support']);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'assign_team_manager', actorUid: 'owner_1',
+        before: { teams: [] }, after: { teams: ['Support'] },
+      }),
+    ]));
+  });
+
+  it('does not change a team assignment if the audit transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/members/target/team`)
+        .set(auth('owner_1')).send({ team: 'Support' });
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}`)?.memberTeams).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+});
