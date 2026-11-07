@@ -141,7 +141,8 @@ import { CommunicationGrid, CommunicationGridColumn } from "./components/layout/
 const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 const MicroInterventions = lazy(() => import("./components/MicroInterventions.tsx").then(m => ({ default: m.MicroInterventions })));
 const NovaOverloadShield = lazy(() => import("./components/NovaOverloadShield.tsx").then(m => ({ default: m.NovaOverloadShield })));
-import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser, setNovaMemoryConsent } from "./lib/nova-brain.ts";
+import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser } from "./lib/nova-brain.ts";
+import { saveVerifiedProfileSettings } from "./lib/profile-settings-save";
 import { buildDashboardGreeting } from "../dashboard-greeting.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 const SubscriptionCentre = lazy(() => import("./components/SubscriptionCentre.tsx").then(m => ({ default: m.SubscriptionCentre })));
@@ -3399,15 +3400,18 @@ export default function App() {
             <SettingsModal
               profile={stats.profile}
               onClose={() => setShowSettings(false)}
-              onSave={(profile) => {
-                setStats((prev) => ({ ...prev, profile }));
-                // Update only this account's local presentation/consent;
-                // the old global "blaze_profile" would leak to the next user.
-                writeAccountProfile(user?.uid, profile);
-                if (user) {
-                  setNovaLearningAllowedForUid(user.uid, profile.letNovaLearn !== false);
-                  setNovaMemoryConsent(user.uid, profile.letNovaLearn !== false);
+              onSave={async (profile) => {
+                const uid = user?.uid;
+                if (!uid || auth.currentUser?.uid !== uid || statsOwnerUid !== uid) {
+                  throw new Error('Account not verified for this save');
                 }
+                // Commit the profile and its Nova-memory consent together.
+                // Only then update the customer-visible success state.
+                await saveVerifiedProfileSettings(uid, profile);
+                if (auth.currentUser?.uid !== uid) return;
+                setStats((prev) => ({ ...prev, profile }));
+                writeAccountProfile(uid, profile);
+                setNovaLearningAllowedForUid(uid, profile.letNovaLearn !== false);
               }}
               onOpenPrivacyCentre={() => {
                 setShowSettings(false);
