@@ -10715,6 +10715,12 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
 // existed - falls back to the legacy binary adminUids/memberUids arrays so
 // every existing org and member keeps working with zero migration.
 const getOrgMemberRole = async (db: any, orgId: string, org: any, uid: string): Promise<OrgRole | null> => {
+  // A stale member document or legacy UID array must not grant access to
+  // Company A after the same account has been assigned to Company B.
+  // Preserve compatibility for truly legacy users with no organisationId.
+  const profileDoc = await db.collection("users").doc(uid).get();
+  const linkedOrgId = profileDoc.exists ? profileDoc.data()?.organisationId : null;
+  if (linkedOrgId && linkedOrgId !== orgId) return null;
   const memberDoc = await db.collection("organisations").doc(orgId).collection("members").doc(uid).get();
   if (memberDoc.exists) {
     // An existing membership document is authoritative. Never fall back
