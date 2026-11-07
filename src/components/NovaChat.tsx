@@ -199,15 +199,18 @@ export const NovaChat = ({
     }
   }, [profile?.questioningStyle]);
   const loadMessages = (identityOverride?: string): Message[] => {
-    const saved = localStorage.getItem(novaStorageKey("nova_chat_history", identityOverride));
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return [];
-      }
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_history", identityOverride));
+      if (!saved) return [];
+      const parsed: unknown = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item): item is Message =>
+        !!item && (item.role === 'user' || item.role === 'model') &&
+        Array.isArray(item.parts) && typeof item.parts[0]?.text === 'string');
+    } catch {
+      // Corrupt or blocked browser storage is not a chat or signup failure.
+      return [];
     }
-    return [];
   };
   const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [messagesOwnerUid, setMessagesOwnerUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
@@ -326,8 +329,12 @@ export const NovaChat = ({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const loadIsVoiceEnabled = (identityOverride?: string): boolean => {
-    const saved = localStorage.getItem(novaStorageKey("nova_voice_enabled", identityOverride));
-    return saved !== null ? saved === "true" : true;
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_voice_enabled", identityOverride));
+      return saved !== null ? saved === "true" : true;
+    } catch {
+      return true;
+    }
   };
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(loadIsVoiceEnabled);
   const [voiceOwnerUid, setVoiceOwnerUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
