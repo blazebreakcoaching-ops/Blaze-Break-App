@@ -6,7 +6,7 @@ export interface StoredAuditEntry {
   id: string;
   userId: string;
   action: string;
-  status: string;
+  status: 'authorised' | 'denied' | 'anonymised' | 'deleted' | 'verified';
   timestamp: string;
   target?: string;
   details?: string;
@@ -23,7 +23,9 @@ export function parseAuditFallback(raw: string | null): StoredAuditEntry[] {
       typeof item.id === 'string' &&
       typeof item.action === 'string' &&
       typeof item.userId === 'string' &&
-      typeof item.status === 'string' &&
+      ['authorised', 'denied', 'anonymised', 'deleted', 'verified'].includes(
+        (item as Record<string, unknown>).status as string,
+      ) &&
       typeof item.timestamp === 'string',
     ).slice(0, 100);
   } catch {
