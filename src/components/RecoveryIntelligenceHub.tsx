@@ -6,6 +6,7 @@ import { NovaRecommendationCard } from './NovaRecommendationCard';
 import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWeeklyReviews, ConnectedEnergyBudget } from './ConnectedRecoveryModules';
 import { PressurePatternCapture } from './PressurePatternCapture';
 import { RelationalLoadSignal } from './RelationalLoadSignal';
+import { RecoveryInsightsPanel } from './RecoveryInsightsPanel';
 import { ReturnToWorkPlanner } from './ReturnToWorkPlanner';
 import { MODULE_TARGET_TAB, moduleDisplayName } from '../../recovery-decision-copy';
 import type { RouteType, RoutingOutcome, ReasonCode, ConfidenceLevel, EvidenceSource } from '../../recovery-routing-engine';
@@ -21,14 +22,11 @@ import { RECOVERY_DIRECTION_LABELS, type RecoveryDirectionBand } from '../../rec
 // tools underneath via a collapsed "Explore" section rather than a wall of
 // equal-status rooms.
 //
-// "Your Direction" (Recovery Debt / Recovery Direction / Mood Direction
-// etc.) is deliberately NOT here yet - the three contradictory Recovery
-// Velocity formulas this rebuild is meant to replace with one real,
-// explainable Recovery Direction are still in place (RecoveryIntelligenceLayer.tsx,
-// server.ts's /api/recovery/recalculate, RecoveryVelocityMap.tsx); building
-// a fourth trends section on top of unresolved, disagreeing data sources
-// would be exactly the invented-looking-data problem this rebuild exists to
-// fix. That's the next PR.
+// Order follows progressive disclosure: one next step, Your Direction, then
+// a short "Your insights" panel (energy, mood, pressure load - generated
+// from the person's own records by recovery-insights.ts; the legacy
+// Recovery Velocity formula is deliberately excluded), then every other
+// tool collapsed under "Explore All Tools".
 
 interface RecoveryDirectionResponse {
   band: RecoveryDirectionBand | null;
@@ -272,6 +270,8 @@ export const RecoveryIntelligenceHub = () => {
           <p className="text-xs text-text-muted">{direction.explanation}</p>
         </div>
       )}
+
+      {auth.currentUser && <RecoveryInsightsPanel />}
 
       <div className="rounded-xl border border-border bg-surface">
         <button

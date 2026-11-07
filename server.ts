@@ -156,6 +156,7 @@ import { buildExecutiveNarrative } from './executive-narrative';
 import { formatDataProvenance } from './data-provenance';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 import { logger, errorFields } from './logger';
+import { describeTrend, toCustomerInsight, CUSTOMER_INSIGHT_TYPES } from './recovery-insights';
 import { resolveServerFirebaseTarget } from './firebase-runtime-target';
 
 dotenv.config();
@@ -2396,13 +2397,15 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
     if (perms.allowRecoveryDebt) {
       const docSnap = await firestoreDb.collection('users').doc(uid).collection('derived').doc('recovery_debt').get();
       if (docSnap.exists) {
-        const data = docSnap.data();
-        infoParts.push(`Derived Recovery Debt:
-- Status: ${data?.status || "N/A"}
-- Value: ${data?.value !== undefined ? data.value : "N/A"}
-- Direction: ${data?.direction || "N/A"}
-- Confidence Level: ${data?.confidenceLevel || "N/A"}
-- Indicator Explanation: ${data?.explanation || "No explanation provided."}`);
+        // Same generated, fact-based wording the customer sees; stale or
+        // insufficient summaries are passed as unavailable, never as numbers.
+        const insight = toCustomerInsight('recovery_debt', docSnap.data(), Date.now());
+        infoParts.push(`Derived Recovery Debt (pressure load):
+- Availability: ${insight.state}
+- Value (0-100 indicator): ${insight.value ?? "N/A"}
+- Direction: ${insight.direction} (${insight.tone === 'unknown' ? 'no clear meaning yet' : insight.tone})
+- Confidence Level: ${insight.confidence ?? "N/A"}
+- Indicator Explanation: ${insight.explanation}`);
         used.push("recovery_debt");
       }
     }
@@ -2426,13 +2429,15 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
     if (perms.allowEnergyTrend) {
       const docSnap = await firestoreDb.collection('users').doc(uid).collection('derived').doc('energy_trend').get();
       if (docSnap.exists) {
-        const data = docSnap.data();
+        // Same generated, fact-based wording the customer sees; stale or
+        // insufficient summaries are passed as unavailable, never as numbers.
+        const insight = toCustomerInsight('energy_trend', docSnap.data(), Date.now());
         infoParts.push(`Derived Energy Trend:
-- Status: ${data?.status || "N/A"}
-- Value: ${data?.value !== undefined ? data.value : "N/A"}
-- Direction: ${data?.direction || "N/A"}
-- Confidence Level: ${data?.confidenceLevel || "N/A"}
-- Indicator Explanation: ${data?.explanation || "No explanation provided."}`);
+- Availability: ${insight.state}
+- Value (0-100 indicator): ${insight.value ?? "N/A"}
+- Direction: ${insight.direction} (${insight.tone === 'unknown' ? 'no clear meaning yet' : insight.tone})
+- Confidence Level: ${insight.confidence ?? "N/A"}
+- Indicator Explanation: ${insight.explanation}`);
         used.push("energy_trend");
       }
     }
@@ -2441,13 +2446,15 @@ async function getNovaContextAndMetadata(uid: string, firestoreDb: any): Promise
     if (perms.allowMoodTrend) {
       const docSnap = await firestoreDb.collection('users').doc(uid).collection('derived').doc('mood_trend').get();
       if (docSnap.exists) {
-        const data = docSnap.data();
+        // Same generated, fact-based wording the customer sees; stale or
+        // insufficient summaries are passed as unavailable, never as numbers.
+        const insight = toCustomerInsight('mood_trend', docSnap.data(), Date.now());
         infoParts.push(`Derived Mood Trend:
-- Status: ${data?.status || "N/A"}
-- Value: ${data?.value !== undefined ? data.value : "N/A"}
-- Direction: ${data?.direction || "N/A"}
-- Confidence Level: ${data?.confidenceLevel || "N/A"}
-- Indicator Explanation: ${data?.explanation || "No explanation provided."}`);
+- Availability: ${insight.state}
+- Value (0-100 indicator): ${insight.value ?? "N/A"}
+- Direction: ${insight.direction} (${insight.tone === 'unknown' ? 'no clear meaning yet' : insight.tone})
+- Confidence Level: ${insight.confidence ?? "N/A"}
+- Indicator Explanation: ${insight.explanation}`);
         used.push("mood_trend");
       }
     }
@@ -16989,9 +16996,8 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
       debtDirection = getDirection(debtValues);
     }
 
-    const debtExplanation = debtStatus === "not_enough_data"
-      ? "Not enough data yet. Complete a few check-ins to begin seeing trends."
-      : "Based on your self-reported pressure levels and recovery actions, your coaching trend indicator suggests a stable recovery direction. Self-reported body signals show manageable tension, supported by your reported recovery actions.";
+    // Generated from the actual result (never a fixed reassuring sentence).
+    const debtExplanation = describeTrend('recovery_debt', { status: debtStatus, direction: debtDirection, confidenceLevel: debtConfidence, sourceCount: debtSourceCount });
 
     const debtSummary = {
       type: "recovery_debt",
@@ -17054,7 +17060,7 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
 
     const velocityExplanation = velocityStatus === "not_enough_data"
       ? "Not enough data yet. Complete a few check-ins to begin seeing trends."
-      : "Your self-reported progress trend indicates a steady recovery direction. Your active recovery actions are working, framed by your completed weekly reflections and positive boundary actions.";
+      : `Legacy progress indicator: ${velocityDirection}, from ${velocitySourceCount} self-reported records in the last 30 days. Not a medical assessment.`;
 
     const velocitySummary = {
       type: "recovery_velocity",
@@ -17091,9 +17097,7 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
       energyDirection = getDirection(energyEntries);
     }
 
-    const energyExplanation = energyStatus === "not_enough_data"
-      ? "Not enough data yet. Complete a few check-ins to begin seeing trends."
-      : "Your self-reported energy levels show a consistent progress trend. Active energy management practices suggest your baseline capacity remains stable.";
+    const energyExplanation = describeTrend('energy_trend', { status: energyStatus, direction: energyDirection, confidenceLevel: energyConfidence, sourceCount: energySourceCount });
 
     const energySummary = {
       type: "energy_trend",
@@ -17141,9 +17145,7 @@ app.post("/api/recovery/recalculate", verifyAppCheck, authenticateFirebaseUser, 
       moodDirection = getDirection(moodPulsesScores);
     }
 
-    const moodExplanation = moodStatus === "not_enough_data"
-      ? "Not enough data yet. Complete a few check-ins to begin seeing trends."
-      : "Self-reported mood trends indicate a stable direction. Tracking suggests your responses behave as expected under current reported pressure.";
+    const moodExplanation = describeTrend('mood_trend', { status: moodStatus, direction: moodDirection, confidenceLevel: moodConfidence, sourceCount: moodSourceCount });
 
     const moodSummary = {
       type: "mood_trend",
@@ -19084,6 +19086,87 @@ app.get("/api/recovery/direction", verifyAppCheck, authenticateFirebaseUser, asy
 // of the original claims (a user rating system, sleep-hours tracking,
 // a return-to-work confidence score) have no real data source anywhere in
 // this app rather than inventing plausible-looking substitutes for them.
+
+
+// ============ Customer Recovery Insights ============
+// The customer-facing Intelligence Layer. Backend-enforced: the user is
+// always the verified token's uid - no uid, org id or other identifier is
+// ever accepted from the request, so nobody (including company managers)
+// can read another person's insights through these routes. Company
+// reporting never reads users/{uid}/derived at all.
+const readCustomerInsights = async (uid: string) => {
+  const db = getDb();
+  const userRef = db.collection("users").doc(uid);
+  const [permSnap, ...docs] = await Promise.all([
+    userRef.collection("nova_permissions").doc("current").get(),
+    ...CUSTOMER_INSIGHT_TYPES.map((t) => userRef.collection("derived").doc(t).get()),
+  ]);
+  const now = Date.now();
+  const insights = CUSTOMER_INSIGHT_TYPES.map((t, i) =>
+    toCustomerInsight(t, docs[i].exists ? docs[i].data() : null, now));
+  const perms = permSnap.exists ? (permSnap.data() || {}) : {};
+  // Mirrors getNovaContextAndMetadata's own per-category gates exactly.
+  const novaMayUse: Record<string, boolean> = {
+    recovery_debt: perms.allowRecoveryDebt === true,
+    energy_trend: perms.allowEnergyTrend === true,
+    mood_trend: perms.allowMoodTrend === true,
+  };
+  return { insights, novaMayUse };
+};
+
+app.get("/api/recovery/insights", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const { insights, novaMayUse } = await readCustomerInsights(user.uid);
+    res.json({ insights, novaMayUse });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: "Your insights could not be loaded right now. Please try again." });
+  }
+});
+
+// Nova explains ONLY insights the customer has consented to share with
+// Nova and that are genuinely available. The prompt contains only
+// server-generated facts (no free text), and Nova is told not to add any
+// figure, cause or conclusion that is not in them.
+app.post("/api/recovery/insights/explain", novaChatLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (req.body && Object.keys(req.body).length !== 0) {
+      return res.status(400).json({ error: "No request body is accepted." });
+    }
+    const { insights, novaMayUse } = await readCustomerInsights(user.uid);
+    const shareable = insights.filter((i) => novaMayUse[i.type]);
+    if (shareable.length === 0) {
+      return res.json({ explanation: null, reason: "no_consent", used: [] });
+    }
+    const usable = shareable.filter((i) => i.state === "available");
+    if (usable.length === 0) {
+      return res.json({ explanation: null, reason: "not_enough_data", used: [] });
+    }
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+      return res.status(503).json({ error: "Nova is not available right now, so no explanation was generated. Your insights above are still accurate." });
+    }
+    const quota = await checkAndReserveCapability(user.uid, 'nova_text');
+    if (!quota.allowed) {
+      return res.status(429).json({ error: "You've reached today's Nova limit. Your insights above are still accurate; Nova can explain them again tomorrow.", code: 'capability_limit_reached', capability: 'nova_text' });
+    }
+    const facts = usable.map((i) =>
+      `- ${i.label}: direction ${i.direction} (${i.tone}); indicator ${i.value ?? "n/a"}/100; confidence ${i.confidence ?? "n/a"}; ${i.sourceCount} records in 30 days.`).join("\n");
+    const prompt = `You are Nova, a calm, direct British recovery coach for high achievers. In plain English, in at most 4 short sentences, explain what these self-reported trends suggest and give ONE practical next step for this week. Use ONLY these facts; do not invent any number, cause, event or conclusion that is not listed; if confidence is low say it is an early signal. Do not diagnose or give medical advice.
+${facts}
+${NOVA_ONE_SHOT_SAFETY_FLOOR_BASE}`;
+    const response = await ai.models.generateContent({ model: GEMINI_TEXT_MODEL, contents: prompt });
+    const explanation = response.text ? response.text.trim() : "";
+    if (!explanation) {
+      return res.status(502).json({ error: "Nova didn't return an explanation this time. Your insights above are still accurate; please try again." });
+    }
+    res.json({ explanation, reason: null, used: usable.map((i) => i.type) });
+  } catch (err: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: "Nova couldn't explain your insights right now. Your insights above are still accurate." });
+  }
+});
 
 app.get("/api/user/outcome-tracker", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
