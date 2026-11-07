@@ -6589,17 +6589,24 @@ app.post("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, asyn
     }
     const uid = requireAuth(req).uid;
     const db = getDb();
-    // Browser switches are not a security boundary: require an explicit
-    // per-account opt-in at the point where Calendar data is persisted.
-    // Historical true defaults without a verified opt-in marker do not count.
-    const consent = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
-    if (!consent.exists || !hasExplicitCalendarSignalConsent(consent.data())) {
+    // Consent check and signal write belong in one Firestore transaction:
+    // if the person revokes permission between the read and write, the
+    // transaction retries and the old consent cannot authorise a new save.
+    const accountRef = db.collection("users").doc(uid);
+    const consentRef = accountRef.collection("nova_permissions").doc("current");
+    const signalRef = accountRef.collection("live_signals").doc("calendar");
+    const allowed = await db.runTransaction(async (tx) => {
+      const consent = await tx.get(consentRef);
+      if (!consent.exists || !hasExplicitCalendarSignalConsent(consent.data())) return false;
+      tx.set(signalRef, {
+        ...parsed.data,
+        updatedAt: new Date().toISOString(),
+      });
+      return true;
+    });
+    if (!allowed) {
       return res.status(403).json({ error: "Calendar sharing is off. Enable it in Privacy Controls." });
     }
-    await db.collection("users").doc(uid).collection("live_signals").doc("calendar").set({
-      ...parsed.data,
-      updatedAt: new Date().toISOString(),
-    });
     res.json({ success: true });
   } catch (err: any) {
     logger.error("[Signals] calendar write error:", errorFields(err));
