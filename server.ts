@@ -13590,10 +13590,20 @@ app.get("/api/org/:orgId/executive-work-design/export", verifyAppCheck, authenti
       return res.status(409).json({ error: "Not enough consenting members yet to export a real Executive Summary." });
     }
 
-    await logOrgAuditAction(req, orgId, 'export_executive_summary', 'organisation', orgId, null, {
-      cohortSize: payload.cohortSize,
-      threshold: payload.threshold,
-      signalKeys: payload.workDesignSignals.map((s) => s.key),
+    // A successful export transfers aggregate company intelligence outside
+    // the product. Do not send its payload unless its governance/audit
+    // evidence was durably written. This is deliberately NOT best-effort.
+    await db.collection('organisations').doc(orgId).collection('audit_logs').add({
+      actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+      orgId, action: 'export_executive_summary', targetResourceType: 'organisation',
+      targetResourceId: orgId, before: null,
+      after: {
+        cohortSize: payload.cohortSize,
+        threshold: payload.threshold,
+        signalKeys: payload.workDesignSignals.map((s) => s.key),
+      },
+      createdAt: FieldValue.serverTimestamp(),
+      ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
     });
 
     res.json({
