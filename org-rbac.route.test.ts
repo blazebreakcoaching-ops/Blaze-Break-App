@@ -365,6 +365,7 @@ describe('legacy admin grant/revoke routes', () => {
 
   it('POST /api/org/:orgId/members/:memberUid/revoke-admin: an admin can revoke another admin', async () => {
     seedOrg(ORG, { adminUids: ['owner_1', 'admin_1'], memberUids: ['owner_1', 'admin_1'] });
+    seedMember(ORG, 'admin_1', 'admin');
     const res = await request(app).post(`/api/org/${ORG}/members/admin_1/revoke-admin`).set(auth('owner_1'));
     expect(res.status).toBe(200);
     const raw = getDocRaw(`organisations/${ORG}`);
@@ -394,6 +395,49 @@ describe('legacy admin grant/revoke routes', () => {
     expect(errorSpy).toHaveBeenCalled();
     restore();
     errorSpy.mockRestore();
+  });
+});
+
+describe('legacy admin endpoints respect protected roles and audit changes', () => {
+  it('a regular admin cannot convert a security admin into a general admin through the old endpoint', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'admin_1', 'security_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'admin_1', 'admin');
+    seedMember(ORG, 'security_1', 'security_admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/security_1/make-admin`).set(auth('admin_1'));
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/security_1`)?.role).toBe('security_admin');
+  });
+
+  it('a regular admin cannot demote an owner using revoke-admin', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'owner_2', 'admin_1'], memberUids: ['owner_1', 'owner_2', 'admin_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'owner_2', 'owner');
+    seedMember(ORG, 'admin_1', 'admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_2/revoke-admin`).set(auth('admin_1'));
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_2`)?.role).toBe('owner');
+  });
+
+  it('the old endpoint will not convert an inactive membership into an admin', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/make-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.role).toBe('member');
+  });
+
+  it('a legacy admin grant has a durable attributable audit entry', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/make-admin`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'grant_admin', actorUid: 'owner_1', targetResourceId: 'target', after: { role: 'admin' } }),
+    ]));
   });
 });
 
