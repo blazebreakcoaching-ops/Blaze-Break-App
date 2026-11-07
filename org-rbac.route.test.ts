@@ -949,3 +949,41 @@ describe('scoped security admins cannot grant themselves general or billing acce
     expect(getDocRaw(`organisations/${ORG}/members/target`)?.role).toBe('member');
   });
 });
+
+describe('HR access changes require active membership and durable audit', () => {
+  it('rejects adding suspended staff to the HR viewer list', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const res = await request(app).post(`/api/org/${ORG}/hr-viewers`)
+      .set(auth('owner_1')).send({ uids: ['target'] });
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}`)?.hrViewerUids).toBeUndefined();
+  });
+
+  it('rejects invalid member roles when assigning HR access', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'unknown', 'active');
+    const res = await request(app).post(`/api/org/${ORG}/hr-viewers`)
+      .set(auth('owner_1')).send({ uids: ['target'] });
+    expect(res.status).toBe(409);
+  });
+
+  it('records the before-and-after HR access list in the same transaction', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/hr-viewers`)
+      .set(auth('owner_1')).send({ uids: ['target'] });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}`)?.hrViewerUids).toEqual(['target']);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'update_hr_viewers', actorUid: 'owner_1',
+        before: { uids: [] }, after: { uids: ['target'] },
+      }),
+    ]));
+  });
+});
