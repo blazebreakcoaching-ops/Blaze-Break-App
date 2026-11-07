@@ -16568,13 +16568,14 @@ app.post("/api/admin/legal/:docType/publish", verifyAppCheck, authenticateFireba
 // deletion (an erasure failure that contradicts what the UI promises).
 // Dynamic enumeration means new collections are covered automatically.
 
-app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
-  // A data-access export can include sensitive personal wellbeing records.
-  // Never allow browsers, proxies or shared caches to retain HTTP copies,
-  // including on authentication or quota errors.
+// Place cache protection BEFORE authentication, rate limiting and export
+// processing so even denied/failed responses cannot be stored by a cache.
+app.get("/api/user/export", (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+}, exportLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
     // A daily cap here is abuse protection against scripted repeated
