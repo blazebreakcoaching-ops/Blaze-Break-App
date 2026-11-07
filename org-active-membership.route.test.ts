@@ -83,3 +83,34 @@ describe('challenge-leave tenant boundary', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('aggregate privacy excludes stale staff IDs', () => {
+  it('does not count a former employee transferred to another company towards anonymity thresholds', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Company A', memberUids: ['active_employee', 'member_two', 'transferred'],
+      adminUids: [], privacyThreshold: 3, memberTeams: {},
+    });
+    seedDoc('users/active_employee', { organisationId: ORG, shareAnonymizedDataWithOrg: true });
+    seedDoc('users/member_two', { organisationId: ORG, shareAnonymizedDataWithOrg: true });
+    seedDoc('users/transferred', { organisationId: 'company_b', shareAnonymizedDataWithOrg: true });
+    seedDoc(`organisations/${ORG}/members/member_two`, { role: 'member', status: 'active' });
+    seedDoc(`organisations/${ORG}/members/transferred`, { role: 'member', status: 'active' });
+    const res = await request(app).get(`/api/org/${ORG}/my-privacy-status`).set(auth('active_employee'));
+    expect(res.status).toBe(200);
+    expect(res.body.orgCohortSufficient).toBe(false);
+  });
+
+  it('does not count a suspended consenting member towards anonymity thresholds', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Company A', memberUids: ['active_employee', 'member_two', 'former_employee'],
+      adminUids: [], privacyThreshold: 3, memberTeams: {},
+    });
+    for (const uid of ['active_employee', 'member_two', 'former_employee']) {
+      seedDoc(`users/${uid}`, { organisationId: ORG, shareAnonymizedDataWithOrg: true });
+    }
+    seedDoc(`organisations/${ORG}/members/member_two`, { role: 'member', status: 'active' });
+    const res = await request(app).get(`/api/org/${ORG}/my-privacy-status`).set(auth('active_employee'));
+    expect(res.status).toBe(200);
+    expect(res.body.orgCohortSufficient).toBe(false);
+  });
+});
