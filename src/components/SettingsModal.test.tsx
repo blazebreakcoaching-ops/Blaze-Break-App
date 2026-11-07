@@ -48,6 +48,25 @@ describe('privacy controls show only confirmed saved state', () => {
     expect(onSave).toHaveBeenCalledOnce();
   });
 
+  it('presents legacy missing consent as off and lets the person deliberately turn it on', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SettingsModal
+        profile={{ ...baseProfile, letNovaLearn: undefined }}
+        onClose={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /consent & privacy/i }));
+    const learning = screen.getByRole('switch', { name: 'Behavioural Learning' });
+    expect(learning).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(learning);
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ letNovaLearn: true }),
+    ));
+    expect(learning).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('retains a successful learning choice after server confirmation', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<SettingsModal profile={baseProfile} onClose={vi.fn()} onSave={onSave} />);
