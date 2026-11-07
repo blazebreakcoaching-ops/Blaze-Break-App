@@ -940,6 +940,18 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
   };
 
+  // Hiding stale React state on identity changes is important even though
+  // storage keys are UID-specific. The previous chat must never flash on
+  // screen while new-user effects restore the correct conversation.
+  if (!canPersistNovaChatState(messagesOwnerUid, currentUid, auth.currentUser?.uid ?? null) ||
+      voiceOwnerUid !== currentUid) {
+    return (
+      <div role="status" aria-live="polite" className="h-full min-h-48 flex items-center justify-center rounded-2xl bg-card border border-border p-5 text-sm text-text-muted">
+        Loading your conversation…
+      </div>
+    );
+  }
+
   return (
     <div className="ember-midnight ember-nova-room flex flex-col h-full bg-card rounded-2xl border border-border overflow-hidden relative transition-all duration-500">
       <div className="px-4 py-4 sm:p-5 border-b border-border flex flex-wrap items-center justify-between gap-3">
