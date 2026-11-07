@@ -4432,7 +4432,10 @@ const requirePermission = (req: any, permission: string) => {
   return user;
 };
 
-const logAdminAction = async (req: any, action: string, targetUid: string, targetEmail: string, metadata: any) => {
+const logAdminAction = async (
+  req: any, action: string, targetUid: string, targetEmail: string, metadata: any,
+  outcome?: 'succeeded' | 'failed',
+) => {
   const actor = req.user;
   const entry = {
     actorUid: actor?.uid || "system",
@@ -4443,6 +4446,7 @@ const logAdminAction = async (req: any, action: string, targetUid: string, targe
     targetEmail,
     createdAt: FieldValue.serverTimestamp(),
     metadata,
+    ...(outcome ? { outcome } : {}),
     ipAddress: req.ip || "",
     userAgent: req.headers["user-agent"] || ""
   };
@@ -8777,7 +8781,7 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
       updatedAt: new Date().toISOString()
     }, { merge: true });
     
-    await logAdminAction(req, "update_user_role", targetUid, "", { role });
+    await logAdminAction(req, "update_user_role", targetUid, "", { role }, 'succeeded');
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -8823,7 +8827,7 @@ app.post("/api/admin/users/:uid/entitlement", verifyAppCheck, authenticateFireba
     }, { merge: true });
 
     const planChange = isUpgrade(previousPlan, plan) ? 'upgrade' : isDowngrade(previousPlan, plan) ? 'downgrade' : 'lateral';
-    await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange });
+    await logAdminAction(req, "grant_entitlement", targetUid, "", { plan, status, durationDays: durationDays ?? null, previousPlan, planChange }, 'succeeded');
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -9105,7 +9109,7 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     const { suspend } = parsed.data;
 
     await getAuth().updateUser(targetUid, { disabled: suspend });
-    await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", {});
+    await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", { suspend }, 'succeeded');
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
