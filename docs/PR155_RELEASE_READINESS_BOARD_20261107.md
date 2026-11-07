@@ -45,6 +45,16 @@ Committed on PR #155 only:
 
 **No test was run** and no Firebase transaction/emulator or real Brevo email evidence exists at this SHA. P0 owner-transfer/concurrent removal, individual invitation revocation, real Firestore semantics and regression sign-off are outstanding.
 
+## 7 November — Organisation security batch 2 (source only; tests NOT run)
+
+- Email invitations now carry individually generated 7-day codes (`BBI.<orgId>.<token>`) and no longer distribute the existing shared company code. Only the SHA-256 hash is persisted; the code requires the intended recipient's verified Firebase email and is consumed once. Cancellation, expiry or resend revokes that individual code; the shared manual code still works until rotated.
+- Admin invite lists never return the token or token hash. The joining input accepts longer email codes, pending invite expiry is shown, expired reservations no longer count against seats, and cleanup per transaction is bounded.
+- New company codes are cryptographically random; join attempts have per-UID best-effort rate limiting. The shared-code regeneration route has a redacted audit event.
+- Company provisioning now updates the company, first owner and owner profile atomically. A draft with zero owners and members can be assigned a verified first owner, but an occupied company's owner cannot be replaced via Edit.
+- Member removal and self-leave update profile, roster, team/HR allowlists and role record atomically, with last-owner check in the transaction; stale cross-company accounts cannot be unlinked. Device cleanup happens after that transaction and still needs dedicated fault handling/reconciliation.
+- New unit/route tests for expiry, revoked/replayed/wrong-email tokens, concurrent joins/invites/owners, stale memberships, transaction failures, and malformed addresses were committed. **No tests have been run and the implementation is not release-certified.**
+- Remaining blockers: real Auth+Firestore emulator exercise, live Brevo and staging UI tests, full legacy shared-code rotation plan, ownership transfer and device cleanup consistency, multi-instance rate-limit design, and final privacy/role penetration tests.
+
 ## Platform Command Centre — all 15 admin sections
 
 See `docs/PR155_PLATFORM_ADMIN_ALL_SECTIONS_REVIEW_20261107.md` for the all-tab source inventory and the **59 server-side /api/admin routes**, including additional admin-only Nova/Evolution, content, analytics, and policy endpoints outside the visible dashboard. The previously limited customer-focused release checklist is **not** admin-functionality sign-off. Source fixes to company-list, feedback and statistics failure states and NHEI reviewer denial handling were committed to the draft branch; no full admin suite has run. Require per-tab permission-denied, error-recovery, role, account-switch, audit and staging verification before admin release.
