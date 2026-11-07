@@ -521,7 +521,8 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     seedDoc(`organisations/org_1/members/${USER}`, { role: 'owner', status: 'active' });
     seedDoc(`organisations/org_1/members/${OTHER}`, { role: 'member', status: 'active' });
     const res = await request(app).post('/api/user/delete-account').set(auth(USER));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('last_organisation_owner');
     expect(getDocRaw(`users/${USER}`)).toBeDefined();
     expect(getDocRaw(`users/${USER}/mood_pulses/mp1`)).toBeDefined();
     expect(getDocRaw('organisations/org_1')?.memberUids).toContain(USER);
@@ -534,7 +535,8 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     seedDoc(`organisations/org_1/members/${USER}`, { role: 'owner', status: 'active' });
     seedDoc(`organisations/org_1/members/${OTHER}`, { role: 'owner', status: 'suspended' });
     const res = await request(app).post('/api/user/delete-account').set(auth(USER));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('last_organisation_owner');
     expect(getDocRaw(`users/${USER}`)).toBeDefined();
     expect(h.deleteUser).not.toHaveBeenCalled();
   });
