@@ -19,6 +19,7 @@ import { UserProfileData } from "../types";
 import { cn } from "../lib/utils";
 import { logAuditAction } from "../lib/audit-logger";
 import { useAuth } from "../lib/auth";
+import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfileData) => Promise<void> | void;
@@ -38,6 +39,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     purpose: "",
     novaTone: "direct",
     primaryDrain: "",
+    letNovaLearn: false, // A missing answer is never permission to learn.
   } as any);
 
   const steps = [
@@ -182,11 +184,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   setProfile((p) => ({ ...p, letNovaLearn: next }));
                 }}
                 role="switch"
-                aria-checked={profile.letNovaLearn !== false}
+                aria-checked={hasExplicitNovaLearningConsent(profile.letNovaLearn)}
                 aria-label="Personalised learning: let Nova adjust its suggestions based on your check-ins"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
-                  profile.letNovaLearn !== false
+                  hasExplicitNovaLearningConsent(profile.letNovaLearn)
                     ? "bg-primary"
                     : "bg-surface dark:bg-surface",
                 )}
@@ -194,7 +196,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 <div
                   className={cn(
                     "w-4 h-4 rounded-full bg-surface absolute top-1 transition-transform shadow-sm",
-                    profile.letNovaLearn !== false ? "left-5" : "left-1",
+                    hasExplicitNovaLearningConsent(profile.letNovaLearn) ? "left-5" : "left-1",
                   )}
                 />
               </button>
