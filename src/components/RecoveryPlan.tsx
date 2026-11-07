@@ -447,6 +447,8 @@ export const RecoveryPlan = ({
     return (
       <div className="max-w-4xl mx-auto py-12 px-6">
         <motion.div 
+          data-nova-guide-target="plan-content"
+          tabIndex={-1}
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           className="card text-center p-6 sm:p-8 md:p-12 bg-card border-dashed border-border flex flex-col items-center justify-center space-y-8 relative overflow-hidden"
@@ -577,7 +579,7 @@ export const RecoveryPlan = ({
   return (
     <div className="max-w-5xl mx-auto space-y-12 pb-24">
       {/* Recovery plan header */}
-      <div className="card border border-border rounded-xl bg-card space-y-6">
+      <div data-nova-guide-target="plan-content" tabIndex={-1} className="card border border-border rounded-xl bg-card space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-b border-border pb-6">
           <div className="flex items-center gap-4">
             <div className="w-11 h-11 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold">
