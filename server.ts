@@ -3631,7 +3631,7 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
     if (!parsedParams.success) {
         return res.status(400).json({ error: "Invalid request payload or forbidden fields detected.", details: (parsedParams as any).error?.errors || [] });
     }
-    const { answers, letNovaLearn } = parsedParams.data;
+    const { answers } = parsedParams.data; // Client learning flag is not an authorisation.
     const diagnoseUid = requireAuth(req).uid;
 
     const dims = computeDimensionScores(answers);
