@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceTransactionError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
@@ -242,5 +242,67 @@ describe('audit logging', () => {
     expect(actions).toContain('create_connector');
     expect(actions).toContain('disable_connector');
     expect(actions).toContain('revoke_connector');
+  });
+});
+
+
+describe('connector administration is transactionally audited', () => {
+  it('creates an org connector and its audit event together', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const created = await request(app).post(`/api/org/${ORG}/connectors`)
+      .set(auth('owner_1')).send({ type: 'local', displayName: 'Internal Knowledge' });
+    expect(created.status).toBe(200);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'create_connector', targetResourceId: created.body.connector.id,
+      }),
+    ]));
+  });
+
+  it('does not create connector records on failed audit transactions', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const restore = forceTransactionError(new Error('simulated audit failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/connectors`)
+        .set(auth('owner_1')).send({ type: 'local', displayName: 'Internal Knowledge' });
+      expect(res.status).toBe(500);
+      const list = await request(app).get(`/api/org/${ORG}/connectors`).set(auth('owner_1'));
+      expect(list.body.connectors).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it('revokes connectors with an attributed security audit event', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/connectors/sample`, {
+      type: 'local', displayName: 'Internal', status: 'active',
+      enabled: true, authStatus: 'not_required',
+    });
+    const revoked = await request(app).post(`/api/org/${ORG}/connectors/sample/revoke`)
+      .set(auth('owner_1'));
+    expect(revoked.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/connectors/sample`)?.status).toBe('revoked');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'revoke_connector', targetResourceId: 'sample' }),
+    ]));
+  });
+
+  it('does not reactivate a connector if the mutation transaction fails', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/connectors/sample`, {
+      type: 'local', displayName: 'Internal', status: 'disabled', enabled: false,
+    });
+    const restore = forceTransactionError(new Error('simulated audit failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/connectors/sample/enable`)
+        .set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/connectors/sample`)?.enabled).toBe(false);
+    } finally { restore(); }
   });
 });
