@@ -12892,8 +12892,14 @@ app.post("/api/org/:orgId/work-design-debt", verifyAppCheck, authenticateFirebas
       createdAt: nowIso,
       updatedAt: nowIso,
     };
-    const ref = await db.collection("organisations").doc(orgId).collection("work_design_debt").add(record);
-    await logOrgAuditAction(req, orgId, "create_work_design_debt", "work_design_debt", ref.id, null, { team, signalKey, status: record.status });
+    const ref = db.collection('organisations').doc(orgId).collection('work_design_debt').doc();
+    await withOrgAuditedWrite(db, req, orgId, async (tx) => {
+      tx.set(ref, record);
+      return { result: null, audit: {
+        action: 'create_work_design_debt', resourceType: 'work_design_debt', resourceId: ref.id,
+        before: null, after: { team, signalKey, status: record.status },
+      } };
+    });
     res.json({ success: true, debt: { id: ref.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13059,8 +13065,14 @@ app.post("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFireb
       thresholdHours: type === 'max_meeting_hours_per_week' ? thresholdHours : null,
       createdAt: new Date().toISOString(),
     };
-    const ref = await db.collection("organisations").doc(orgId).collection("workplace_policies").add(record);
-    await logOrgAuditAction(req, orgId, "create_workplace_policy", "workplace_policy", ref.id, null, { type, label });
+    const ref = db.collection('organisations').doc(orgId).collection('workplace_policies').doc();
+    await withOrgAuditedWrite(db, req, orgId, async (tx) => {
+      tx.set(ref, record);
+      return { result: null, audit: {
+        action: 'create_workplace_policy', resourceType: 'workplace_policy', resourceId: ref.id,
+        before: null, after: { type, label },
+      } };
+    });
     res.json({ success: true, policy: { id: ref.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13133,12 +13145,17 @@ app.delete("/api/org/:orgId/workplace-policies/:id", verifyAppCheck, authenticat
     await requireOrgAdmin(req, orgId);
     const db = getDb();
     const ref = db.collection("organisations").doc(orgId).collection("workplace_policies").doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      return res.status(404).json({ error: "Workplace policy not found." });
-    }
-    await ref.delete();
-    await logOrgAuditAction(req, orgId, "delete_workplace_policy", "workplace_policy", id, snap.data(), null);
+    const removed = await withOrgAuditedWrite(db, req, orgId, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return { result: false, audit: null };
+      tx.delete(ref);
+      const previous = snap.data()!;
+      return { result: true, audit: {
+        action: 'delete_workplace_policy', resourceType: 'workplace_policy', resourceId: id,
+        before: { type: previous.type, label: previous.label }, after: null,
+      } };
+    });
+    if (!removed) return res.status(404).json({ error: 'Workplace policy not found.' });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -15077,11 +15094,15 @@ app.post("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebas
       indexedAt: now,
       registeredBy: user.uid,
     };
-    const ref = await db.collection("organisations").doc(orgId).collection("searchable_resources").add(record);
-    // Audit the metadata, never the chunkText itself - see
-    // docs/ENTERPRISE_RBAC.md's rule that audit entries stay structured
-    // field diffs, not raw content.
-    await logOrgAuditAction(req, orgId, "register_search_resource", "searchable_resource", ref.id, null, { title, contentType });
+    const ref = db.collection('organisations').doc(orgId).collection('searchable_resources').doc();
+    await withOrgAuditedWrite(db, req, orgId, async (tx) => {
+      tx.set(ref, record);
+      // Do not include the potentially sensitive chunk text in audit records.
+      return { result: null, audit: {
+        action: 'register_search_resource', resourceType: 'searchable_resource', resourceId: ref.id,
+        before: null, after: { title, contentType },
+      } };
+    });
     res.json({ success: true, resource: { id: ref.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -15119,12 +15140,16 @@ app.post("/api/org/:orgId/search/resources/:resourceId/remove", verifyAppCheck, 
     const { orgId, resourceId } = req.params;
     const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
     const ref = db.collection("organisations").doc(orgId).collection("searchable_resources").doc(resourceId);
-    const doc = await ref.get();
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Searchable resource not found." });
-    }
-    await ref.delete();
-    await logOrgAuditAction(req, orgId, "remove_search_resource", "searchable_resource", resourceId, { title: doc.data().title }, null);
+    const removed = await withOrgAuditedWrite(db, req, orgId, async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists) return { result: false, audit: null };
+      tx.delete(ref);
+      return { result: true, audit: {
+        action: 'remove_search_resource', resourceType: 'searchable_resource', resourceId,
+        before: { title: doc.data()?.title || null }, after: null,
+      } };
+    });
+    if (!removed) return res.status(404).json({ error: 'Searchable resource not found.' });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
