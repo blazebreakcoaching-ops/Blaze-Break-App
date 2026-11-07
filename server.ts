@@ -10316,15 +10316,27 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
       return res.status(400).json({ error: "You're not currently part of an organisation." });
     }
 
+    const orgRef = db.collection("organisations").doc(orgId);
+    const orgDoc = await orgRef.get();
+    if (!orgDoc.exists) {
+      return res.status(404).json({ error: "That organisation no longer exists. Contact support to unlink the account." });
+    }
+    const org = orgDoc.data()!;
+    // Leaving is not a way to remove the final active company owner.
+    await assertNotLastOrgOwner(db, orgId, org, user.uid);
+
     await db.collection("users").doc(user.uid).set({
       organisationId: FieldValue.delete(),
       shareAnonymizedDataWithOrg: false,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    await db.collection("organisations").doc(orgId).update({
+    await orgRef.update({
       memberUids: FieldValue.arrayRemove(user.uid),
       adminUids: FieldValue.arrayRemove(user.uid),
+      hrViewerUids: FieldValue.arrayRemove(user.uid),
+      [`memberTeams.${user.uid}`]: FieldValue.delete(),
+      [`teamManagers.${user.uid}`]: FieldValue.delete(),
     });
     // Clean up the granular Enterprise role record too - otherwise it
     // silently outlives the membership it describes, the same class of bug
@@ -10336,9 +10348,12 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
     const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
       .where("ownerUid", "==", user.uid).get();
     await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
-
+    await logOrgAuditAction(req, orgId, "leave_organisation", "member", user.uid, null, { accessRemoved: true });
     res.json({ success: true });
   } catch (err: any) {
+    if (err.message?.includes("Operation Rejected")) {
+      return res.status(400).json({ error: err.message });
+    }
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
@@ -11603,7 +11618,9 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
     await db.collection("organisations").doc(orgId).update({
       memberUids: FieldValue.arrayRemove(memberUid),
       adminUids: FieldValue.arrayRemove(memberUid),
+      hrViewerUids: FieldValue.arrayRemove(memberUid),
       [`memberTeams.${memberUid}`]: FieldValue.delete(),
+      [`teamManagers.${memberUid}`]: FieldValue.delete(),
     });
     // Clean up the granular Enterprise role record too - see /api/org/leave
     // above for why this matters.
