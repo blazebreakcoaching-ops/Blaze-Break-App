@@ -90,7 +90,7 @@ export const isNovaLearningAllowed = (): boolean => {
 // in server.ts) is willing to use, gated per category on this doc. Defaults
 // to on for every category except the two memory ones, which the caller
 // decides based on what the user actually chose during onboarding.
-const NOVA_PERMISSION_DEFAULTS = {
+export const NOVA_PERMISSION_DEFAULTS = {
   allowCheckins: true,
   allowEnergyBudgets: true,
   allowMoodPulses: true,
