@@ -28,6 +28,10 @@ This document is a **working technical register**, not a release certificate. Th
 | Feedback | Accepted report remains successful if secondary audit fails; testimonial publication consent explicit | Rejected server POST, accepted POST + failed audit, no sensitive data in reports |
 | Audit trail | Old browser-global fallback removed; UID-scoped cache and stale-fetch protection | A and B account switch with offline audit endpoint and corrupt local storage |
 
+## Platform Command Centre — all 15 admin sections
+
+See `docs/PR155_PLATFORM_ADMIN_ALL_SECTIONS_REVIEW_20261107.md` for the all-tab source inventory and the **59 server-side /api/admin routes**, including additional admin-only Nova/Evolution, content, analytics, and policy endpoints outside the visible dashboard. The previously limited customer-focused release checklist is **not** admin-functionality sign-off. Source fixes to company-list, feedback and statistics failure states and NHEI reviewer denial handling were committed to the draft branch; no full admin suite has run. Require per-tab permission-denied, error-recovery, role, account-switch, audit and staging verification before admin release.
+
 ## P0 — Company & Staff Admin (added after targeted 7 November source audit)
 
 See `docs/PR155_COMPANY_STAFF_ADMIN_AUDIT_20261107.md`. The full company staff journey was **not covered** by earlier release sign-off plans. Confirmed source risks include suspended org members retaining role resolution; join-code entry bypassing invite-only seat checks; member removal/leave retaining team-manager and HR viewer grants; cross-org reassignment via platform provisioning; and cancelled email invitations not revoking a shared code. Treat these as **release blockers for any B2B/company beta** until safely fixed and retested. Existing admin/enterprise route tests were authored previously; no current-SHA test execution or staging verification was performed for this audit.
