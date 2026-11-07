@@ -10352,6 +10352,9 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
 const getOrgMemberRole = async (db: any, orgId: string, org: any, uid: string): Promise<OrgRole | null> => {
   const memberDoc = await db.collection("organisations").doc(orgId).collection("members").doc(uid).get();
   if (memberDoc.exists) {
+    // A suspended member must never inherit a live role from the
+    // adminUids/memberUids legacy arrays. This is checked on every request.
+    if (memberDoc.data()?.status === 'suspended') return null;
     const role = memberDoc.data()?.role;
     if (isOrgRole(role)) return role;
   }
@@ -10373,6 +10376,9 @@ const loadOrgAndCallerRole = async (req: any, orgId: string) => {
   }
   const org = orgDoc.data()!;
   const role = await getOrgMemberRole(db, orgId, org, user.uid);
+  // Some manager/HR routes authorise via separate allow-lists instead of
+  // requireOrgRole. No unlinked or suspended caller may reach those checks.
+  if (!role) throw new Error("Forbidden: not an active member of this organisation.");
   return { user, db, org, role };
 };
 
@@ -10412,7 +10418,11 @@ const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid
   const resolvedRoleByUid = new Map<string, string>();
   membersSnap.docs.forEach((d: any) => {
     const role = d.data()?.role;
-    if (isOrgRole(role)) resolvedRoleByUid.set(d.id, role);
+    if (d.data()?.status === 'suspended') {
+      // Also blocks legacy adminUids fallback from counting a suspended
+      // owner as the remaining active owner.
+      resolvedRoleByUid.set(d.id, 'suspended');
+    } else if (isOrgRole(role)) resolvedRoleByUid.set(d.id, role);
   });
   const ownerUids = new Set<string>();
   resolvedRoleByUid.forEach((role, uid) => {
@@ -10621,13 +10631,13 @@ app.get("/api/org/me", verifyAppCheck, authenticateFirebaseUser, async (req, res
       joinCode: isOrgAdmin ? org.joinCode : undefined,
       privacyThreshold: isOrgAdmin ? (org.privacyThreshold || 5) : undefined,
       shareAnonymizedDataWithOrg: userDoc.data()?.shareAnonymizedDataWithOrg === true,
-      managedTeams: managedTeamsFor(org.teamManagers, user.uid),
+      managedTeams: callerRole ? managedTeamsFor(org.teamManagers, user.uid) : [],
       // Matches GET /api/org/:orgId/hr-dashboard's own access check exactly
       // (isHrViewer(...) OR admin) - otherwise an org admin has real,
       // working access to that data through the API but no nav entry to
       // ever reach it, since the hrViewerUids allow-list is a separate,
       // additive grant an admin isn't automatically added to.
-      isHrViewer: isHrViewer(org.hrViewerUids, user.uid) || isOrgAdmin,
+      isHrViewer: !!callerRole && (isHrViewer(org.hrViewerUids, user.uid) || isOrgAdmin),
     });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
@@ -13039,8 +13049,12 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
 app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const { org } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    if (!(org.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: 'That person is not a member of this organisation.' });
+    }
     const db = getDb();
+    await assertNotLastOrgOwner(db, orgId, org, memberUid);
     const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
     await memberRef.set({ status: 'suspended' }, { merge: true });
     await logOrgAuditAction(req, orgId, "suspend_member", "member", memberUid, { status: 'active' }, { status: 'suspended' });
@@ -13048,6 +13062,8 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("Operation Rejected")) {
+      res.status(400).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
