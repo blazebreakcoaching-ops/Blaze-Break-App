@@ -110,7 +110,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
   const [inviteEmails, setInviteEmails] = useState('');
   const [sendingInvites, setSendingInvites] = useState(false);
   const [inviteResult, setInviteResult] = useState('');
-  const [pendingInvites, setPendingInvites] = useState<{ id: string; email: string; emailSent: boolean }[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<{ id: string; email: string; emailSent: boolean; tokenExpiresAt?: string | null; individualCode?: boolean }[]>([]);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [cancelingInviteId, setCancelingInviteId] = useState<string | null>(null);
   const [csvError, setCsvError] = useState('');
@@ -1201,6 +1201,9 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                         <div key={invite.id} className="flex items-center justify-between text-xs">
                           <span className="text-text-main truncate">{invite.email}</span>
                           <div className="flex items-center gap-2 shrink-0">
+                            {invite.tokenExpiresAt && Date.parse(invite.tokenExpiresAt) <= Date.now() && (
+                              <span className="text-[10px] text-warning uppercase font-bold">Expired — resend</span>
+                            )}
                             {!invite.emailSent && (
                               <span className="text-[10px] text-[#9a3412] dark:text-warning uppercase font-bold">No email sent</span>
                             )}
