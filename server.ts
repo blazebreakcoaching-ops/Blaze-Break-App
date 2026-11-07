@@ -10213,6 +10213,13 @@ app.post("/api/admin/content-library", verifyAppCheck, authenticateFirebaseUser,
 // own for a caller that bypasses the UI.
 const OrgIdSchema = z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, 'orgId must contain only lowercase letters, numbers, and hyphens.');
 
+// New shared codes use cryptographic entropy rather than Math.random.
+// Legacy six-character codes remain valid until regenerated.
+const ORG_JOIN_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const createOrgJoinCode = (): string =>
+  [...crypto.randomBytes(12)].map(n => ORG_JOIN_CODE_ALPHABET[n & 31]).join('');
+
+
 app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     requirePermission(req, "b2b.manage");
@@ -10254,7 +10261,7 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
     // invite links already sent out to employees.
     const joinCode = existingOrgDoc.exists && existingOrgDoc.data()?.joinCode
       ? existingOrgDoc.data()!.joinCode
-      : Math.random().toString(36).substring(2, 8).toUpperCase();
+      : createOrgJoinCode();
 
     const updatePayload: any = {
       name: parsedName.data,
@@ -10568,7 +10575,16 @@ const getConsentingMemberUids = async (db: any, memberUids: string[]): Promise<s
 // This is the only way `organisationId` ever gets set on a user - the
 // Firestore rules explicitly block clients from setting it directly, so
 // nobody can self-assign into a company they don't actually work for.
-app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+// Best-effort per-account limiter; production-wide abuse monitoring must
+// also account for multiple Cloud Run instances sharing no in-memory state.
+const orgJoinLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req: any) => String(req.user?.uid || ipKeyGenerator(req.ip || '127.0.0.1')),
+});
+app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimiter, async (req, res) => {
   try {
     const user = requireAuth(req);
     const { joinCode } = req.body;
@@ -14385,7 +14401,7 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
     const { orgId } = req.params;
     await requireOrgAdmin(req, orgId);
     const db = getDb();
-    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const newCode = createOrgJoinCode();
     await db.collection("organisations").doc(orgId).update({
       joinCode: newCode,
       updatedAt: FieldValue.serverTimestamp(),
