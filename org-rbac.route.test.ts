@@ -95,8 +95,11 @@ describe('legacy fallback - orgs and members that predate the members/ subcollec
     const res = await request(app)
       .post(`/api/org/${ORG}/members/legacy_owner/remove`)
       .set(auth('admin_2'));
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/last owner/i);
+    // An admin may not remove ANY owner (legacy or granular), so this is
+    // refused before the last-owner rule is even reached.
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/only a company owner can remove/i);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('legacy_owner');
   });
 });
 
@@ -547,8 +550,9 @@ describe('last-owner protection', () => {
     const res = await request(app)
       .post(`/api/org/${ORG}/members/owner_1/remove`)
       .set(auth('admin_2'));
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/last owner/i);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/only a company owner can remove/i);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('owner_1');
   });
 });
 
@@ -1090,7 +1094,8 @@ describe('membership teardown and reactivation are audit-safe', () => {
     expect(audit.body.logs).toEqual(expect.arrayContaining([
       expect.objectContaining({
         action: 'remove_member', actorUid: 'owner_1', targetResourceId: 'target',
-        after: { accessRemoved: true },
+        before: { role: 'member', status: 'active', devices: 0 },
+        after: { accessRemoved: true, devicesRevoked: 0, sharedCodeRejoinBlocked: true },
       }),
     ]));
   });

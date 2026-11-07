@@ -10882,6 +10882,38 @@ const logOrgAuditAction = async (
 
 // Security-sensitive membership writes and their audit events succeed
 // or fail together. A transaction prevents an unlogged role change.
+// Re-resolves the ACTING administrator's own role inside the same
+// transaction as the change it authorises. The route-level check
+// (requireOrgRole) runs before the transaction; without this, an admin
+// demoted, suspended, removed or moved to another company while their
+// request is in flight could still complete it. Mirrors getOrgMemberRole
+// exactly (roster authoritative, granular record overrides legacy arrays,
+// profile linked to another company = no access). All reads happen before
+// any write, as Firestore transactions require.
+const assertActorOrgRoleInTx = async (
+  tx: any, db: any, orgId: string, orgData: any, actorUid: string | undefined, allowed: OrgRole[],
+): Promise<OrgRole> => {
+  if (!actorUid) throw new Error("Forbidden: no authenticated company actor.");
+  const roster: string[] = Array.isArray(orgData?.memberUids) ? orgData.memberUids : [];
+  if (!roster.includes(actorUid)) throw new Error("Forbidden: your company membership is no longer active.");
+  const orgRef = db.collection("organisations").doc(orgId);
+  const [profileSnap, memberSnap] = await Promise.all([
+    tx.get(db.collection("users").doc(actorUid)),
+    tx.get(orgRef.collection("members").doc(actorUid)),
+  ]);
+  const linked = profileSnap.exists ? profileSnap.data()?.organisationId : null;
+  if (linked && linked !== orgId) throw new Error("Forbidden: your company membership is no longer active.");
+  let role: OrgRole | null;
+  if (memberSnap.exists) {
+    const m = memberSnap.data();
+    role = (m?.status !== undefined && m.status !== 'active') || !isOrgRole(m?.role) ? null : m.role;
+  } else {
+    role = (orgData?.adminUids || []).includes(actorUid) ? 'owner' : 'member';
+  }
+  if (!role || !allowed.includes(role)) throw new Error("Forbidden: your company permissions changed.");
+  return role;
+};
+
 const writeOrgMembershipAuditInTransaction = (
   tx: any, db: any, req: any, orgId: string, action: string, memberUid: string,
   before: Record<string, unknown>, after: Record<string, unknown>,
@@ -11075,6 +11107,8 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       const profileSnap = await tx.get(userRef);
       const memberSnap = await tx.get(memberRef);
       const pending = await tx.get(pendingRef);
+      const removedSnap = await tx.get(orgRef.collection("removed_members").doc(user.uid));
+      const ssoSnap = await tx.get(orgRef.collection("sso_config").doc("config"));
       if (!orgSnap.exists || (!inviteMatch && orgSnap.data()?.joinCode !== normalizedCode)) {
         return { status: 404, error: "The company joining code has changed, or the company no longer exists." };
       }
@@ -11110,6 +11144,22 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       if (matchingInvite && !verifiedEmail) {
         return { status: 403, error: "Verify your email address before accepting your company's invitation." };
       }
+      // An administrator removed this account. The shared joining code must
+      // not let them straight back in; only a fresh personal invitation
+      // (validated above) is an explicit decision to readmit them.
+      if (removedSnap.exists && !inviteMatch) {
+        return { status: 403, error: "Your access to this company was removed by an administrator. Ask them for a new personal invitation." };
+      }
+      // When the company enforces SSO for specific email domains, neither
+      // the shared code nor an invitation may enrol an address outside them.
+      const sso = ssoSnap.exists ? ssoSnap.data() : null;
+      const allowedDomains: string[] = Array.isArray(sso?.allowedDomains)
+        ? sso!.allowedDomains.filter((d: unknown) => typeof d === 'string' && d.trim()).map((d: string) => d.trim().toLowerCase())
+        : [];
+      if (sso?.enforceSso === true && allowedDomains.length > 0 &&
+          !allowedDomains.includes(email.split('@').pop() || '')) {
+        return { status: 403, error: "This company only accepts staff email addresses from its approved domains." };
+      }
       const reservedInvite = verifiedEmail && matchingInvite &&
         isActivePendingOrgInvite(matchingInvite.data()) ? matchingInvite : undefined;
       const seatAllowance = billingProvider.getSeatAllowance(getEffectiveBillingState(org.billing));
@@ -11137,6 +11187,7 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
         invitedBy: inviteMatch ? 'email_invite' : 'join_code',
       }, { merge: true });
       if (reservedInvite) tx.delete(reservedInvite.ref);
+      if (removedSnap.exists) tx.delete(removedSnap.ref);
       // Joining creates a real security principal. Record who joined and
       // whether by individual invitation or shared code in the SAME commit,
       // never include the secret token or shared company code in the log.
@@ -11145,7 +11196,8 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
         orgId: orgRef.id, action: 'join_organisation',
         targetResourceType: 'member', targetResourceId: user.uid,
         before: { membership: null },
-        after: { role: 'member', status: 'active', method: inviteMatch ? 'email_invite' : 'join_code' },
+        after: { role: 'member', status: 'active', method: inviteMatch ? 'email_invite' : 'join_code',
+          ...(removedSnap.exists ? { readmittedAfterRemoval: true } : {}) },
         createdAt: FieldValue.serverTimestamp(),
         ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
       });
@@ -12191,6 +12243,8 @@ app.get("/api/org/:orgId/members", verifyAppCheck, authenticateFirebaseUser, asy
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -12214,6 +12268,7 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       const currentProfile = await tx.get(profileRef);
       if (!currentOrg.exists) return { status: 404, error: "Organisation not found." };
       const roster = currentOrg.data()!;
+      const actorRole = await assertActorOrgRoleInTx(tx, db, orgId, roster, user.uid, ['owner', 'admin']);
       if (!(roster.memberUids || []).includes(memberUid)) {
         return { status: 404, error: "That employee is not on this company's roster." };
       }
@@ -12222,10 +12277,24 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
         // Stale org roster must NEVER clear another company's profile.
         return { status: 409, error: "That account now belongs to another company. Review the stale roster before removing it." };
       }
+      // Same protection as role change and suspension: only an owner may
+      // remove an owner or a security administrator.
+      const targetMember = await tx.get(memberRef);
+      const targetData = targetMember.exists ? targetMember.data() : null;
+      const targetRole = targetData ? targetData.role
+        : ((roster.adminUids || []).includes(memberUid) ? 'owner' : 'member');
+      if (actorRole !== 'owner' && (targetRole === 'owner' || targetRole === 'security_admin')) {
+        return { status: 403, error: "Forbidden: only a company owner can remove an owner or security administrator." };
+      }
       const devicesSnap = await tx.get(orgRef.collection("devices").where("ownerUid", "==", memberUid));
       if (devicesSnap.docs.length > 400) return { status: 409, error: "Too many registered devices; use a supported company offboarding process." };
       await assertNotLastOrgOwner(db, orgId, roster, memberUid, tx);
       devicesSnap.docs.forEach((d: any) => tx.delete(d.ref));
+      // Removal marker: blocks re-entry through the SHARED joining code.
+      // Only a new personal invitation from an administrator readmits them.
+      tx.set(orgRef.collection("removed_members").doc(memberUid), {
+        removedAt: FieldValue.serverTimestamp(), removedBy: user.uid,
+      });
       if (currentProfile.exists) {
         tx.set(profileRef, {
           organisationId: FieldValue.delete(),
@@ -12242,7 +12311,8 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
       });
       tx.delete(memberRef);
       writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "remove_member", memberUid,
-        { membership: 'active' }, { accessRemoved: true });
+        { role: targetRole ?? null, status: targetData?.status ?? 'active', devices: devicesSnap.docs.length },
+        { accessRemoved: true, devicesRevoked: devicesSnap.docs.length, sharedCodeRejoinBlocked: true });
       return { status: 200 };
     });
     if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
@@ -12250,6 +12320,8 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else if (err.message?.includes("Rejected")) {
       res.status(400).json({ error: err.message });
     } else {
@@ -13721,7 +13793,7 @@ app.get("/api/org/:orgId/data-coverage", verifyAppCheck, authenticateFirebaseUse
 app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin']);
+    await requireOrgRole(req, orgId, ['owner', 'admin']);
     const db = getDb();
     const orgRef = db.collection("organisations").doc(orgId);
     const memberRef = orgRef.collection("members").doc(memberUid);
@@ -13733,6 +13805,7 @@ app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authen
       if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
         return { status: 400, error: "That person isn't a member of this organisation." };
       }
+      const actorRole = await assertActorOrgRoleInTx(tx, db, orgId, orgSnap.data(), (req as any).user?.uid, ['owner', 'admin']);
       if (profileSnap.exists && profileSnap.data()?.organisationId &&
           profileSnap.data()?.organisationId !== orgId) {
         return { status: 409, error: 'The member belongs to another organisation.' };
@@ -13762,6 +13835,7 @@ app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authen
     return res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes('Forbidden')) return res.status(403).json({ error: err.message });
+    if (err.message === 'Organisation not found.') return res.status(404).json({ error: err.message });
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     return res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
@@ -13770,7 +13844,7 @@ app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authen
 app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { user, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin']);
+    const { user } = await requireOrgRole(req, orgId, ['owner', 'admin']);
     if (memberUid === user.uid) {
       return res.status(400).json({ error: "You can't revoke your own admin access - ask another admin to do it." });
     }
@@ -13785,6 +13859,7 @@ app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, auth
       if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
         return { status: 400, error: "That person isn't a member of this organisation." };
       }
+      const actorRole = await assertActorOrgRoleInTx(tx, db, orgId, orgSnap.data(), (req as any).user?.uid, ['owner', 'admin']);
       if (profileSnap.exists && profileSnap.data()?.organisationId &&
           profileSnap.data()?.organisationId !== orgId) {
         return { status: 409, error: 'The member belongs to another organisation.' };
@@ -13814,6 +13889,7 @@ app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, auth
     return res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes('Forbidden')) return res.status(403).json({ error: err.message });
+    if (err.message === 'Organisation not found.') return res.status(404).json({ error: err.message });
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     return res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
@@ -13855,13 +13931,13 @@ app.get("/api/org/:orgId/members/roles", verifyAppCheck, authenticateFirebaseUse
 app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const { org, role: preflightRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
     const parsed = MemberRoleChangeSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "A valid role is required." });
     }
     const { role: nextRole } = parsed.data;
-    if (!canAssignRole(actorRole, nextRole)) {
+    if (!canAssignRole(preflightRole, nextRole)) {
       return res.status(403).json({ error: `Forbidden: only an owner can grant or revoke the '${nextRole}' role.` });
     }
     if (!(org.memberUids || []).includes(memberUid)) {
@@ -13874,6 +13950,10 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
       const [orgSnap, memberSnap] = await Promise.all([tx.get(orgRef), tx.get(memberRef)]);
       if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
         throw new Error("Forbidden: Membership no longer active.");
+      }
+      const actorRole = await assertActorOrgRoleInTx(tx, db, orgId, orgSnap.data(), (req as any).user?.uid, ['owner', 'admin', 'security_admin']);
+      if (!canAssignRole(actorRole, nextRole)) {
+        throw new Error(`Forbidden: only an owner can grant or revoke the '${nextRole}' role.`);
       }
       const beforeRole = memberSnap.exists ? memberSnap.data()?.role : null;
       // A suspended or malformed membership must not be modified through the
@@ -13920,7 +14000,7 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
 app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const { org } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
     if (!(org.memberUids || []).includes(memberUid)) {
       return res.status(400).json({ error: 'That person is not a member of this organisation.' });
     }
@@ -13932,6 +14012,7 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
       if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
         throw new Error("Forbidden: Membership no longer active.");
       }
+      const actorRole = await assertActorOrgRoleInTx(tx, db, orgId, orgSnap.data(), (req as any).user?.uid, ['owner', 'admin', 'security_admin']);
       const effectiveRole = memberSnap.exists ? memberSnap.data()?.role :
         ((orgSnap.data()?.adminUids || []).includes(memberUid) ? 'owner' : 'member');
       if (actorRole !== 'owner' && (effectiveRole === 'owner' || effectiveRole === 'security_admin')) {
@@ -13949,6 +14030,8 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else if (err.message?.includes("Operation Rejected")) {
       res.status(400).json({ error: err.message });
     } else {
@@ -13985,13 +14068,14 @@ app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authen
       if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
         throw new Error("Operation Rejected: Employee is no longer on this company roster.");
       }
+      const actorRoleNow = await assertActorOrgRoleInTx(tx, db, orgId, orgSnap.data(), (req as any).user?.uid, ['owner', 'admin', 'security_admin']);
       if (!current.exists || current.data()?.status !== 'suspended' || !isOrgRole(current.data()?.role)) {
         throw new Error("Operation Rejected: Membership status changed.");
       }
       if (profile.exists && profile.data()?.organisationId && profile.data()?.organisationId !== orgId) {
         throw new Error("Operation Rejected: This account belongs to another organisation.");
       }
-      if (actorRole !== 'owner' && (current.data()?.role === 'owner' || current.data()?.role === 'security_admin')) {
+      if (actorRoleNow !== 'owner' && (current.data()?.role === 'owner' || current.data()?.role === 'security_admin')) {
         throw new Error("Forbidden: only an owner can reactivate a protected administrator.");
       }
       tx.update(memberRef, { status: 'active' });
@@ -14002,6 +14086,8 @@ app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authen
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else if (err.message?.includes("Operation Rejected")) {
       res.status(409).json({ error: err.message });
     } else {
@@ -15374,6 +15460,7 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
       const orgRef = db.collection("organisations").doc(orgId);
       const current = await tx.get(orgRef);
       if (!current.exists) throw new Error("Organisation not found.");
+      await assertActorOrgRoleInTx(tx, db, orgId, current.data(), (req as any).user?.uid, ['owner', 'admin']);
       tx.update(orgRef, { joinCode: newCode, updatedAt: FieldValue.serverTimestamp() });
       tx.set(orgRef.collection("audit_logs").doc(), {
         actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
@@ -15387,6 +15474,8 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -15431,6 +15520,7 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
       // Compare against the actual committed snapshot, not a possibly
       // stale admin-authorisation read from the start of this request.
       const now = current.data()!;
+      await assertActorOrgRoleInTx(tx, db, orgId, now, (req as any).user?.uid, ['owner', 'admin']);
       const previous: Record<string, unknown> = {};
       if (name !== undefined) previous.name = now.name;
       if (privacyThreshold !== undefined) previous.privacyThreshold = now.privacyThreshold || 5;
@@ -15458,6 +15548,8 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -15515,6 +15607,7 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, org
       const pending = await tx.get(pendingRef);
       if (!currentOrg.exists) return { allowed: false, error: "Organisation not found." };
       const data = currentOrg.data()!;
+      await assertActorOrgRoleInTx(tx, db, orgId, data, (req as any).user?.uid, ['owner', 'admin']);
       const activeInvites = pending.docs.filter((d: any) => isActivePendingOrgInvite(d.data()));
       const pendingEmails = new Set(activeInvites.map((d: any) => d.id));
       const addedSeats = cleaned.filter(email => !pendingEmails.has(email)).length;
@@ -15588,6 +15681,8 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, org
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -15614,6 +15709,8 @@ app.get("/api/org/:orgId/invites", verifyAppCheck, authenticateFirebaseUser, asy
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -15632,6 +15729,9 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
     }
     const inviteRef = db.collection("organisations").doc(orgId).collection("pending_invites").doc(normalizedEmail);
     const outcome = await db.runTransaction(async (tx) => {
+      const orgSnap = await tx.get(db.collection("organisations").doc(orgId));
+      if (!orgSnap.exists) return { status: 404 };
+      await assertActorOrgRoleInTx(tx, db, orgId, orgSnap.data(), (req as any).user?.uid, ['owner', 'admin']);
       const existing = await tx.get(inviteRef);
       if (!existing.exists) return { status: 404 };
       tx.delete(inviteRef);
@@ -15652,6 +15752,8 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message === "Organisation not found.") {
+      res.status(404).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -15666,7 +15768,27 @@ app.post("/api/org/:orgId/recognition/:recognitionId/delete", verifyAppCheck, au
     const { orgId, recognitionId } = req.params;
     await requireOrgAdmin(req, orgId);
     const db = getDb();
-    await db.collection("organisations").doc(orgId).collection("recognition_wall").doc(recognitionId).delete();
+    const orgRef = db.collection("organisations").doc(orgId);
+    const postRef = orgRef.collection("recognition_wall").doc(recognitionId);
+    // Moderation removes a colleague's post, so record who removed which
+    // post in the same commit. The post's text is never copied into the log.
+    const found = await db.runTransaction(async (tx) => {
+      const orgSnap = await tx.get(orgRef);
+      if (!orgSnap.exists) throw new Error("Organisation not found.");
+      await assertActorOrgRoleInTx(tx, db, orgId, orgSnap.data(), (req as any).user?.uid, ['owner', 'admin']);
+      const post = await tx.get(postRef);
+      if (!post.exists) return false;
+      tx.delete(postRef);
+      tx.set(orgRef.collection("audit_logs").doc(), {
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
+        orgId, action: 'delete_recognition_post', targetResourceType: 'recognition_post',
+        targetResourceId: recognitionId, before: { exists: true }, after: { deleted: true },
+        createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+        userAgent: req.headers?.['user-agent'] || '',
+      });
+      return true;
+    });
+    if (!found) return res.status(404).json({ error: "That post no longer exists." });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
