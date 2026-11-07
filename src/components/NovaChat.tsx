@@ -735,7 +735,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
       }
     } catch (error: any) {
       if (!stillCurrentPlayback()) return;
-      console.error("Playback error:", error);
+      console.warn("Nova voice playback unavailable", { status: typeof error?.status === 'number' ? error.status : undefined });
       setAudioLoading(false);
       setSpeakingIndex(null);
       // Let the user know the TTS failed for visibility
@@ -745,7 +745,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           role: "model",
           parts: [
             {
-              text: `*System Note: Voice Module Offline (${error.message || "Failed to connect"})*`,
+              text: '*Voice is unavailable just now. You can continue by typing.*',
             },
           ],
         },
@@ -880,14 +880,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
       }
     } catch (error: any) {
       if (!stillCurrentRequest()) return;
-      console.error("Chat Error:", error);
+      // Do not render backend errors, server stack details or model output
+      // marked as an error verbatim into the user's private conversation.
+      console.warn("Nova chat request unsuccessful", {
+        status: typeof error?.status === 'number' ? error.status : undefined,
+      });
       const errorMessage: Message = {
         role: "model",
         parts: [
           {
-            text:
-              error.message ||
-              "I'm having trouble connecting right now. Please try again in a moment.",
+            text: "Nova couldn't respond just now. You can try sending your message again.",
           },
         ],
       };
