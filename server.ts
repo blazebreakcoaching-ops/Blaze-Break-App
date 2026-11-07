@@ -13594,7 +13594,7 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
 app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { org } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const { org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
     if (!(org.memberUids || []).includes(memberUid)) {
       return res.status(400).json({ error: 'That person is not a member of this organisation.' });
     }
@@ -13605,6 +13605,11 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
       const [orgSnap, memberSnap] = await Promise.all([tx.get(orgRef), tx.get(memberRef)]);
       if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
         throw new Error("Forbidden: Membership no longer active.");
+      }
+      const effectiveRole = memberSnap.exists ? memberSnap.data()?.role :
+        ((orgSnap.data()?.adminUids || []).includes(memberUid) ? 'owner' : 'member');
+      if (actorRole !== 'owner' && (effectiveRole === 'owner' || effectiveRole === 'security_admin')) {
+        throw new Error("Forbidden: only an owner can suspend a protected administrator.");
       }
       if (memberSnap.exists && memberSnap.data()?.status !== undefined && memberSnap.data()?.status !== 'active') {
         throw new Error("Operation Rejected: Member is not active.");
@@ -13630,7 +13635,7 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
 app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { org } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const { org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
     // Reactivation is only for an existing, suspended staff member.
     // Never create an active role document for an arbitrary UID.
     if (!(org.memberUids || []).includes(memberUid)) {
@@ -13641,6 +13646,9 @@ app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authen
     const existing = await memberRef.get();
     if (!existing.exists || existing.data()?.status !== 'suspended' || !isOrgRole(existing.data()?.role)) {
       return res.status(409).json({ error: 'Only an existing suspended member with a valid role can be reactivated.' });
+    }
+    if (actorRole !== 'owner' && (existing.data()?.role === 'owner' || existing.data()?.role === 'security_admin')) {
+      return res.status(403).json({ error: 'Only a company owner can reactivate a protected administrator.' });
     }
     const profile = await db.collection("users").doc(memberUid).get();
     if (profile.exists && profile.data()?.organisationId && profile.data()?.organisationId !== orgId) {
