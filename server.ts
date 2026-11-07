@@ -1,4 +1,5 @@
 import express from "express";
+import { hasExplicitCalendarSignalConsent } from './src/lib/calendar-signal-consent';
 import { marketingListId, shouldJoinMarketingList } from './marketing-consent';
 import helmet from "helmet";
 import path from "path";
@@ -6572,12 +6573,12 @@ function redactSlackState(state: any) {
 // aggregate is computed client-side and just persisted through this endpoint,
 // matching the existing pattern already used in MicroRecovery.tsx.
 const CalendarSignalSchema = z.object({
-  totalMeetingHours: z.number(),
-  meetingCount: z.number(),
-  backToBackCount: z.number(),
-  eveningMeetingCount: z.number(),
-  weekendMeetingCount: z.number(),
-  windowDays: z.number(),
+  totalMeetingHours: z.number().finite().min(0).max(168),
+  meetingCount: z.number().int().min(0).max(250),
+  backToBackCount: z.number().int().min(0).max(250),
+  eveningMeetingCount: z.number().int().min(0).max(250),
+  weekendMeetingCount: z.number().int().min(0).max(250),
+  windowDays: z.literal(7),
 }).strict();
 
 app.post("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -6588,6 +6589,13 @@ app.post("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, asyn
     }
     const uid = requireAuth(req).uid;
     const db = getDb();
+    // Browser switches are not a security boundary: require an explicit
+    // per-account opt-in at the point where Calendar data is persisted.
+    // Historical true defaults without a verified opt-in marker do not count.
+    const consent = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
+    if (!consent.exists || !hasExplicitCalendarSignalConsent(consent.data())) {
+      return res.status(403).json({ error: "Calendar sharing is off. Enable it in Privacy Controls." });
+    }
     await db.collection("users").doc(uid).collection("live_signals").doc("calendar").set({
       ...parsed.data,
       updatedAt: new Date().toISOString(),
@@ -6603,6 +6611,10 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
   try {
     const uid = requireAuth(req).uid;
     const db = getDb();
+    const consent = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
+    if (!consent.exists || !hasExplicitCalendarSignalConsent(consent.data())) {
+      return res.json({ state: null });
+    }
     const doc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
     res.json({ state: doc.exists ? doc.data() : null });
   } catch (err: any) {
@@ -11186,7 +11198,7 @@ const CALENDAR_SIGNAL_FRESHNESS_MS = 14 * 24 * 60 * 60 * 1000;
 // unsynced browser tab look identical to every caller.
 const getCalendarConnectionState = async (db: any, uid: string): Promise<'fresh' | 'stale' | 'not_connected'> => {
   const permDoc = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
-  if (!permDoc.exists || permDoc.data()?.allowCalendarSignals !== true) return 'not_connected';
+  if (!permDoc.exists || !hasExplicitCalendarSignalConsent(permDoc.data())) return 'not_connected';
   const calDoc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
   if (!calDoc.exists) return 'not_connected';
   const data = calDoc.data() || {};
