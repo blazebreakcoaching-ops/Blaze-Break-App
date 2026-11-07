@@ -8,7 +8,7 @@ const original: UserStats = {
   supportCircle: [{ id: 'test-1' } as UserStats['supportCircle'][number]],
   profile: {
     fullName: 'Test User', role: '', organization: '',
-    subscription: 'premium' as UserStats['profile'] extends infer _T ? any : never,
+    subscription: 'premium' as any,
     letNovaLearn: false,
     questioningStyle: null,
   },
