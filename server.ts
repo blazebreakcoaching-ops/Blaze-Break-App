@@ -10236,13 +10236,23 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
     const db = getDb();
 
     let initialAdminUid: string | null = null;
+    let initialOwnerEmail: string | null = null;
     if (initialAdminEmail) {
-      try {
-        const adminUserRecord = await getAuth().getUserByEmail(initialAdminEmail);
-        initialAdminUid = adminUserRecord.uid;
-      } catch (e) {
-        return res.status(400).json({ error: `No existing account found for ${initialAdminEmail}. They need to sign up for Blaze Break first, then be designated as this org's admin.` });
+      const parsedEmail = z.string().trim().email().max(254).safeParse(initialAdminEmail);
+      if (!parsedEmail.success) {
+        return res.status(400).json({ error: 'Enter a valid email address for the first company owner.' });
       }
+      initialOwnerEmail = parsedEmail.data.toLowerCase();
+      let adminUserRecord;
+      try {
+        adminUserRecord = await getAuth().getUserByEmail(initialOwnerEmail);
+      } catch {
+        return res.status(400).json({ error: 'No existing Blaze Break account was found for that email. Ask them to register and verify their email first.' });
+      }
+      if (adminUserRecord.emailVerified !== true) {
+        return res.status(400).json({ error: 'The first company owner must verify their Blaze Break account email before they can be assigned.' });
+      }
+      initialAdminUid = adminUserRecord.uid;
     }
 
     const orgRef = db.collection("organisations").doc(orgId);
@@ -10295,7 +10305,7 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
         tx.set(ownerMemberRef, {
           role: 'owner',
           status: 'active',
-          email: initialAdminEmail,
+          email: initialOwnerEmail,
           joinedAt: FieldValue.serverTimestamp(),
           invitedBy: (req as any).user?.uid || 'system',
         }, { merge: true });
