@@ -1219,7 +1219,7 @@ service cloud.firestore {
         // that has never heard of NHEI (onboarding, the memory-consent
         // toggle, Settings) keeps working unchanged.
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowNheiReflectionStorage', 'allowNheiLongitudinalTracking', 'allowNheiRoutingInsights', 'allowCalendarActions', 'allowCalendarActionsGrantedAt', 'allowCalendarActionsWithdrawnAt', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'calendarSignalsExplicitConsentAt', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowNheiReflectionStorage', 'allowNheiLongitudinalTracking', 'allowNheiRoutingInsights', 'allowCalendarActions', 'allowCalendarActionsGrantedAt', 'allowCalendarActionsWithdrawnAt', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -1234,6 +1234,13 @@ service cloud.firestore {
             && request.resource.data.allowEnergyTrend is bool
             && request.resource.data.allowMoodTrend is bool
             && (!('allowCalendarSignals' in request.resource.data) || request.resource.data.allowCalendarSignals is bool)
+            // Historical allowCalendarSignals=true was sometimes an
+            // automatic default, not an explicit choice. New clients
+            // record a dated affirmative action; legacy docs without it
+            // cannot pass the app/server consent gate.
+            && (!('calendarSignalsExplicitConsentAt' in request.resource.data)
+                || request.resource.data.calendarSignalsExplicitConsentAt == null
+                || isStringWithMax(request.resource.data.calendarSignalsExplicitConsentAt, 40))
             && (!('allowFingerprint' in request.resource.data) || request.resource.data.allowFingerprint is bool)
             && (!('allowOnboardingProfile' in request.resource.data) || request.resource.data.allowOnboardingProfile is bool)
             && (!('allowRecoveryPlanProgress' in request.resource.data) || request.resource.data.allowRecoveryPlanProgress is bool)
