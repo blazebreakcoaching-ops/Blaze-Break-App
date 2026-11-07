@@ -14197,7 +14197,7 @@ app.get("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser,
 app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
-    const { db, org } = await requireOrgPermission(req, orgId, 'org.data_policy.manage');
+    const { db } = await requireOrgPermission(req, orgId, 'org.data_policy.manage');
     // The caller sends the full intended policy (never a partial patch -
     // see org-data-policy.ts for why), validated as a whole object before
     // anything is written.
@@ -14698,7 +14698,7 @@ app.get("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, asy
 app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId } = req.params;
-    const { db, org } = await requireOrgPermission(req, orgId, 'org.billing.manage');
+    const { db } = await requireOrgPermission(req, orgId, 'org.billing.manage');
     const validation = validateBillingUpdate(req.body);
     if (!validation.valid) {
       return res.status(400).json({ error: validation.error });
@@ -14893,7 +14893,7 @@ app.post("/api/org/:orgId/sso/test", verifyAppCheck, authenticateFirebaseUser, a
         } else {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 5000);
-          const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal });
+          const response = await fetch(config.metadataUrl, { method: "GET", signal: controller.signal, redirect: "error" });
           clearTimeout(timeout);
           metadataReachable = response.ok;
         }
