@@ -28,6 +28,12 @@ This document is a **working technical register**, not a release certificate. Th
 | Feedback | Accepted report remains successful if secondary audit fails; testimonial publication consent explicit | Rejected server POST, accepted POST + failed audit, no sensitive data in reports |
 | Audit trail | Old browser-global fallback removed; UID-scoped cache and stale-fetch protection | A and B account switch with offline audit endpoint and corrupt local storage |
 
+## 7 November Super Admin restructuring — source work committed / NOT deployed
+
+Full ordered scope: `docs/PR155_SUPERADMIN_BACKEND_RESTRUCTURE_PLAN_20261107.md` (54 tasks). New source changes: five grouped work areas instead of 15 equal tabs; People directory showing Firebase Auth display name, company link, join date and full latest sign-in, with demo accounts separated by default; privacy-safe company summary (seat allowance, pending invitations, staff, suspended records and roster mismatch); stale-response guard when viewing two companies; summary source-availability flags (no fabricated one-user fallback or 100% completion for zero sessions); NHEI, feedback, company and rate-limit failure displays. Suspended org members now fail role resolution, including stale manager/HR allow-lists; the last active owner cannot be suspended. Regression cases authored **but not executed**.
+
+**Still P0:** atomic join-code seat checks, revocable invitations, cross-company initial-owner assignment, full removal/leave cleanup, live Firebase/Auth/Firestore role and two-company browser verification. **Still P1:** paginated directory beyond first 100 Firestore records, honest sign-in history governance, complete company executive workspace, other admin routes and operational observability. No automatic GitHub Actions. No merge, production release, or staging sign-off occurred.
+
 ## Platform Command Centre — all 15 admin sections
 
 See `docs/PR155_PLATFORM_ADMIN_ALL_SECTIONS_REVIEW_20261107.md` for the all-tab source inventory and the **59 server-side /api/admin routes**, including additional admin-only Nova/Evolution, content, analytics, and policy endpoints outside the visible dashboard. The previously limited customer-focused release checklist is **not** admin-functionality sign-off. Source fixes to company-list, feedback and statistics failure states and NHEI reviewer denial handling were committed to the draft branch; no full admin suite has run. Require per-tab permission-denied, error-recovery, role, account-switch, audit and staging verification before admin release.
