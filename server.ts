@@ -14550,10 +14550,12 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
       results.push({ email, sent });
       // A token refresh or cancellation while email is in flight must not
       // restore the old record or mark a replacement invitation delivered.
-      const pendingNow = await inviteDoc.get();
-      if (pendingNow.exists && pendingNow.data()?.tokenHash === credentials.tokenHash) {
-        await inviteDoc.update({ emailSent: sent });
-      }
+      await db.runTransaction(async (tx) => {
+        const pendingNow = await tx.get(inviteDoc);
+        if (pendingNow.exists && pendingNow.data()?.tokenHash === credentials.tokenHash) {
+          tx.update(inviteDoc, { emailSent: sent });
+        }
+      });
     }
 
     res.json({ success: true, results });
