@@ -103,6 +103,24 @@ describe('GET /api/org/me', () => {
     expect(res.body.isOrgAdmin).toBe(false);
   });
 
+  it('never reveals company identity when a stale profile points to a suspended member', async () => {
+    seedDoc(`organisations/${ORG}`, { name: 'Confidential Company', adminUids: ['former_owner'], memberUids: ['former_owner'], joinCode: 'SECRET' });
+    seedDoc(`organisations/${ORG}/members/former_owner`, { role: 'owner', status: 'suspended' });
+    seedDoc('users/former_owner', { organisationId: ORG });
+    const res = await request(app).get('/api/org/me').set(auth('former_owner'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ organisationId: null });
+  });
+
+  it('never reveals company identity when a granular membership has an invalid role', async () => {
+    seedDoc(`organisations/${ORG}`, { name: 'Confidential Company', adminUids: ['former_owner'], memberUids: ['former_owner'] });
+    seedDoc(`organisations/${ORG}/members/former_owner`, { role: 'unknown', status: 'active' });
+    seedDoc('users/former_owner', { organisationId: ORG });
+    const res = await request(app).get('/api/org/me').set(auth('former_owner'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ organisationId: null });
+  });
+
   // The defensive catch block behind the happy paths above.
   it('returns a generic 500 and logs the real error when the user profile read throws', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
