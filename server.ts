@@ -13438,65 +13438,107 @@ app.get("/api/org/:orgId/data-coverage", verifyAppCheck, authenticateFirebaseUse
   }
 });
 
+// Legacy admin controls remain for existing clients, but delegate to the
+// same protected-role policy as the granular RBAC controls. Permission,
+// member record, legacy array and audit event all change atomically.
 app.post("/api/org/:orgId/members/:memberUid/make-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    await requireOrgAdmin(req, orgId);
+    const { role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin']);
     const db = getDb();
-    const orgDoc = await db.collection("organisations").doc(orgId).get();
-    if (!(orgDoc.data()?.memberUids || []).includes(memberUid)) {
-      return res.status(400).json({ error: "That person isn't a member of this organisation." });
-    }
-    await db.collection("organisations").doc(orgId).update({
-      adminUids: FieldValue.arrayUnion(memberUid),
+    const orgRef = db.collection("organisations").doc(orgId);
+    const memberRef = orgRef.collection("members").doc(memberUid);
+    const profileRef = db.collection("users").doc(memberUid);
+    const outcome = await db.runTransaction(async (tx) => {
+      const [orgSnap, memberSnap, profileSnap] = await Promise.all([
+        tx.get(orgRef), tx.get(memberRef), tx.get(profileRef),
+      ]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
+        return { status: 400, error: "That person isn't a member of this organisation." };
+      }
+      if (profileSnap.exists && profileSnap.data()?.organisationId &&
+          profileSnap.data()?.organisationId !== orgId) {
+        return { status: 409, error: 'The member belongs to another organisation.' };
+      }
+      const member = memberSnap.exists ? memberSnap.data() : null;
+      if (member && ((member.status !== undefined && member.status !== 'active') || !isOrgRole(member.role))) {
+        return { status: 409, error: 'This membership is not active.' };
+      }
+      const previousRole = member ? member.role :
+        ((orgSnap.data()?.adminUids || []).includes(memberUid) ? 'owner' : 'member');
+      if (actorRole !== 'owner' && (previousRole === 'owner' || previousRole === 'security_admin')) {
+        return { status: 403, error: 'Only an owner can change a protected administrator.' };
+      }
+      // Never use the legacy endpoint to strip ownership or security control:
+      // those changes require the explicit granular role-management route.
+      if (previousRole === 'owner' || previousRole === 'security_admin') {
+        return { status: 409, error: 'Use role management to change a protected administrator.' };
+      }
+      if (previousRole === 'admin') return { status: 200, unchanged: true };
+      tx.update(orgRef, { adminUids: FieldValue.arrayUnion(memberUid) });
+      tx.set(memberRef, { role: 'admin' }, { merge: true });
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "grant_admin", memberUid,
+        { role: previousRole }, { role: 'admin' });
+      return { status: 200 };
     });
-    // Keep the granular Enterprise role record in sync with the legacy
-    // array - otherwise a member with an existing members/ doc would have
-    // this promotion silently ignored, since getOrgMemberRole prefers the
-    // granular record over the array fallback.
-    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).set({
-      role: 'admin',
-    }, { merge: true });
-    await logOrgAuditAction(req, orgId, "grant_admin", "member", memberUid, null, { role: 'admin' });
-    res.json({ success: true });
+    if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
+    return res.json({ success: true });
   } catch (err: any) {
-    if (err.message?.includes("Forbidden")) {
-      res.status(403).json({ error: err.message });
-    } else {
-      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-      res.status(500).json({ error: GENERIC_SERVER_ERROR });
-    }
+    if (err.message?.includes('Forbidden')) return res.status(403).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    return res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
 app.post("/api/org/:orgId/members/:memberUid/revoke-admin", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { user, org } = await requireOrgAdmin(req, orgId);
+    const { user, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin']);
     if (memberUid === user.uid) {
       return res.status(400).json({ error: "You can't revoke your own admin access - ask another admin to do it." });
     }
-    if ((org.adminUids || []).length <= 1) {
-      return res.status(400).json({ error: "This organisation needs at least one admin - promote someone else first." });
-    }
     const db = getDb();
-    await db.collection("organisations").doc(orgId).update({
-      adminUids: FieldValue.arrayRemove(memberUid),
+    const orgRef = db.collection("organisations").doc(orgId);
+    const memberRef = orgRef.collection("members").doc(memberUid);
+    const profileRef = db.collection("users").doc(memberUid);
+    const outcome = await db.runTransaction(async (tx) => {
+      const [orgSnap, memberSnap, profileSnap] = await Promise.all([
+        tx.get(orgRef), tx.get(memberRef), tx.get(profileRef),
+      ]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
+        return { status: 400, error: "That person isn't a member of this organisation." };
+      }
+      if (profileSnap.exists && profileSnap.data()?.organisationId &&
+          profileSnap.data()?.organisationId !== orgId) {
+        return { status: 409, error: 'The member belongs to another organisation.' };
+      }
+      const member = memberSnap.exists ? memberSnap.data() : null;
+      if (member && ((member.status !== undefined && member.status !== 'active') || !isOrgRole(member.role))) {
+        return { status: 409, error: 'This membership is not active.' };
+      }
+      const previousRole = member ? member.role :
+        ((orgSnap.data()?.adminUids || []).includes(memberUid) ? 'owner' : 'member');
+      if (actorRole !== 'owner' && (previousRole === 'owner' || previousRole === 'security_admin')) {
+        return { status: 403, error: 'Only an owner can change a protected administrator.' };
+      }
+      if (previousRole === 'owner' || previousRole === 'security_admin') {
+        return { status: 409, error: 'Use role management to change a protected administrator.' };
+      }
+      if (previousRole !== 'admin') {
+        return { status: 409, error: 'This account does not currently have an administrator role.' };
+      }
+      tx.update(orgRef, { adminUids: FieldValue.arrayRemove(memberUid) });
+      tx.set(memberRef, { role: 'member' }, { merge: true });
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "revoke_admin", memberUid,
+        { role: 'admin' }, { role: 'member' });
+      return { status: 200 };
     });
-    // Same sync reasoning as /make-admin above - demote in the granular
-    // record too, back to plain member rather than leaving a stale 'admin'.
-    await db.collection("organisations").doc(orgId).collection("members").doc(memberUid).set({
-      role: 'member',
-    }, { merge: true });
-    await logOrgAuditAction(req, orgId, "revoke_admin", "member", memberUid, { role: 'admin' }, { role: 'member' });
-    res.json({ success: true });
+    if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
+    return res.json({ success: true });
   } catch (err: any) {
-    if (err.message?.includes("Forbidden")) {
-      res.status(403).json({ error: err.message });
-    } else {
-      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-      res.status(500).json({ error: GENERIC_SERVER_ERROR });
-    }
+    if (err.message?.includes('Forbidden')) return res.status(403).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    return res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
