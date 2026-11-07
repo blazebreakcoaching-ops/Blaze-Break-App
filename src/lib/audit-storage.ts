@@ -18,16 +18,17 @@ export function parseAuditFallback(raw: string | null): StoredAuditEntry[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is StoredAuditEntry =>
-      item && typeof item === 'object' &&
-      typeof item.id === 'string' &&
-      typeof item.action === 'string' &&
-      typeof item.userId === 'string' &&
-      ['authorised', 'denied', 'anonymised', 'deleted', 'verified'].includes(
-        (item as Record<string, unknown>).status as string,
-      ) &&
-      typeof item.timestamp === 'string',
-    ).slice(0, 100);
+    return parsed.filter((item): item is StoredAuditEntry => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const record = item as Record<string, unknown>;
+      return typeof record.id === 'string' &&
+        typeof record.action === 'string' &&
+        typeof record.userId === 'string' &&
+        typeof record.timestamp === 'string' &&
+        ['authorised', 'denied', 'anonymised', 'deleted', 'verified'].includes(
+          record.status as string,
+        );
+    }).slice(0, 100);
   } catch {
     return [];
   }
