@@ -20,7 +20,12 @@ describe('production release deployment approval', () => {
     expect(guard).toContain('CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}');
     expect(guard).toContain('"$GITHUB_REF" != "refs/heads/main"');
     expect(guard).toContain('"$CONFIRM_PRODUCTION" != "true"');
-    expect(guard).toContain('^[0-9a-f]{40});
+    expect(guard).toContain('^[0-9a-f]{40}' + '
+    expect(guard).toContain('"$APPROVED_SHA" != "$GITHUB_SHA"');
+    expect(guard).toContain('exit 1');
+  });
+});
+);
     expect(guard).toContain('"$APPROVED_SHA" != "$GITHUB_SHA"');
     expect(guard).toContain('exit 1');
   });
