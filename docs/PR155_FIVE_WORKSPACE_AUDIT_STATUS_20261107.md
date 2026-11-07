@@ -5,7 +5,8 @@ This is a source-inventory and gap register. **None of the five workspaces has p
 ## 1. Organisation — PARTIAL SOURCE AUDIT
 Primary entry: `src/App.tsx` -> `src/components/OrgDashboard.tsx`. Customer org admin also uses `TeamDashboard`, `HrEscalationDashboard`, `ExecutiveWorkDesignReport`. Organisation tabs: Pulse, Value, Moments, Team, Governance.
 Already reviewed: company provisioning, memberships, invitations, roles, HR/manager grants, staff suspension, parts of billing/privacy and the platform-level company detail. Suspended-member role check and platform company support improvements are now in the draft source.
-Outstanding P0: atomic seat cap for join codes; revocable invitations; full leave/removal cleanup of HR/manager access; approved ownership transfer; test multi-org isolation, privacy thresholds, legacy roles. Check all tab content, errors, CSV import, billing, SSO, data policy, dashboard loading and mobile UX.
+New source corrections since this register was created: join-code redemption and email-invite reservation are now transactional against the organisation seat count; verified invitees consume their existing reserved place. Leave/remove clears HR and team assignments, and leave protects the last active owner. A cancelled invitation now logs its removal and the UI warns that the shared join code remains usable. New tests were committed but NOT executed.
+Outstanding P0: individualized revocable/expiring invitations; account-transfer authorization; auxiliary grant cleanup and multi-org isolation proof; Firestore emulator verification of transactional join/invite races, legacy roles and privacy thresholds. Check all tab content, errors, CSV import, billing, SSO, data policy, dashboard loading and mobile UX.
 Evidence: `docs/PR155_COMPANY_STAFF_ADMIN_AUDIT_20261107.md`, `docs/PR155_SUPERADMIN_BACKEND_RESTRUCTURE_PLAN_20261107.md`.
 
 ## 2. Evolution Engine — INVENTORY / NOT FULLY AUDITED
