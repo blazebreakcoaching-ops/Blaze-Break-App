@@ -17,3 +17,15 @@ export function isWhatsNewAutoOpenSafe(doc: Document): boolean {
   )) return false;
   return true;
 }
+
+/** Source-level testable contract: informational announcements may start
+ * only before the visitor interacts with, or enters, another task. */
+export function canScheduleWhatsNew(
+  loaded: boolean,
+  paused: boolean,
+  deferredForVisit: boolean,
+  lastSeenVersion: string | undefined,
+): boolean {
+  return loaded && !paused && !deferredForVisit &&
+    lastSeenVersion !== CURRENT_CHANGELOG_VERSION;
+}
