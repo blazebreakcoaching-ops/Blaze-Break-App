@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   secureApiFetch: vi.fn(),
 }));
-vi.mock('../lib/secure-api', () => ({ secureApiFetch: mocks.secureApiFetch }));
+vi.mock('../lib/secure-api', async () => {
+  const actual = await vi.importActual<any>('../lib/secure-api');
+  return { ...actual, secureApiFetch: mocks.secureApiFetch };
+});
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { displayName: 'Fallback Name', email: 'x@example.com' } }) }));
 
 import { ExecutiveBoardReport } from './ExecutiveBoardReport';
+import { SecureApiError } from '../lib/secure-api';
 
 // Inserts a controllable contentWindow BEFORE the frame is attached, so the
 // load handler (which jsdom fires itself) sees the stub, not jsdom's own.
@@ -84,6 +88,26 @@ describe('Executive Board Report export', () => {
     await waitFor(() => expect(appended).toHaveLength(1));
 
     expect(await screen.findByText(/blocked the print window/i)).toBeTruthy();
+    expect(award).not.toHaveBeenCalled();
+    restore();
+  });
+
+  it('shows a rate limit as a rate limit, never as "not enough activity"', async () => {
+    mocks.secureApiFetch.mockReset().mockRejectedValue(new SecureApiError("You've reached today's fair-use limit for this. It resets tomorrow.", 429));
+    render(<ExecutiveBoardReport stats={{ points: 0, streak: 0, profile: {} } as any} />);
+    expect(await screen.findByText(/fair-use limit.*not a reflection of your activity/i)).toBeTruthy();
+    expect(screen.queryByText(/Not enough activity has been logged/i)).toBeNull();
+  });
+
+  it('refuses to create a PDF when report data cannot be loaded', async () => {
+    mocks.secureApiFetch.mockReset().mockRejectedValue(new SecureApiError('Something went wrong on our end.', 500));
+    const award = vi.fn();
+    const { frames, restore } = captureFrames({ print: vi.fn(), focus: vi.fn() });
+    render(<ExecutiveBoardReport stats={{ points: 0, streak: 0, profile: {} } as any} onAwardPoints={award} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Save as PDF' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open print window' }));
+    expect(await screen.findByText(/No PDF was created/i)).toBeTruthy();
+    expect(frames).toHaveLength(0);
     expect(award).not.toHaveBeenCalled();
     restore();
   });

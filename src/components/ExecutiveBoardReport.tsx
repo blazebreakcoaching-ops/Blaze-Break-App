@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, TrendingUp, Clock, ShieldAlert, Activity, FileText, Layers, Sparkles } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { UserStats } from '../types';
-import { secureApiFetch } from '../lib/secure-api';
+import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { buildExecutiveReportHtml } from '../lib/executive-report-document';
 
@@ -42,6 +42,9 @@ export const ExecutiveBoardReport = ({
     hasEnoughData: boolean;
   } | null>(null);
   const [reportLoading, setReportLoading] = useState(true);
+  // A failed or rate-limited load is NOT "no activity": never let it be
+  // shown (or printed) as an empty report.
+  const [reportLoadError, setReportLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -51,7 +54,7 @@ export const ExecutiveBoardReport = ({
           setReportData(await res.json());
         }
       } catch (e) {
-        // Leaves reportData null - the UI shows an honest "no data yet" state.
+        setReportLoadError(e instanceof SecureApiError ? e.message : 'Your report data could not be loaded right now.');
       }
       setReportLoading(false);
     };
@@ -76,9 +79,16 @@ export const ExecutiveBoardReport = ({
         if (res.ok) {
           liveData = await res.json();
           setReportData(liveData);
+          setReportLoadError(null);
         }
-      } catch {
-        // Falls through to the report's honest "not enough data yet" text.
+      } catch (e) {
+        // Never print a report claiming "not enough activity" when the
+        // data simply could not be fetched (outage or daily limit).
+        const reason = e instanceof SecureApiError ? e.message : 'Your report data could not be loaded right now.';
+        setReportLoadError(reason);
+        setExportNotice(`${reason} No PDF was created, so it cannot misstate your data. Please try again later.`);
+        setIsExporting(false);
+        return;
       }
     }
     const html = buildExecutiveReportHtml({
@@ -153,7 +163,9 @@ export const ExecutiveBoardReport = ({
             <p className="text-lg leading-relaxed text-text-main font-serif">
               {reportLoading
                 ? "Loading your recovery analysis..."
-                : reportData?.aiAnalysis
+                : reportLoadError
+                  ? `${reportLoadError} This is not a reflection of your activity.`
+                  : reportData?.aiAnalysis
                   ? reportData.aiAnalysis
                   : "Not enough activity has been logged yet to generate a grounded analysis. Use the app's recovery tools this week - deep work sessions, boundary rehearsal, workload check-ins - and this will populate."}
             </p>

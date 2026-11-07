@@ -1201,7 +1201,7 @@ export const RecoveryIntelligenceLayer = ({ fingerprint, isDemoSession }: Recove
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex items-start gap-3">
                   <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                   <p className="text-xs text-text-muted leading-relaxed">
-                    Social battery drops below 40% activate warning boundaries. Nova automatically marks incoming group sync invites as <span className="text-[#9a3412] dark:text-primary font-bold">low priority</span> in your active load list.
+                    Below 40%, treat this as a warning sign: consider declining or shortening optional group meetings. This setting is for your own awareness; it does not change your calendar or invitations.
                   </p>
                 </div>
               </motion.div>

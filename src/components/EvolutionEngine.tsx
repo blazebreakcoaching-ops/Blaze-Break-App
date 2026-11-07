@@ -7,7 +7,7 @@ import {
 import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-flags';
 import { getNovaBrain, NovaMemory, deleteNovaMemory } from '../lib/nova-brain';
 import { cn } from '../lib/utils';
-import { secureApiFetch } from '../lib/secure-api';
+import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 import { useAuth } from '../lib/auth';
 import { isGovernanceWarning, LifecycleState, EnforcementState } from '../../feature-registry-v2';
 import { TAB_VISIBILITY_RULES, resolveTabVisibility } from '../../tab-visibility';
@@ -295,7 +295,7 @@ export const EvolutionEngine = () => {
         setProtectedCoreError(err.error || "Couldn't load Protected Core.");
       }
     } catch (e) {
-      setProtectedCoreError("Couldn't load Protected Core.");
+      setProtectedCoreError(e instanceof SecureApiError ? e.message : "Couldn't load Protected Core.");
     } finally {
       setIsLoadingProtectedCore(false);
     }
@@ -312,7 +312,7 @@ export const EvolutionEngine = () => {
         setProtectedCoreError(err.error || "Couldn't seed Protected Core.");
       }
     } catch (e) {
-      setProtectedCoreError("Couldn't seed Protected Core.");
+      setProtectedCoreError(e instanceof SecureApiError ? e.message : "Couldn't seed Protected Core.");
     } finally {
       setIsSeedingProtectedCore(false);
     }
@@ -339,7 +339,7 @@ export const EvolutionEngine = () => {
         setConnectorsError(err.error || "Couldn't load the Connector Layer.");
       }
     } catch (e) {
-      setConnectorsError("Couldn't load the Connector Layer.");
+      setConnectorsError(e instanceof SecureApiError ? e.message : "Couldn't load the Connector Layer.");
     } finally {
       setIsLoadingConnectors(false);
     }
@@ -365,7 +365,7 @@ export const EvolutionEngine = () => {
         setContextBrainHealthError(err.error || "Couldn't load Context Brain Health.");
       }
     } catch (e) {
-      setContextBrainHealthError("Couldn't load Context Brain Health.");
+      setContextBrainHealthError(e instanceof SecureApiError ? e.message : "Couldn't load Context Brain Health.");
     } finally {
       setIsLoadingContextBrainHealth(false);
     }
@@ -388,7 +388,7 @@ export const EvolutionEngine = () => {
         setRegistryError(err.error || "Couldn't load the feature registry.");
       }
     } catch (e) {
-      setRegistryError("Couldn't load the feature registry.");
+      setRegistryError(e instanceof SecureApiError ? e.message : "Couldn't load the feature registry.");
     } finally {
       setIsLoadingRegistry(false);
     }
@@ -405,7 +405,7 @@ export const EvolutionEngine = () => {
         setRegistryError(err.error || "Couldn't seed the registry.");
       }
     } catch (e) {
-      setRegistryError("Couldn't seed the registry.");
+      setRegistryError(e instanceof SecureApiError ? e.message : "Couldn't seed the registry.");
     } finally {
       setIsSeeding(false);
     }
@@ -456,7 +456,7 @@ export const EvolutionEngine = () => {
         setProposalsError(err.error || "Couldn't load change proposals.");
       }
     } catch (e) {
-      setProposalsError("Couldn't load change proposals.");
+      setProposalsError(e instanceof SecureApiError ? e.message : "Couldn't load change proposals.");
     } finally {
       setIsLoadingProposals(false);
     }
@@ -483,7 +483,7 @@ export const EvolutionEngine = () => {
         setNovaRuntimeError(err.error || "Couldn't load the Nova Runtime Registry.");
       }
     } catch (e) {
-      setNovaRuntimeError("Couldn't load the Nova Runtime Registry.");
+      setNovaRuntimeError(e instanceof SecureApiError ? e.message : "Couldn't load the Nova Runtime Registry.");
     } finally {
       setIsLoadingNovaRuntime(false);
     }
@@ -513,7 +513,7 @@ export const EvolutionEngine = () => {
         setRolloutPlansError(err.error || "Couldn't load rollout plans.");
       }
     } catch (e) {
-      setRolloutPlansError("Couldn't load rollout plans.");
+      setRolloutPlansError(e instanceof SecureApiError ? e.message : "Couldn't load rollout plans.");
     } finally {
       setIsLoadingRolloutPlans(false);
     }
@@ -536,7 +536,7 @@ export const EvolutionEngine = () => {
         setRolloutActionError(err.error || "Couldn't create the rollout plan.");
       }
     } catch (e) {
-      setRolloutActionError("Couldn't create the rollout plan.");
+      setRolloutActionError(e instanceof SecureApiError ? e.message : "Couldn't create the rollout plan.");
     } finally {
       setIsCreatingRolloutPlan(false);
     }
@@ -553,7 +553,7 @@ export const EvolutionEngine = () => {
         setRolloutActionError(err.error || "Couldn't update the rollout plan.");
       }
     } catch (e) {
-      setRolloutActionError("Couldn't update the rollout plan.");
+      setRolloutActionError(e instanceof SecureApiError ? e.message : "Couldn't update the rollout plan.");
     }
   };
 
@@ -579,7 +579,7 @@ export const EvolutionEngine = () => {
         setCostUsageError(err.error || "Couldn't load cost & usage data.");
       }
     } catch (e) {
-      setCostUsageError("Couldn't load cost & usage data.");
+      setCostUsageError(e instanceof SecureApiError ? e.message : "Couldn't load cost & usage data.");
     } finally {
       setIsLoadingCostUsage(false);
     }
@@ -632,7 +632,7 @@ export const EvolutionEngine = () => {
         setAuditLogsError(err.error || "Couldn't load the audit log.");
       }
     } catch (e) {
-      setAuditLogsError("Couldn't load the audit log.");
+      setAuditLogsError(e instanceof SecureApiError ? e.message : "Couldn't load the audit log.");
     } finally {
       setIsLoadingAuditLogs(false);
     }
@@ -660,7 +660,7 @@ export const EvolutionEngine = () => {
         setFreezeError(err.error || "Couldn't load the freeze state.");
       }
     } catch (e) {
-      setFreezeError("Couldn't load the freeze state.");
+      setFreezeError(e instanceof SecureApiError ? e.message : "Couldn't load the freeze state.");
     } finally {
       setIsLoadingFreeze(false);
     }
@@ -682,7 +682,7 @@ export const EvolutionEngine = () => {
         setFreezeError(err.error || "Couldn't update the freeze state.");
       }
     } catch (e) {
-      setFreezeError("Couldn't update the freeze state.");
+      setFreezeError(e instanceof SecureApiError ? e.message : "Couldn't update the freeze state.");
     } finally {
       setIsTogglingFreeze(false);
     }
@@ -718,7 +718,7 @@ export const EvolutionEngine = () => {
         setProposalActionError(err.error || "Couldn't create the proposal.");
       }
     } catch (e) {
-      setProposalActionError("Couldn't create the proposal.");
+      setProposalActionError(e instanceof SecureApiError ? e.message : "Couldn't create the proposal.");
     } finally {
       setIsSubmittingNewProposal(false);
     }
@@ -739,7 +739,7 @@ export const EvolutionEngine = () => {
         setProposalActionError(err.error || `Couldn't ${action} the proposal.`);
       }
     } catch (e) {
-      setProposalActionError(`Couldn't ${action} the proposal.`);
+      setProposalActionError(e instanceof SecureApiError ? e.message : `Couldn't ${action} the proposal.`);
     }
   };
 
