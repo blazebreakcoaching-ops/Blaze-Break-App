@@ -1786,7 +1786,7 @@ export const AdminDashboard = () => {
         {/* Tab 1: Users & Role Assignment */}
         {activeTab === 'users' && (
           <div className="space-y-6">
-            <AdminPeopleDirectory />
+            <AdminPeopleDirectory key={authUser?.uid || 'signed-out'} />
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
               <div className="flex flex-col sm:flex-row gap-3 w-full flex-wrap">
                 <div className="relative flex-1 min-w-[200px]">
