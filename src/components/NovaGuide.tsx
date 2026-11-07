@@ -26,11 +26,12 @@ interface NovaGuideProps {
   accountId?: string;
   onClose: () => void;
   onNavigate: (tab: NovaGuideTab) => void;
+  onShowOnPage?: (tab: NovaGuideTab) => void;
 }
 
 const progressKey = (uid: string) => `blaze-nova-guide-progress-v1:${encodeURIComponent(uid)}`;
 
-export const NovaGuide = ({ isOpen, startPage, accountId, onClose, onNavigate }: NovaGuideProps) => {
+export const NovaGuide = ({ isOpen, startPage, accountId, onClose, onNavigate, onShowOnPage }: NovaGuideProps) => {
   const [index, setIndex] = useState(0);
   const dialogRef = useFocusTrap(isOpen);
   const reduceMotion = useReducedMotion();
@@ -87,6 +88,11 @@ export const NovaGuide = ({ isOpen, startPage, accountId, onClose, onNavigate }:
   const openRealPage = (tab: NovaGuideTab) => {
     savePosition(index + 1);
     onNavigate(tab);
+  };
+
+  const openCoachMarks = (tab: NovaGuideTab) => {
+    savePosition(index + 1);
+    onShowOnPage?.(tab);
   };
 
   const goTo = (position: number) => {
@@ -185,6 +191,11 @@ export const NovaGuide = ({ isOpen, startPage, accountId, onClose, onNavigate }:
               {step.tab && (
                 <button type="button" onClick={() => openRealPage(step.tab!)} className="mt-3 w-full rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-primary text-sm font-semibold hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary">
                   {step.action} <ArrowRight className="inline h-4 w-4 ml-1" aria-hidden="true" />
+                </button>
+              )}
+              {step.tab && onShowOnPage && (
+                <button type="button" onClick={() => openCoachMarks(step.tab!)} className="mt-3 w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-text-main focus-visible:outline-2 focus-visible:outline-primary">
+                  Show me on this page
                 </button>
               )}
               <button type="button" onClick={leave} className="mt-4 block mx-auto text-xs text-text-muted underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary">Skip for now</button>
