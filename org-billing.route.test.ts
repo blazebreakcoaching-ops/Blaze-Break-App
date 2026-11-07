@@ -289,6 +289,17 @@ describe('POST /api/org/:orgId/invites/:email/cancel', () => {
 
     const invitesRes = await request(app).get(`/api/org/${ORG}/invites`).set(auth('owner_1'));
     expect(invitesRes.body.invites.length).toBe(0);
+    expect(res.body.sharedJoinCodeStillValid).toBe(true);
+    const auditRes = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(auditRes.status).toBe(200);
+    expect(auditRes.body.logs.some((l: any) => l.action === 'cancel_invitation')).toBe(true);
+  });
+
+  it('returns 404 if the pending invitation has already been removed', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/invites/absent@example.com/cancel`).set(auth('owner_1'));
+    expect(res.status).toBe(404);
   });
 
   it('refuses a non-admin', async () => {
