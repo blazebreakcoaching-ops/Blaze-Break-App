@@ -122,6 +122,7 @@ interface NovaAgenticJourneyProps {
   profile?: UserProfileData;
   onAwardPoints?: (amount: number, reason: string) => void;
   onNavigate?: (tab: string) => void;
+  onShowMeHow?: () => void;
   onToneChange?: (tone: string) => void;
   onStyleChange?: (style: NovaQuestioningStyle | undefined) => void;
   autoOpenVoice?: boolean;
@@ -167,6 +168,7 @@ export const NovaAgenticJourney = ({
   profile,
   onAwardPoints,
   onNavigate,
+  onShowMeHow,
   onToneChange,
   onStyleChange,
   autoOpenVoice,
@@ -262,6 +264,7 @@ export const NovaAgenticJourney = ({
             profile={profile}
             onAwardPoints={onAwardPoints}
             onNavigate={onNavigate}
+            onShowMeHow={onShowMeHow}
             onToneChange={onToneChange}
             onStyleChange={onStyleChange}
             autoOpenVoice={autoOpenVoice}
