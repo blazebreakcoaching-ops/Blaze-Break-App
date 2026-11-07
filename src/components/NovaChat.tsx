@@ -22,6 +22,7 @@ import { secureApiFetch } from "../lib/secure-api";
 import { auth } from '../lib/firebase';
 import { onAuthStateChanged } from "firebase/auth";
 import { novaStorageKey } from "../lib/nova-chat-storage";
+import { readAccountProfile, patchAccountProfile } from "../lib/account-profile-storage";
 import { db } from '../lib/firestore';
 import { doc, getDoc } from "firebase/firestore";
 import { NovaVoiceCall } from "./NovaVoiceCall";
@@ -54,12 +55,7 @@ const NOVA_SYSTEM_INSTRUCTION_LIMIT = 2800;
 // ad-hoc "read blaze_profile directly" pattern already used elsewhere in
 // this file (readStyle, the initial-greeting effect).
 function readStoredFullName(): string | undefined {
-  try {
-    const raw = localStorage.getItem("blaze_profile");
-    return raw ? JSON.parse(raw)?.fullName : undefined;
-  } catch {
-    return undefined;
-  }
+  return readAccountProfile(auth.currentUser?.uid).fullName;
 }
 
 interface Message {
@@ -148,23 +144,12 @@ export const NovaChat = ({
   // onToneChange so the canonical Firestore profile stays in sync. The
   // `profile` prop (read first, below) covers the device/cache-miss case
   // where localStorage itself was never populated.
-  const readTone = (): string => {
-    try {
-      const p = localStorage.getItem("blaze_profile");
-      return p ? (JSON.parse(p).novaTone || "") : "";
-    } catch {
-      return "";
-    }
-  };
+  const readTone = (): string =>
+    readAccountProfile(auth.currentUser?.uid).novaTone || "";
   const [novaTone, setNovaTone] = useState<string>(() => profile?.novaTone || readTone());
   const handleToneChange = (tone: string) => {
     setNovaTone(tone);
-    try {
-      const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-      localStorage.setItem("blaze_profile", JSON.stringify({ ...p, novaTone: tone }));
-    } catch {
-      // Non-fatal - the in-session context below still uses the new value.
-    }
+    patchAccountProfile(auth.currentUser?.uid, { novaTone: tone });
     onToneChange?.(tone);
   };
   // If the canonical profile only becomes available (or changes to a real
@@ -177,12 +162,7 @@ export const NovaChat = ({
   useEffect(() => {
     if (profile?.novaTone && !novaTone) {
       setNovaTone(profile.novaTone);
-      try {
-        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, novaTone: profile.novaTone }));
-      } catch {
-        // Non-fatal - novaTone state above is already updated either way.
-      }
+      patchAccountProfile(auth.currentUser?.uid, { novaTone: profile.novaTone });
     }
   }, [profile?.novaTone]);
   // How Nova questions the user - a separate, opt-in axis from tone above.
@@ -193,13 +173,9 @@ export const NovaChat = ({
   // in sync locally purely so this component's own controls show the
   // right selection).
   const readStyle = (): NovaQuestioningStyle | undefined => {
-    try {
-      const p = localStorage.getItem("blaze_profile");
-      const style = p ? JSON.parse(p).questioningStyle : undefined;
-      return QUESTIONING_STYLE_OPTIONS.some((s) => s.value === style) ? style : undefined;
-    } catch {
-      return undefined;
-    }
+    const style = readAccountProfile(auth.currentUser?.uid).questioningStyle;
+    return QUESTIONING_STYLE_OPTIONS.some((s) => s.value === style)
+      ? style as NovaQuestioningStyle : undefined;
   };
   const [questioningStyle, setQuestioningStyle] = useState<NovaQuestioningStyle | undefined>(
     () => (QUESTIONING_STYLE_OPTIONS.some((s) => s.value === profile?.questioningStyle)
@@ -208,12 +184,7 @@ export const NovaChat = ({
   );
   const handleStyleChange = (style: NovaQuestioningStyle | undefined) => {
     setQuestioningStyle(style);
-    try {
-      const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-      localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
-    } catch {
-      // Non-fatal - onStyleChange below still updates the canonical profile.
-    }
+    patchAccountProfile(auth.currentUser?.uid, { questioningStyle: style });
     onStyleChange?.(style);
   };
   // Same resync reasoning as novaTone above, for the same class of gap.
@@ -224,12 +195,7 @@ export const NovaChat = ({
     ) {
       const style = profile!.questioningStyle as NovaQuestioningStyle;
       setQuestioningStyle(style);
-      try {
-        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
-      } catch {
-        // Non-fatal - questioningStyle state above is already updated either way.
-      }
+      patchAccountProfile(auth.currentUser?.uid, { questioningStyle: style });
     }
   }, [profile?.questioningStyle]);
   const loadMessages = (identityOverride?: string): Message[] => {
@@ -555,8 +521,7 @@ export const NovaChat = ({
   // that "Nova switches straightaway."
   const buildSituationalContext = (): string => {
     try {
-      const profileStr = localStorage.getItem("blaze_profile");
-      const profile = profileStr ? JSON.parse(profileStr) : {};
+      const profile = readAccountProfile(auth.currentUser?.uid);
       let ctx = `\n[SITUATIONAL ONBOARDING CONTEXT]\n`;
       let hasAny = false;
       if (profile.purpose) { ctx += `- Primary Goal: ${profile.purpose}\n`; hasAny = true; }
@@ -588,15 +553,9 @@ export const NovaChat = ({
       let greeting =
         initialMessage ||
         "I'm Nova. What's on your mind today?";
-      const profileStr = localStorage.getItem("blaze_profile");
-      let profileData: any = null;
-      try {
-        if (profileStr) profileData = JSON.parse(profileStr);
-      } catch (e) {
-        // Non-fatal - profileData just stays null if this is corrupted.
-      }
+      const profileData = readAccountProfile(auth.currentUser?.uid);
 
-      if (!initialMessage && (fingerprint || profileData)) {
+      if (!initialMessage && (fingerprint || Object.keys(profileData).length > 0)) {
         // Use a name only when the person has explicitly allowed greetings.
         // Do not infer a job title, identity or needs from their profile.
         const firstName = profileData?.useNameInGreetings && typeof profileData?.fullName === "string"
