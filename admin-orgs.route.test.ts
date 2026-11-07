@@ -136,6 +136,38 @@ describe('POST /api/admin/orgs — orgId validation', () => {
     expect(getDocRaw('organisations/acme-corp-3/members/new_admin_uid')?.role).toBe('owner');
   });
 
+  it('allows an unclaimed company to receive its first owner safely', async () => {
+    seedDoc('organisations/unclaimed', {
+      name: 'Draft Company', joinCode: 'ABC123', memberUids: [], adminUids: [],
+    });
+    h.getUserByEmail.mockResolvedValueOnce({ uid: 'new_owner', email: 'owner@unclaimed.dev' });
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
+      .send({ orgId: 'unclaimed', name: 'Claimed Company', initialAdminEmail: 'owner@unclaimed.dev' });
+    expect(res.status).toBe(200);
+    const org = getDocRaw('organisations/unclaimed');
+    expect(org?.adminUids).toEqual(['new_owner']);
+    expect(org?.memberUids).toEqual(['new_owner']);
+    expect(org?.joinCode).toBe('ABC123');
+    expect(getDocRaw('users/new_owner')?.organisationId).toBe('unclaimed');
+    expect(getDocRaw('organisations/unclaimed/members/new_owner')?.role).toBe('owner');
+  });
+
+  it('rejects competing first-owner assignments to an unclaimed company', async () => {
+    seedDoc('organisations/unclaimed', { name: 'Draft', joinCode: 'ABC123', memberUids: [], adminUids: [] });
+    h.getUserByEmail.mockImplementation(async (email: string) => ({
+      uid: email.startsWith('first') ? 'first_owner' : 'second_owner', email,
+    }));
+    const results = await Promise.all(['first@unclaimed.dev', 'second@unclaimed.dev'].map(initialAdminEmail =>
+      request(app).post('/api/admin/orgs').set(auth(OWNER))
+        .send({ orgId: 'unclaimed', name: 'Draft', initialAdminEmail })
+    ));
+    expect(results.map(r => r.status).sort()).toEqual([200, 409]);
+    const org = getDocRaw('organisations/unclaimed');
+    expect(org?.adminUids).toHaveLength(1);
+    const winner = org?.adminUids[0];
+    expect(getDocRaw(`organisations/unclaimed/members/${winner}`)?.role).toBe('owner');
+  });
+
   it('does not change an existing company owner through the normal edit endpoint', async () => {
     seedDoc('organisations/acme-corp-3', { name: 'Existing', joinCode: 'ABC123', memberUids: ['owner_uid'], adminUids: ['owner_uid'] });
     h.getUserByEmail.mockResolvedValueOnce({ uid: 'new_admin_uid', email: 'new@acme.dev' });
