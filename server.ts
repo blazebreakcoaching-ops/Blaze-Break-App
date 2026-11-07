@@ -11965,6 +11965,12 @@ app.post("/api/org/:orgId/challenges/:challengeId/leave", verifyAppCheck, authen
     const { orgId, challengeId } = req.params;
     const user = requireAuth(req);
     const db = getDb();
+    // Match the challenge-join route: an authenticated account is not
+    // automatically an active member of every company.
+    const orgDoc = await db.collection("organisations").doc(orgId).get();
+    if (!orgDoc.exists || !(await getOrgMemberRole(db, orgId, orgDoc.data()!, user.uid))) {
+      return res.status(403).json({ error: "You're not a member of this organisation." });
+    }
     await db.collection("organisations").doc(orgId).collection("challenges").doc(challengeId).update({
       participantUids: FieldValue.arrayRemove(user.uid),
     });
