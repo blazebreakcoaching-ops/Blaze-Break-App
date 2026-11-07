@@ -11,6 +11,7 @@ import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { useAuth } from '../lib/auth';
+import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 import { profileImageFileError, profileImageDimensions } from '../lib/profile-image-safety';
 
 interface SettingsModalProps {
@@ -584,10 +585,10 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                    <div className="flex items-center justify-between">
                      <h4 className="text-sm font-bold text-text-main">Behavioural Learning</h4>
                      <button onClick={() => {
-                        const next = { ...formData, letNovaLearn: formData.letNovaLearn === false ? true : false };
+                        const next = { ...formData, letNovaLearn: !hasExplicitNovaLearningConsent(formData.letNovaLearn) };
                         savePreference(next);
-                     }} role="switch" aria-checked={formData.letNovaLearn !== false} aria-label="Behavioural Learning" className={cn("w-10 h-6 rounded-full transition-colors relative", formData.letNovaLearn !== false ? "bg-success" : "bg-surface dark:bg-surface")}>
-                        <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", formData.letNovaLearn !== false ? "left-5" : "left-1")} />
+                     }} role="switch" aria-checked={hasExplicitNovaLearningConsent(formData.letNovaLearn)} aria-label="Behavioural Learning" className={cn("w-10 h-6 rounded-full transition-colors relative", hasExplicitNovaLearningConsent(formData.letNovaLearn) ? "bg-success" : "bg-surface dark:bg-surface")}>
+                        <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", hasExplicitNovaLearningConsent(formData.letNovaLearn) ? "left-5" : "left-1")} />
                      </button>
                    </div>
                    <p className="text-xs text-text-muted">Allow Nova to learn from your daily check-ins and recovery actions.</p>
