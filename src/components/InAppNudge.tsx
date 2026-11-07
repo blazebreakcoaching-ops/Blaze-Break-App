@@ -4,6 +4,7 @@ import { Sparkles, X, ChevronRight } from "lucide-react";
 import { useAuth } from '../lib/auth';
 import { getDb } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
+import { isNudgeVisibleForAccount } from '../lib/nudge-visibility';
 import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
 
 // InAppNudge is always mounted from app start (it polls every 60s), not a
@@ -425,7 +426,7 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
 
   return (
     <AnimatePresence>
-      {currentNudge && nudgeOwnerUid === user?.uid && !isDismissing && !suspended && (
+      {isNudgeVisibleForAccount(user?.uid, nudgeOwnerUid, !!currentNudge, suspended, isDismissing) && (
         <motion.div
           initial={{ opacity: 0, y: 50, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
