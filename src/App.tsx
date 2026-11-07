@@ -126,6 +126,7 @@ import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENER
 import { useAuth } from "./lib/auth.tsx";
 import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigation";
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
+import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
 import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
@@ -1431,13 +1432,11 @@ export default function App() {
     return [];
   });
 
-  useEffect(() => {
-    const lastCheckIn = localStorage.getItem("blaze_break_last_checkin");
-    const today = new Date().toDateString();
-    if (lastCheckIn !== today) {
-      setShowCheckIn(true);
-    }
-  }, []);
+  // A daily check-in is always voluntary. Opening it automatically on
+  // mount covered the brand-new account's welcome screen with a second
+  // modal, and this old localStorage check wasn't even account-scoped.
+  // Today now offers an explicit entry; the existing nudge may also open
+  // it when a user chooses that action.
 
   // Gamification State
   const [showSomaticReset, setShowSomaticReset] = useState(false);
@@ -2364,7 +2363,9 @@ export default function App() {
       <>
         <SituationalOnboarding
           onComplete={async (profile) => {
-            setStats((prev) => ({ ...prev, profile }));
+            // First-time users already receive the dedicated welcome.
+            // Do not queue an extra "What's New" announcement for them.
+            setStats((prev) => ({ ...prev, profile, lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION }));
             localStorage.setItem("blaze_profile", JSON.stringify(profile));
             setFlow("app");
             setActiveTab("home");
@@ -2383,6 +2384,7 @@ export default function App() {
                 const { doc, setDoc } = await import("firebase/firestore");
                 await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
                   profile,
+                  lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION,
                   updatedAt: new Date().toISOString(),
                 }, { merge: true });
               } catch {
@@ -2593,10 +2595,19 @@ export default function App() {
               <section aria-labelledby="today-question" className="mx-auto max-w-4xl">
                 <h2 id="today-question" className="font-display text-3xl sm:text-4xl text-text-main">What would help right now?</h2>
                 <p className="text-text-muted mt-3 max-w-xl">Start with one small step. The rest can wait.</p>
-                <div className="flex flex-col sm:flex-row gap-3 mt-6 mb-10">
+                <div className="flex flex-col sm:flex-row gap-3 mt-6 mb-3">
                   <button data-nova-guide-target="today-reset" className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
                   <button data-nova-guide-target="today-nova" className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
                 </div>
+                {!isDemoSession && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCheckIn(true)}
+                    className="mb-10 text-sm text-text-muted hover:text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    Or do a daily check-in
+                  </button>
+                )}
                 {showNovaGuideInvite && user?.uid && isCustomerRole(effectiveRole) && !postOnboardingProfile && (
                   <div className="mb-8 max-w-xl rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 flex items-start gap-4">
                     <div className="shrink-0 h-11 w-11 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
@@ -3133,7 +3144,7 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {user && showCheckIn && !isDemoSession && (
+          {user && showCheckIn && !isDemoSession && !postOnboardingProfile && !showNovaGuide && !coachMarkPage && (
             <Suspense fallback={null}>
               <ConnectedDailyCheckIn
                 onClose={() => setShowCheckIn(false)}
@@ -3388,6 +3399,7 @@ export default function App() {
           <WhatsNewModal
             lastSeenVersion={stats.lastSeenChangelogVersion}
             loaded={statsLoaded}
+            paused={!!postOnboardingProfile || showNovaGuide || !!coachMarkPage || showCheckIn || showSettings || showCrisisSupport || showLauncher}
             onSeen={(version) => setStats(prev => ({ ...prev, lastSeenChangelogVersion: version }))}
           />
         </Suspense>
