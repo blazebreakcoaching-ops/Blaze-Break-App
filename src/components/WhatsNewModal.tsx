@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, ArrowRight } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
-import { isWhatsNewAutoOpenSafe } from '../lib/whats-new-auto-open';
+import { CURRENT_CHANGELOG_VERSION, isWhatsNewAutoOpenSafe } from '../lib/whats-new-auto-open';
 
 // Bump this string and replace CHANGELOG_ITEMS whenever new features ship
 // that existing users wouldn't otherwise discover. Shows the current full
@@ -21,7 +21,6 @@ import { isWhatsNewAutoOpenSafe } from '../lib/whats-new-auto-open';
 // default-off flag (nobody can actually use it yet, so announcing it is
 // just confusing) - e.g. Guardian Support Invitation ships flag-off and
 // is deliberately excluded here for that reason.
-const CHANGELOG_VERSION = 'questioning-style-2026-09';
 
 const CHANGELOG_ITEMS: { title: string; description: string }[] = [
   { title: 'Choose how Nova asks you things', description: 'Pick Nova\'s questioning style in Settings - Operator, Board Member, Mentor, or Pre-Mortem - to match how you like to think things through.' },
@@ -36,6 +35,8 @@ interface WhatsNewModalProps {
   // a still-loading default.
   lastSeenVersion: string | undefined;
   loaded: boolean;
+  // A first-time welcome or an active guide takes precedence.
+  paused?: boolean;
   onSeen: (version: string) => void;
 }
 
@@ -49,12 +50,12 @@ interface WhatsNewModalProps {
 // lastSeenChangelogVersion, via the caller's existing autosave) rather
 // than localStorage, so "seen" follows the person across devices instead
 // of resetting every time they sign in somewhere new.
-export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModalProps) => {
+export const WhatsNewModal = ({ lastSeenVersion, loaded, paused = false, onSeen }: WhatsNewModalProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const modalRef = useFocusTrap(isOpen);
 
   useEffect(() => {
-    if (!loaded || lastSeenVersion === CHANGELOG_VERSION) return;
+    if (!loaded || paused || lastSeenVersion === CURRENT_CHANGELOG_VERSION) return;
 
     // This is informational, not a security/consent prompt. Previously
     // it could appear in the middle of typing or clicking because it
@@ -90,7 +91,7 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModal
       window.removeEventListener('keydown', onInteraction, options);
       window.removeEventListener('touchstart', onInteraction, options);
     };
-  }, [loaded, lastSeenVersion]);
+  }, [loaded, paused, lastSeenVersion]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -101,7 +102,7 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModal
 
   const handleClose = () => {
     setIsOpen(false);
-    onSeen(CHANGELOG_VERSION);
+    onSeen(CURRENT_CHANGELOG_VERSION);
   };
 
   return (
