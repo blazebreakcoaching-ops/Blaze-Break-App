@@ -255,6 +255,7 @@ export const AdminDashboard = () => {
   const [feedbackLoadError, setFeedbackLoadError] = useState(false);
   const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<'all' | FeedbackSubmission['category']>('all');
   const [metrics, setMetrics] = useState<ResetMetrics | null>(null);
+  const [summaryAvailability, setSummaryAvailability] = useState<Record<string, boolean> | null>(null);
   // Support Circle messaging cost visibility (Master Support Circle spec):
   // guardian_alert is deliberately exempt from the per-user SMS cap
   // (sms-guardrails.ts), which previously also made it invisible to
@@ -659,9 +660,17 @@ export const AdminDashboard = () => {
         }
         setMetrics(null);
         setCommunications(null);
+        setSummaryAvailability(null);
         return;
       }
       const data = await res.json();
+      setSummaryAvailability(data.dataAvailability || null);
+      if (data.dataAvailability?.anxietyResets === false) {
+        setLoadError('Recovery statistics are unavailable because their database query failed. Please retry.');
+        setMetrics(null);
+        setCommunications(data.communications ?? null);
+        return;
+      }
 
       setMetrics({
         totalSessions: data.totalResets ?? 0,
@@ -680,6 +689,7 @@ export const AdminDashboard = () => {
       setLoadError("Couldn't load live data — showing nothing rather than placeholders.");
       setMetrics(null);
       setCommunications(null);
+      setSummaryAvailability(null);
     }
   };
 
@@ -1584,6 +1594,11 @@ export const AdminDashboard = () => {
           number that looks real but is actually hardcoded or guessed. */}
       {activeTab === 'overview' && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {summaryAvailability && Object.values(summaryAvailability).some(available => !available) && (
+          <div role="alert" className="md:col-span-3 p-4 border border-border rounded-xl text-xs text-text-main">
+            Some executive figures are temporarily unavailable because a data source failed. Unknown values must not be treated as zero.
+          </div>
+        )}
         {/* Card 1: People */}
         <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
           <div className="flex justify-between items-start">
