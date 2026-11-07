@@ -313,17 +313,25 @@ class DocRef {
   }
 }
 
-// The fake is single-threaded and in-memory, so a "transaction" here needs
-// no optimistic-concurrency/retry machinery - it just has to expose the same
-// tx.get()/set()/update()/delete() surface real handler code calls, applying
-// writes immediately against the shared store.
+// Stage all transaction reads/writes against a private snapshot. A failed
+// callback must roll back ALL writes; otherwise tests would falsely accept
+// unlogged access changes that real Firestore would reject atomically.
+// This fake still does not emulate real Firestore's conflict retries.
+function cloneTransactionValue(value: any): any {
+  if (Array.isArray(value)) return value.map(cloneTransactionValue);
+  if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneTransactionValue(item)]));
+  }
+  return value;
+}
+
 class FakeTransaction {
   constructor(private store: FakeStore) {}
 
   async get(ref: DocRef): Promise<DocSnapshot>;
   async get(ref: CollectionRef): Promise<QuerySnapshot>;
   async get(ref: DocRef | CollectionRef): Promise<DocSnapshot | QuerySnapshot> {
-    if (ref instanceof CollectionRef) return ref.get();
+    if (ref instanceof CollectionRef) return new CollectionRef(this.store, ref.path).get();
     return new DocSnapshot(this.store, ref.path, this.store.docs.get(ref.path));
   }
 
@@ -386,7 +394,14 @@ export class FakeFirestore {
     this.txQueue = new Promise((resolve) => { release = resolve; });
     await prior;
     try {
-      return await fn(new FakeTransaction(this.store));
+      const staged = new FakeStore();
+      staged.docs = new Map(
+        [...this.store.docs.entries()].map(([path, data]) => [path, cloneTransactionValue(data)])
+      );
+      const result = await fn(new FakeTransaction(staged));
+      // Publish the complete snapshot only after every operation succeeded.
+      this.store.docs = staged.docs;
+      return result;
     } finally {
       release();
     }
