@@ -40,6 +40,23 @@ export interface NovaMemory {
 let cachedBrain: NovaMemory[] = [];
 let cachedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
+let cacheEpoch = 0;
+
+const isCurrentBrainOwner = () =>
+  !!auth.currentUser?.uid && cachedUid === auth.currentUser.uid;
+
+// Store only a consent bit, never private profile answers. The account
+// must be verified by Firebase Auth before a client memory write is allowed.
+export const novaLearningConsentKey = (uid: string) =>
+  `blaze_nova_learning_consent_v2:${encodeURIComponent(uid)}`;
+
+export const setNovaLearningAllowedForUid = (uid: string, allowed: boolean) => {
+  try {
+    localStorage.setItem(novaLearningConsentKey(uid), allowed ? 'yes' : 'no');
+  } catch {
+    // Fail closed if browser storage is unavailable.
+  }
+};
 
 const memoriesCollection = async (uid: string) => {
   const db = await getDb();
@@ -47,23 +64,17 @@ const memoriesCollection = async (uid: string) => {
   return collection(db, 'users', uid, 'nova_memories');
 };
 
-// The onboarding "Personalised learning" toggle (profile.letNovaLearn) is
-// the one real switch for whether Nova learns about someone at all. It's
-// mirrored into localStorage's blaze_profile (kept in sync by App.tsx on
-// both onboarding completion and every Settings save) because every
-// function below is called synchronously, fire-and-forget, from deep
-// inside ~40 feature components that have no React context to read the
-// canonical Firestore profile from directly.
+// The saved profile in Firestore is authoritative. App.tsx refreshes this
+// synchronous, account-scoped consent bit after loading that profile and
+// when onboarding or Settings changes the preference. Never reuse the
+// previous account's browser-global "blaze_profile" preference.
 export const isNovaLearningAllowed = (): boolean => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return false;
   try {
-    const stored = localStorage.getItem('blaze_profile');
-    // No profile yet means onboarding hasn't completed - default open,
-    // matching the toggle's own on-by-default stance once it does exist.
-    if (!stored) return true;
-    const profile = JSON.parse(stored);
-    return profile.letNovaLearn !== false;
-  } catch (e) {
-    return true;
+    return localStorage.getItem(novaLearningConsentKey(uid)) === 'yes';
+  } catch {
+    return false;
   }
 };
 
@@ -197,27 +208,33 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
 
 export const initNovaBrain = (uid: string): Promise<void> => {
   if (cachedUid === uid && initPromise) return initPromise;
+  const requestedEpoch = ++cacheEpoch;
   cachedUid = uid;
+  cachedBrain = []; // Clear the previous account immediately on switch.
+  window.dispatchEvent(new Event('nova-brain-updated'));
   initPromise = (async () => {
+    let loadedMemories: NovaMemory[] = [];
     try {
       const { getDocs, query, orderBy } = await import('firebase/firestore');
       const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
-      cachedBrain = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
-    } catch (e) {
-      // Leaves the cache empty rather than pretending memories loaded.
-      cachedBrain = [];
+      loadedMemories = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
+    } catch {
+      // Empty is safer than displaying the previous account's memories.
     }
+    // Account switches and sign-outs invalidate any unfinished fetches.
+    if (cachedUid !== uid || requestedEpoch !== cacheEpoch) return;
+    cachedBrain = loadedMemories;
     window.dispatchEvent(new Event('nova-brain-updated'));
   })();
   return initPromise;
 };
 
-// Called on sign-out so the next user's session never sees a stale cache
-// from whoever was signed in before them.
 export const clearNovaBrainCache = () => {
+  ++cacheEpoch;
   cachedBrain = [];
   cachedUid = null;
   initPromise = null;
+  window.dispatchEvent(new Event('nova-brain-updated'));
 };
 
 const persistMemory = (uid: string, memory: NovaMemory) => {
@@ -257,11 +274,11 @@ const persistDelete = (uid: string, id: string) => {
 };
 
 export const getNovaBrain = (): NovaMemory[] => {
-  return cachedBrain;
+  return isCurrentBrainOwner() ? cachedBrain : [];
 };
 
 export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt'>) => {
-  if (!isNovaLearningAllowed()) return;
+  if (!isCurrentBrainOwner() || !isNovaLearningAllowed()) return;
   const newMemory: NovaMemory = {
     ...memory,
     id: `mem_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -276,7 +293,7 @@ export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'upd
 };
 
 export const logJourney = (action: string, details?: string) => {
-  if (!isNovaLearningAllowed()) return;
+  if (!isCurrentBrainOwner() || !isNovaLearningAllowed()) return;
   const content = `User Action: ${action}${details ? ` - ${details}` : ''}`;
   const newMemory: NovaMemory = {
     id: `mem_journey_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -307,6 +324,7 @@ export const logJourney = (action: string, details?: string) => {
 };
 
 export const deleteNovaMemory = (id: string) => {
+  if (!isCurrentBrainOwner()) return;
   cachedBrain = cachedBrain.filter(m => m.id !== id);
   window.dispatchEvent(new Event('nova-brain-updated'));
 
@@ -319,7 +337,7 @@ export const updateNovaMemoryBySourceAndType = (
   type: MemoryType,
   memoryParams: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt' | 'source' | 'type'>
 ) => {
-  if (!isNovaLearningAllowed()) return;
+  if (!isCurrentBrainOwner() || !isNovaLearningAllowed()) return;
   const canonicalKey = deriveCanonicalKey(source, type);
   const existingIndex = cachedBrain.findIndex(m => m.source === source && m.type === type);
 
@@ -352,6 +370,7 @@ export const updateNovaMemoryBySourceAndType = (
 // cachedBrain, so other open surfaces (NovaChat.tsx, EvolutionEngine.tsx)
 // would keep showing the old content until a reload.
 export const editNovaMemoryContent = (id: string, content: string) => {
+  if (!isCurrentBrainOwner()) return;
   const existingIndex = cachedBrain.findIndex(m => m.id === id);
   if (existingIndex === -1) return;
 
