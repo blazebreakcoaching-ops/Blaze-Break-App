@@ -7,7 +7,7 @@
 - On primary failure, it attempts to save the same event ID and full event into admin_audit_recovery. A double write failure is emitted as a high-priority AUDIT LOSS RISK error in Cloud Run logs.
 - Platform-owner-only POST /api/admin/audit-recovery/replay replays a maximum of 25 queued events, checks for an existing audit event first and deletes queue entries only after successful primary persistence.
 - Existing admin role, entitlement and suspension responses still surface auditRecorded=false so the admin UI warns when the primary record was not written.
-- This is a **manual bounded recovery mechanism**. No cron, alert subscription, guaranteed durable outbox, or automatic scheduled retry has been deployed. The fallback collection shares the same Firestore dependency and will also fail during a full outage. The API is not fully compliance-grade audit evidence.
+- This includes **manual owner replay and an opportunistic automatic retry** of at most three queued events after later successful audit writes. No cron, alert subscription, guaranteed externally durable outbox, or scheduled retry has been deployed. The fallback collection shares the same Firestore dependency and will also fail during a full outage. The API is not fully compliance-grade audit evidence.
 - Manual replay requires an authorised platform-owner account and a real production/staging service deployment. No replay was executed.
 
 ### Admin role/session governance
