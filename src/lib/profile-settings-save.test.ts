@@ -95,6 +95,26 @@ describe('verified settings and consent persistence', () => {
     expect(mocks.commit).not.toHaveBeenCalled();
   });
 
+  it('does not opt a legacy missing learning choice into memory use', async () => {
+    await saveVerifiedProfileSettings('account-A', {
+      ...profile, letNovaLearn: undefined,
+    });
+    const saved = mocks.set.mock.calls.find(([path]) =>
+      path === 'users/account-A/nova_permissions/current')?.[1];
+    expect(saved.allowNovaMemory).toBe(false);
+    expect(saved.allowNovaUseSavedMemories).toBe(false);
+  });
+
+  it('allows a deliberately enabled learning choice', async () => {
+    await saveVerifiedProfileSettings('account-A', {
+      ...profile, letNovaLearn: true,
+    });
+    const saved = mocks.set.mock.calls.find(([path]) =>
+      path === 'users/account-A/nova_permissions/current')?.[1];
+    expect(saved.allowNovaMemory).toBe(true);
+    expect(saved.allowNovaUseSavedMemories).toBe(true);
+  });
+
   it('drops explicit undefined and client-only entitlement fields', async () => {
     await saveVerifiedProfileSettings('account-A', {
       ...profile, novaTone: undefined, subscription: 'premium' as any,
