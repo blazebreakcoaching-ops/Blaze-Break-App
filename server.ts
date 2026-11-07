@@ -8633,19 +8633,22 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
     const db = getDb();
     
     const authUser = await getAuth().getUser(targetUid);
+    // Platform account administration is NOT a wellbeing-data access grant.
+    // Never return the user's unfiltered profile or recovery fingerprint: both
+    // can contain private personal/recovery information unrelated to support.
     const userDoc = await db.collection("users").doc(targetUid).get();
-    const fingerprintDoc = await db.collection("users").doc(targetUid).collection("recovery").doc("fingerprint").get();
-    
+    const organisationId = userDoc.exists && typeof userDoc.data()?.organisationId === 'string'
+      ? userDoc.data()!.organisationId : null;
+
     res.json({
       uid: targetUid,
-      email: authUser.email,
+      email: authUser.email || null,
       emailVerified: authUser.emailVerified,
-      displayName: authUser.displayName,
+      displayName: authUser.displayName || null,
       createdAt: authUser.metadata.creationTime,
       lastSignIn: authUser.metadata.lastSignInTime,
       accessStatus: authUser.disabled ? 'disabled' : 'active',
-      profile: userDoc.exists ? userDoc.data() : null,
-      fingerprint: fingerprintDoc.exists ? fingerprintDoc.data() : null
+      organisationId,
     });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
