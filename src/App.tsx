@@ -3391,7 +3391,7 @@ export default function App() {
           />
         </Suspense>
       )}
-      <InAppNudge />
+      <InAppNudge suspended={!!postOnboardingProfile || showNovaGuide || !!coachMarkPage || showCheckIn || showSettings || showWalkthrough || showCrisisSupport || showLauncher} />
       {/* Changelog is for existing registered accounts, not anonymous demos.
           Avoid interrupting a first-time visitor's Nova or onboarding flow. */}
       {user && !user.isAnonymous && (
@@ -3399,7 +3399,7 @@ export default function App() {
           <WhatsNewModal
             lastSeenVersion={stats.lastSeenChangelogVersion}
             loaded={statsLoaded}
-            paused={!!postOnboardingProfile || showNovaGuide || !!coachMarkPage || showCheckIn || showSettings || showCrisisSupport || showLauncher}
+            paused={!!postOnboardingProfile || showNovaGuide || !!coachMarkPage || showCheckIn || showSettings || showWalkthrough || showCrisisSupport || showLauncher}
             onSeen={(version) => setStats(prev => ({ ...prev, lastSeenChangelogVersion: version }))}
           />
         </Suspense>
