@@ -882,3 +882,26 @@ describe('protected account suspension permissions', () => {
     expect(getDocRaw(`organisations/${ORG}/members/owner_2`)?.status).toBe('suspended');
   });
 });
+
+describe('scoped security admins cannot grant themselves general or billing access', () => {
+  it.each(['admin', 'billing_admin'])('denies self-promotion to %s', async (nextRole) => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'security_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'security_1', 'security_admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/security_1/role`)
+      .set(auth('security_1')).send({ role: nextRole });
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/security_1`)?.role).toBe('security_admin');
+  });
+
+  it.each(['admin', 'billing_admin'])('denies granting %s to another staff member', async (nextRole) => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'security_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'security_1', 'security_admin');
+    seedMember(ORG, 'target', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/role`)
+      .set(auth('security_1')).send({ role: nextRole });
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.role).toBe('member');
+  });
+});
