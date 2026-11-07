@@ -12848,8 +12848,23 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/outcome", verifyAppChec
       pressureTransferCheck,
       updatedAt: new Date().toISOString(),
     };
-    await ref.set(update, { merge: true });
-    await logOrgAuditAction(req, orgId, "record_work_design_intervention_outcome", "work_design_intervention", id, { status: existing.status }, { status: update.status, outcomeRating });
+    const outcome = await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef) => {
+      const current = await tx.get(ref);
+      if (!current.exists) return { result: 404, audit: null };
+      // Revalidate team ownership against the latest organisation state.
+      const orgNow = await tx.get(orgRef);
+      const canManage = role === 'owner' || role === 'admin' ||
+        isTeamManager(orgNow.data()?.teamManagers, user.uid, current.data()?.team);
+      if (!canManage) return { result: 403, audit: null };
+      tx.set(ref, update, { merge: true });
+      return { result: 200, audit: {
+        action: 'record_work_design_intervention_outcome', resourceType: 'work_design_intervention',
+        resourceId: id, before: { status: current.data()?.status || null },
+        after: { status: update.status, outcomeRating },
+      } };
+    });
+    if (outcome === 404) return res.status(404).json({ error: 'Intervention not found.' });
+    if (outcome === 403) return res.status(403).json({ error: 'Forbidden: you no longer manage this team.' });
     res.json({ success: true, pressureTransferCheck });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -12976,9 +12991,25 @@ app.patch("/api/org/:orgId/work-design-debt/:id/owner", verifyAppCheck, authenti
     if (!isTeamManager(org.teamManagers, user.uid, existing.team) && !isAdmin) {
       return res.status(403).json({ error: "Forbidden: you don't manage this team." });
     }
-    const before = { ownerUid: existing.ownerUid || null };
-    await ref.set({ ownerUid, updatedAt: new Date().toISOString() }, { merge: true });
-    await logOrgAuditAction(req, orgId, "assign_work_design_debt_owner", "work_design_debt", id, before, { ownerUid });
+    const assigned = await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef) => {
+      const [current, orgNow] = await Promise.all([tx.get(ref), tx.get(orgRef)]);
+      if (!current.exists) return { result: 404, audit: null };
+      if (!orgNow.exists || !(orgNow.data()?.memberUids || []).includes(ownerUid)) {
+        return { result: 409, audit: null };
+      }
+      if (role !== 'owner' && role !== 'admin' &&
+          !isTeamManager(orgNow.data()?.teamManagers, user.uid, current.data()?.team)) {
+        return { result: 403, audit: null };
+      }
+      tx.set(ref, { ownerUid, updatedAt: new Date().toISOString() }, { merge: true });
+      return { result: 200, audit: {
+        action: 'assign_work_design_debt_owner', resourceType: 'work_design_debt', resourceId: id,
+        before: { ownerUid: current.data()?.ownerUid || null }, after: { ownerUid },
+      } };
+    });
+    if (assigned === 404) return res.status(404).json({ error: 'Work design debt item not found.' });
+    if (assigned === 409) return res.status(409).json({ error: 'Assigned owner is no longer on the company roster.' });
+    if (assigned === 403) return res.status(403).json({ error: 'Forbidden: you no longer manage this team.' });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13029,8 +13060,25 @@ app.patch("/api/org/:orgId/work-design-debt/:id/status", verifyAppCheck, authent
     const { status } = req.body;
     const update: Record<string, unknown> = { status, updatedAt: new Date().toISOString() };
     if (status === 'resolved') update.linkedInterventionId = linkedInterventionId;
-    await ref.set(update, { merge: true });
-    await logOrgAuditAction(req, orgId, "update_work_design_debt_status", "work_design_debt", id, { status: existing.status }, { status });
+    const changed = await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef) => {
+      const [current, orgNow] = await Promise.all([tx.get(ref), tx.get(orgRef)]);
+      if (!current.exists) return { result: 404, audit: null };
+      if (role !== 'owner' && role !== 'admin' &&
+          !isTeamManager(orgNow.data()?.teamManagers, user.uid, current.data()?.team)) {
+        return { result: 403, audit: null };
+      }
+      // The status might have changed after the initial validation read.
+      if (current.data()?.status !== existing.status ||
+          current.data()?.ownerUid !== existing.ownerUid) return { result: 409, audit: null };
+      tx.set(ref, update, { merge: true });
+      return { result: 200, audit: {
+        action: 'update_work_design_debt_status', resourceType: 'work_design_debt', resourceId: id,
+        before: { status: current.data()?.status || null }, after: { status },
+      } };
+    });
+    if (changed === 404) return res.status(404).json({ error: 'Work design debt item not found.' });
+    if (changed === 403) return res.status(403).json({ error: 'Forbidden: you no longer manage this team.' });
+    if (changed === 409) return res.status(409).json({ error: 'Work design debt changed. Reload and retry.' });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13249,14 +13297,20 @@ app.post("/api/org/:orgId/what-works-here/:signalKey/promote", verifyAppCheck, a
     if (!canPromoteToLocalOperatingPrinciple(computedLevel)) {
       return res.status(400).json({ error: `This pattern's real evidence (currently "${EVIDENCE_LEVEL_LABELS[computedLevel]}") hasn't reached "${EVIDENCE_LEVEL_LABELS['repeated_across_teams']}" yet.` });
     }
-    await db.collection("organisations").doc(orgId).collection("local_operating_principles").doc(signalKey).set({
-      signalKey,
-      label: WORK_DESIGN_SIGNAL_LABELS[signalKey] || signalKey,
-      promotedBy: user.uid,
-      promotedByEmail: user.email || null,
-      promotedAt: new Date().toISOString(),
+    const principle = db.collection('organisations').doc(orgId).collection('local_operating_principles').doc(signalKey);
+    await withOrgAuditedWrite(db, req, orgId, async (tx) => {
+      tx.set(principle, {
+        signalKey,
+        label: WORK_DESIGN_SIGNAL_LABELS[signalKey] || signalKey,
+        promotedBy: user.uid,
+        promotedByEmail: user.email || null,
+        promotedAt: new Date().toISOString(),
+      });
+      return { result: null, audit: {
+        action: 'promote_local_operating_principle', resourceType: 'local_operating_principle',
+        resourceId: signalKey, before: null, after: { signalKey },
+      } };
     });
-    await logOrgAuditAction(req, orgId, "promote_local_operating_principle", "local_operating_principle", signalKey, null, { signalKey });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
