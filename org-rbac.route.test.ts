@@ -1238,3 +1238,44 @@ describe('device registration and revocation audit boundaries', () => {
     expect(getDocRaw(`organisations/${ORG}/devices/device_1`)?.lastCheckIn).toBe('old-value');
   });
 });
+
+
+describe('offboarding cannot be bypassed through stale member documents', () => {
+  it('rejects an otherwise active granular owner absent from the current roster', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1', 'former_owner'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'former_owner', 'owner');
+    const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('former_owner'));
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects a leftover granular HR viewer when they are no longer in memberUids', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'], hrViewerUids: ['former_hr'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'former_hr', 'member');
+    const res = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('former_hr'));
+    expect(res.status).toBe(403);
+  });
+
+  it('refuses to demote the only rostered owner when an orphan owner record exists', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1', 'ordinary_staff'], adminUids: ['owner_1', 'former_owner'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'ordinary_staff', 'member');
+    seedMember(ORG, 'former_owner', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
+      .set(auth('owner_1')).send({ role: 'member' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_1`)?.role).toBe('owner');
+  });
+
+  it('does not count a legacy admin UID absent from the roster as an owner', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1', 'ordinary_staff'], adminUids: ['owner_1', 'old_legacy_owner'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'ordinary_staff', 'member');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
+      .set(auth('owner_1')).send({ role: 'member' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+  });
+});
