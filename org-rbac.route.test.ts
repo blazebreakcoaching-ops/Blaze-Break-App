@@ -124,6 +124,33 @@ describe('authoritative membership status cannot fall back to legacy grants', ()
   });
 });
 
+describe('last-owner safety uses only effective active ownership', () => {
+  it.each(['suspended', 'removed', 'inactive'])(
+    'cannot demote the last active owner while a legacy-listed second owner is %s',
+    async (status) => {
+      seedOrg(ORG, { adminUids: ['owner_1', 'former_owner'], memberUids: ['owner_1', 'former_owner'] });
+      seedMember(ORG, 'owner_1', 'owner', 'active');
+      seedMember(ORG, 'former_owner', 'owner', status);
+      const res = await request(app)
+        .post(`/api/org/${ORG}/members/owner_1/role`)
+        .set(auth('owner_1'))
+        .send({ role: 'member' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/last owner/i);
+    }
+  );
+
+  it('does not count an invalid granular role as a fallback legacy owner', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'bad_role'], memberUids: ['owner_1', 'bad_role'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'bad_role', 'bad_role');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
+      .set(auth('owner_1')).send({ role: 'member' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+  });
+});
+
 describe('RBAC matrix on role-management routes', () => {
   it('a viewer can never change a role, suspend, or reactivate anyone', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'viewer_1', 'member_1'] });
