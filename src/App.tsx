@@ -1101,28 +1101,37 @@ export default function App() {
   // while the app is open lets a full 7-day scan complete over real usage
   // instead of needing a single, rate-limit-breaking bulk fetch.
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.isAnonymous) return;
+    const uid = user.uid;
+    let cancelled = false;
 
     if (accessToken) {
-      // DataPrivacyDashboard.tsx's "Calendar Sync" toggle previously
-      // referenced a feature-flag name that didn't exist in the schema, so
-      // it had no effect at all - this call ran regardless of what the
-      // toggle showed. Now genuinely gated on the same consent doc that
-      // toggle actually writes to.
-      isCalendarSignalConsentGranted(user.uid).then((allowed) => {
-        if (allowed) syncCalendarSignal(accessToken);
-      });
+      // A slow consent read must never sync a prior user's Google token
+      // after that user signed out or another account took over.
+      const token = accessToken;
+      isCalendarSignalConsentGranted(uid)
+        .then((allowed) => {
+          if (allowed && !cancelled && auth.currentUser?.uid === uid) {
+            return syncCalendarSignal(token);
+          }
+        })
+        .catch(() => {
+          // Missing consent, disconnected Calendar, or network failure: skip.
+        });
     }
 
     const tickSlack = () => {
+      // No background polling on hidden tabs, guest demos or old accounts.
+      if (cancelled || auth.currentUser?.uid !== uid ||
+          (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
       secureApiFetch('/api/signals/slack/tick', { method: 'POST' }).catch(() => {
-        // Not connected, rate-limited, or a transient error — all safe to skip silently.
+        // Not connected, rate-limited or offline; no customer interruption.
       });
     };
     tickSlack();
     const slackTickInterval = setInterval(tickSlack, 65 * 1000);
-    return () => clearInterval(slackTickInterval);
-  }, [user, accessToken]);
+    return () => { cancelled = true; clearInterval(slackTickInterval); };
+  }, [user?.uid, user?.isAnonymous, accessToken]);
 
   // Whether this person manages a team (org-rbac.ts's teamManagers, distinct
   // from the coarse authRole self-selection above) - drives whether the "My
