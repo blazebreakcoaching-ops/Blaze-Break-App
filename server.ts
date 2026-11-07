@@ -8257,7 +8257,6 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
 
     try {
       const resetsSnap = await db.collection("anxiety_reset_events").get();
-      dataAvailability.anxietyResets = true;
       totalResets = resetsSnap.size;
       const todayStart = new Date();
       todayStart.setHours(0,0,0,0);
@@ -8294,6 +8293,7 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
           toolCounts[data.selectedTool] = (toolCounts[data.selectedTool] || 0) + 1;
         }
       });
+      dataAvailability.anxietyResets = true;
     } catch (e) {
       // Same reasoning as the other stats queries in this endpoint -
       // degrade to the defaults declared above rather than failing
