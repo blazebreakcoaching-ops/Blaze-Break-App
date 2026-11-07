@@ -1,5 +1,6 @@
 import { auth } from './firebase.ts';
 import { secureApiFetch } from './secure-api.ts';
+import { auditStorageKey, parseAuditFallback } from './audit-storage';
 
 export interface AuditLogEntry {
   id: string;
@@ -24,18 +25,20 @@ export const logAuditAction = async (entry: Omit<AuditLogEntry, 'id' | 'timestam
     timestamp: new Date().toISOString()
   };
 
-  // Local cache for instant UI display - the real record is the server
-  // write below; this is just so the list doesn't flash empty on load.
-  try {
-    const existingStr = localStorage.getItem('blaze_audit_logs');
-    const existing = existingStr ? JSON.parse(existingStr) : [];
-    existing.unshift(log);
-    localStorage.setItem('blaze_audit_logs', JSON.stringify(existing.slice(0, 500)));
-  } catch (error) {
-    // Non-fatal - the server write below is what actually matters.
+  // Cache only for the Firebase identity that submitted this action.
+  // The old global key could leak a previous anonymous user's audit trail.
+  const uid = auth.currentUser?.uid;
+  if (uid) {
+    try {
+      const key = auditStorageKey(uid);
+      const existing = parseAuditFallback(localStorage.getItem(key));
+      localStorage.setItem(key, JSON.stringify([log, ...existing].slice(0, 100)));
+    } catch {
+      // The authoritative audit event is written server-side below.
+    }
   }
 
-  if (auth.currentUser) {
+  if (uid && auth.currentUser?.uid === uid) {
     try {
       await secureApiFetch('/api/audit-log', {
         method: 'POST',
@@ -53,11 +56,14 @@ export const logAuditAction = async (entry: Omit<AuditLogEntry, 'id' | 'timestam
  * never goes fully blank on a transient network error.
  */
 export const getAuditLogs = async (): Promise<AuditLogEntry[]> => {
-  if (auth.currentUser) {
-    try {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return [];
+  try {
       const res = await secureApiFetch('/api/audit-log');
+      if (auth.currentUser?.uid !== uid) return [];
       if (res.ok) {
         const data = await res.json();
+        if (auth.currentUser?.uid !== uid) return [];
         return (data.logs || []).map((l: any) => ({
           id: l.id,
           userId: l.userId,
@@ -70,14 +76,13 @@ export const getAuditLogs = async (): Promise<AuditLogEntry[]> => {
             : (l.createdAt || new Date().toISOString()),
         }));
       }
-    } catch (error) {
-      console.error('Failed to fetch audit logs from server:', error);
-    }
+  } catch {
+    // Audit fallback is scoped to this account, never the whole browser.
   }
+  if (auth.currentUser?.uid !== uid) return [];
   try {
-    const existingStr = localStorage.getItem('blaze_audit_logs');
-    return existingStr ? JSON.parse(existingStr) : [];
-  } catch (error) {
+    return parseAuditFallback(localStorage.getItem(auditStorageKey(uid))) as AuditLogEntry[];
+  } catch {
     return [];
   }
 };
