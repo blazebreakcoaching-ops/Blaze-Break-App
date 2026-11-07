@@ -22,7 +22,12 @@ describe('Nova Calendar consent must fail closed', () => {
     expect(await isCalendarSignalConsentGranted('account-A')).toBe(false);
   });
   it('requires a literal saved true, not an inferred/default permission', async () => {
+    // Legacy automatic true is NOT proof the customer opted in.
     mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ allowCalendarSignals: true }) });
+    expect(await isCalendarSignalConsentGranted('account-A')).toBe(false);
+    mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({
+      allowCalendarSignals: true, calendarSignalsExplicitConsentAt: new Date().toISOString(),
+    }) });
     expect(await isCalendarSignalConsentGranted('account-A')).toBe(true);
     mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ allowCalendarSignals: false }) });
     expect(await isCalendarSignalConsentGranted('account-A')).toBe(false);
