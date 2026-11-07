@@ -259,6 +259,29 @@ test.describe('Real app (Phase 5N directive §3): registration and onboarding jo
     await expect(page.getByText('I hear you - let\'s look at what\'s driving that.')).toBeVisible();
   });
 
+  test('a first-time user can choose Nova Guide directly from welcome without stacking dialogs', async ({ page }) => {
+    test.setTimeout(75_000);
+    const email = uniqueEmail('welcome-guide');
+
+    await startAnonymousDemo(page);
+    await openSignUpModal(page);
+    await submitRealSignUp(page, email);
+    await completeRealOnboarding(page, 'Guide Example', { dismissModals: false });
+
+    const welcome = page.getByRole('dialog', { name: /welcome, guide/i });
+    await expect(welcome).toBeVisible();
+    await welcome.getByRole('button', { name: 'Show me around' }).click();
+
+    const guide = page.getByRole('dialog', { name: /one small step at a time/i });
+    await expect(guide).toBeVisible();
+    await expect(welcome).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: /daily check-in|what's new/i })).toHaveCount(0);
+
+    await guide.getByRole('button', { name: /skip for now/i }).click();
+    await expect(guide).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'What would help right now?' })).toBeVisible();
+  });
+
   test('first registration shows one welcome, then offers an optional daily check-in without surprise popups', async ({ page }) => {
     test.setTimeout(75_000);
     const email = uniqueEmail('quiet-first-visit');
