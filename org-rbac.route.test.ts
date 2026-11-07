@@ -448,6 +448,51 @@ describe('audit log correctness', () => {
   });
 });
 
+describe('suspended membership must never grant organisation permissions', () => {
+  it('blocks a suspended admin even when legacy adminUids still contains them, then restores access on reactivation', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'target'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'admin');
+    expect((await request(app).get(`/api/org/${ORG}/members`).set(auth('target'))).status).toBe(200);
+    expect((await request(app).post(`/api/org/${ORG}/members/target/suspend`).set(auth('owner_1'))).status).toBe(200);
+    expect((await request(app).get(`/api/org/${ORG}/members`).set(auth('target'))).status).toBe(403);
+    expect((await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'))).status).toBe(200);
+    expect((await request(app).get(`/api/org/${ORG}/members`).set(auth('target'))).status).toBe(200);
+  });
+
+  it('blocks a suspended manager from the team dashboard despite a stale manager assignment', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'manager_1'] });
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', 'manager_1'],
+      teamManagers: { manager_1: ['Engineering'] }, memberTeams: { manager_1: 'Engineering' },
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'manager_1', 'member', 'suspended');
+    const res = await request(app).get(`/api/org/${ORG}/team-dashboard`).set(auth('manager_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('blocks a suspended HR viewer despite a stale HR viewer allow-list', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', 'hr_1'],
+      hrViewerUids: ['hr_1'],
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'hr_1', 'member', 'suspended');
+    const res = await request(app).get(`/api/org/${ORG}/hr-dashboard`).set(auth('hr_1'));
+    expect(res.status).toBe(403);
+  });
+
+  it('protects the final active owner against suspension by another privileged administrator', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'sec_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'sec_1', 'security_admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/suspend`).set(auth('sec_1'));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+  });
+});
+
 describe('membership record lifecycle', () => {
   it('joining via join code creates a real member-role record, defaulting to member', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
