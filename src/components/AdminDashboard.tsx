@@ -1225,6 +1225,10 @@ export const AdminDashboard = () => {
         throw new Error(errorData.error || 'Failed to update user custom claims.');
       }
 
+      const auditResult = await res.json().catch(() => null);
+      if (auditResult?.auditRecorded === false) {
+        setError('The account change succeeded, but the audit event was NOT saved. Operations must investigate.');
+      }
       showSuccess(`Successfully updated custom claims for user to: ${selectedUserRole}`);
       // Deliberately doesn't clear selectedUser (the Account Control
       // Drawer's target) - an admin doing a role change followed by a
@@ -1273,6 +1277,10 @@ export const AdminDashboard = () => {
         throw new Error(errorData.error || "Couldn't update that account's plan.");
       }
 
+      const auditResult = await res.json().catch(() => null);
+      if (auditResult?.auditRecorded === false) {
+        setError('The account change succeeded, but the audit event was NOT saved. Operations must investigate.');
+      }
       showSuccess(
         plan === 'free'
           ? 'Account reverted to Free.'
@@ -1303,6 +1311,10 @@ export const AdminDashboard = () => {
         throw new Error(errorData.error || 'Account suspension failed.');
       }
 
+      const auditResult = await res.json().catch(() => null);
+      if (auditResult?.auditRecorded === false) {
+        setError('The account change succeeded, but the audit event was NOT saved. Operations must investigate.');
+      }
       showSuccess(`Account state successfully toggled.`);
       await loadAllData();
       await refreshManagedAccount(uid);
