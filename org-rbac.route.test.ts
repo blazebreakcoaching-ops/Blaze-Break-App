@@ -1294,3 +1294,87 @@ describe('fake database transaction rollback reflects production atomicity', () 
     expect(getDocRaw('organisations/rollback_org/audit_logs/test_event')).toBeUndefined();
   });
 });
+
+
+describe('company invitation and governance audit transactions', () => {
+  it('rotates a shared code with a durable audit event that contains no secret', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', memberUids: ['owner_1'], adminUids: ['owner_1'], joinCode: 'OLD_SHARED_CODE',
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/regenerate-join-code`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(res.body.joinCode).not.toBe('OLD_SHARED_CODE');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    const entry = audit.body.logs.find((item: any) => item.action === 'rotate_join_code');
+    expect(entry).toBeDefined();
+    expect(JSON.stringify(entry)).not.toContain('OLD_SHARED_CODE');
+    expect(JSON.stringify(entry)).not.toContain(res.body.joinCode);
+  });
+
+  it('does not rotate the shared code if its audit transaction fails', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', memberUids: ['owner_1'], adminUids: ['owner_1'], joinCode: 'OLD_SHARED_CODE',
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    const restore = forceTransactionError(new Error('simulated audit outage'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/regenerate-join-code`).set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}`)?.joinCode).toBe('OLD_SHARED_CODE');
+    } finally { restore(); }
+  });
+
+  it('cancels the exact invited email and records the revocation atomically', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/pending_invites/employee@example.com`, {
+      email: 'employee@example.com', tokenHash: 'not-a-real-token',
+    });
+    const res = await request(app)
+      .post(`/api/org/${ORG}/invites/employee@example.com/cancel`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/employee@example.com`)).toBeUndefined();
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'cancel_invitation', targetResourceId: 'employee@example.com',
+        after: { pending: false, sharedJoinCodeStillValid: true },
+      }),
+    ]));
+  });
+
+  it('cannot cancel an invitation if the transaction fails', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/pending_invites/employee@example.com`, {
+      email: 'employee@example.com', tokenHash: 'not-a-real-token',
+    });
+    const restore = forceTransactionError(new Error('simulated audit outage'));
+    try {
+      const res = await request(app)
+        .post(`/api/org/${ORG}/invites/employee@example.com/cancel`).set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/pending_invites/employee@example.com`)).toBeDefined();
+    } finally { restore(); }
+  });
+
+  it('records the real before and after company privacy threshold', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', memberUids: ['owner_1'], adminUids: ['owner_1'], privacyThreshold: 5,
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/settings`)
+      .set(auth('owner_1')).send({ privacyThreshold: 8 });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}`)?.privacyThreshold).toBe(8);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'update_org_settings', before: { privacyThreshold: 5 },
+        after: { privacyThreshold: 8 },
+      }),
+    ]));
+  });
+});
