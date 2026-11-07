@@ -12,3 +12,9 @@ export function isNudgeVisibleForAccount(
 ): boolean {
   return Boolean(currentUid && ownerUid === currentUid && hasNudge && !suspended && !isDismissing);
 }
+
+/** Per-account local rate limits. Never allow a previous user's reminder
+ * history to suppress or affect a newly signed-in person's nudges. */
+export function nudgeHistoryKey(uid: string): string {
+  return `blaze_nudge_history_v2:${encodeURIComponent(uid)}`;
+}
