@@ -59,6 +59,15 @@ describe('GET /api/admin/summary — toolCounts', () => {
     expect(res.body.mostUsedResetTool).toBe('box_breathing');
   });
 
+  it('reports zero real users instead of fabricating one account for an empty installation', async () => {
+    const res = await request(app).get('/api/admin/summary').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.totalUsers).toBe(0);
+    expect(res.body.dataAvailability.users).toBe(true);
+    expect(res.body.usersCountCapped).toBe(false);
+    expect(res.body.completionRate).toBe(0);
+  });
+
   it('reports an empty breakdown (not missing) when no resets have been logged yet', async () => {
     const res = await request(app).get('/api/admin/summary').set(auth(OWNER));
     expect(res.status).toBe(200);
