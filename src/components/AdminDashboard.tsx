@@ -252,6 +252,7 @@ export const AdminDashboard = () => {
   const [expandedTimelineUid, setExpandedTimelineUid] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersCapped, setUsersCapped] = useState(false);
+  const [firestoreProfileCount, setFirestoreProfileCount] = useState<number | null>(null);
   const [directoryPageUsers, setDirectoryPageUsers] = useState<AdminUser[]>([]);
   const [directoryRefreshRevision, setDirectoryRefreshRevision] = useState(0);
   const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
@@ -675,6 +676,7 @@ export const AdminDashboard = () => {
       }
       const data = await res.json();
       setSummaryAvailability(data.dataAvailability || null);
+      setFirestoreProfileCount(data.dataAvailability?.users === true && data.usersCountSource === 'firestore_profiles' && typeof data.totalUsers === 'number' ? data.totalUsers : null);
       if (data.dataAvailability?.anxietyResets === false) {
         setLoadError('Recovery statistics are unavailable because their database query failed. Please retry.');
         setMetrics(null);
@@ -1663,9 +1665,9 @@ export const AdminDashboard = () => {
         <div className="p-6 bg-surface dark:bg-card border border-border rounded-2xl space-y-4 shadow-sm relative overflow-hidden hover:border-primary/40 transition-all duration-300">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">People</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Firestore Profiles</span>
               <h4 className="text-3xl font-display font-black text-text-main flex items-baseline gap-2">
-                {users.length}{usersCapped ? '+' : ''}
+                {firestoreProfileCount === null ? 'Unavailable' : firestoreProfileCount}
               </h4>
             </div>
             <div className="p-3 bg-primary/10 text-primary rounded-xl">
@@ -1673,7 +1675,7 @@ export const AdminDashboard = () => {
             </div>
           </div>
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Corporate seats / individual plans: <strong className="text-text-muted font-semibold">Not yet tracked</strong></span>
+            <span>Firebase Auth-only accounts are excluded. Corporate seats / individual plans: <strong className="text-text-muted font-semibold">Not yet tracked</strong></span>
           </div>
         </div>
 
