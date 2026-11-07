@@ -23,8 +23,6 @@ import { auth } from '../lib/firebase';
 import { onAuthStateChanged } from "firebase/auth";
 import { novaStorageKey, canPersistNovaChatState } from "../lib/nova-chat-storage";
 import { readAccountProfile, patchAccountProfile } from "../lib/account-profile-storage";
-import { db } from '../lib/firestore';
-import { doc, getDoc } from "firebase/firestore";
 import { NovaVoiceCall } from "./NovaVoiceCall";
 import { NovaToneControl } from "./NovaToneControl";
 import { NovaStyleControl, QUESTIONING_STYLE_OPTIONS, NovaQuestioningStyle } from "./NovaStyleControl";
@@ -41,8 +39,8 @@ import type { NovaTemporaryBeforeWordsContext } from "../../nova-before-words-te
 // if either is exceeded. The localStorage-persisted chat history grows
 // unbounded over real, long-term use, so this component stays well under
 // those caps rather than relying on the server's hard ceiling - see
-// handleSend and getDynamicContext below. Nova's saved-memory content is no
-// longer assembled here at all (see getDynamicContext/buildVoiceContext) -
+// handleSend below. Automatic persisted context is assembled server-side
+// behind account-specific consent checks, not in this browser -
 // the server's own getNovaContextAndMetadata is the single place that
 // happens now, so it can't be duplicated or bypass the consent gate.
 const NOVA_CHAT_HISTORY_LIMIT = 20;
@@ -558,21 +556,6 @@ export const NovaChat = ({
   // directly here (rather than re-parsing localStorage) always reflects
   // the person's current choice, matching NovaToneControl's own promise
   // that "Nova switches straightaway."
-  const buildSituationalContext = (): string => {
-    try {
-      const profile = readAccountProfile(auth.currentUser?.uid);
-      let ctx = `\n[SITUATIONAL ONBOARDING CONTEXT]\n`;
-      let hasAny = false;
-      if (profile.purpose) { ctx += `- Primary Goal: ${profile.purpose}\n`; hasAny = true; }
-      if (profile.primaryDrain) { ctx += `- Current Pressure Point: ${profile.primaryDrain}\n`; hasAny = true; }
-      if (profile.pathway) { ctx += `- Environment: ${profile.pathway}\n`; hasAny = true; }
-      if (novaTone) { ctx += `- Preferred Nova Tone: ${novaTone}\n`; hasAny = true; }
-      return hasAny ? ctx : "";
-    } catch (e) {
-      console.error(e);
-      return "";
-    }
-  };
 
   useEffect(() => {
     // currentUid (the identity this component currently believes is
@@ -635,8 +618,7 @@ export const NovaChat = ({
   // server's own liveSystemInstruction (built from getNovaContextAndMetadata,
   // server.ts) is now the only carrier of memory content into a voice call.
   const buildVoiceContext = () => {
-    return `User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
-Recent chat history: ${messages
+    return `Recent chat history: ${messages
       .slice(-5)
       .map((m) => m.role + ": " + m.parts[0].text)
       .join("\n")}.
@@ -771,60 +753,6 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
   };
 
-  const getDynamicContext = async (uid: string) => {
-    let contextStr = "";
-
-    contextStr += buildSituationalContext();
-
-    // Saved-memory content used to be assembled here directly from
-    // getNovaBrain() - unfiltered, with no consent check, and duplicated
-    // against the server's own separately-fetched, consent-gated memories
-    // (getNovaContextAndMetadata in server.ts). The server is now the only
-    // place memory content enters the prompt, for both text and voice.
-
-    try {
-      if (auth.currentUser?.uid === uid) {
-        const snap = await getDoc(doc(db, "users", uid, "workload_reality_check", "state"));
-        const workload = snap.exists() ? snap.data().answers : null;
-        if (workload) {
-          const answeredKeys = Object.keys(workload).filter(
-            (k) => (workload[k] || "").trim() !== "",
-          );
-          if (answeredKeys.length > 0) {
-            contextStr += `\nLatest Workload Reality Check Answers:\n`;
-            if (workload.must)
-              contextStr += `- Must happen today: ${workload.must}\n`;
-            if (workload.wait) contextStr += `- Can wait: ${workload.wait}\n`;
-            if (workload.delegate)
-              contextStr += `- Can delegate: ${workload.delegate}\n`;
-            if (workload.pretend)
-              contextStr += `- Pretending is urgent: ${workload.pretend}\n`;
-            if (workload.future)
-              contextStr += `- Future self wants removed: ${workload.future}\n`;
-          }
-        }
-      }
-    } catch (e) {
-      // Non-fatal - same reasoning as the other context sources above.
-    }
-
-    try {
-      if (auth.currentUser?.uid === uid) {
-        const recoverySnap = await getDoc(doc(db, "users", uid, "micro_recovery", "latest"));
-        if (recoverySnap.exists()) {
-          const recovery = recoverySnap.data();
-          contextStr += `\nLatest Completed Micro-Recovery Session:\n`;
-          contextStr += `- Protocol duration: ${recovery.duration || "N/A"}\n`;
-          contextStr += `- Executed time: ${recovery.time || "N/A"}\n`;
-          contextStr += `- Description: ${recovery.description || "N/A"}\n`;
-          contextStr += `- Completed at: ${recovery.completedAt || "N/A"}\n`;
-        }
-      }
-    } catch (e) {
-      // Non-fatal - same reasoning as the other context sources above.
-    }
-    return contextStr;
-  };
 
   const handleSend = async (overrideInput?: string) => {
     const messageText = overrideInput || input;
@@ -843,23 +771,15 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     setLoading(true);
 
     try {
-      const dynamicContext = await getDynamicContext(requestUid);
       if (!stillCurrentRequest()) return;
-      let toneModifier = "";
-      if (fingerprint?.profile === "High-Functioning Exhausted") {
-        toneModifier =
-          "TONE OVERRIDE: Be extremely direct. Focus on baseline stability and nervous system regulation over optimization. Do not let them 'hack' their way out of tiredness.";
-      } else if (fingerprint?.profile === "Silent Resenter") {
-        toneModifier =
-          "TONE OVERRIDE: Validate their resentment as valuable data. Encourage radical candor and setting boundaries, even if it causes minor friction.";
-      }
-
+      // The server's consent-gated context builder is the ONLY source of
+      // persisted fingerprint, workload, recovery and onboarding details.
+      // The client sends the current message/history plus host instructions,
+      // not silent reads of private Firestore documents.
       const fullSystemInstruction = `
             ${systemInstruction || ""}
-            User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
-            ${dynamicContext}
-            Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Match the user's preferred tone noted above. Gently call out performance-identity fawning or anxiety-driven overwork if they're pretending things are urgent, but stay warm - this is a person going through burnout, not a performance review.
-            ${toneModifier}
+            Use recent messages in this conversation when relevant, without assuming unshared background details.
+            ${novaTone ? `User-selected Nova tone: ${novaTone}.` : ""}
           `;
       // Phase 5F (directive §4): Before Words content travels as its own
       // field now, never folded into `fullSystemInstruction` above. Phase
