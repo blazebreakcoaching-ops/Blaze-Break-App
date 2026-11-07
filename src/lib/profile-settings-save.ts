@@ -1,6 +1,7 @@
 import type { UserProfileData } from '../types';
 import { auth, getDb } from './firebase';
 import { NOVA_PERMISSION_DEFAULTS } from './nova-brain';
+import { hasExplicitNovaLearningConsent } from './nova-learning-consent';
 
 /**
  * A Settings success message must mean the database actually committed.
@@ -40,8 +41,8 @@ export async function saveVerifiedProfileSettings(
     }, { merge: true });
   batch.set(permissionsRef, {
     ...(existingPermissions.exists() ? {} : NOVA_PERMISSION_DEFAULTS),
-    allowNovaMemory: profile.letNovaLearn !== false,
-    allowNovaUseSavedMemories: profile.letNovaLearn !== false,
+    allowNovaMemory: hasExplicitNovaLearningConsent(profile.letNovaLearn),
+    allowNovaUseSavedMemories: hasExplicitNovaLearningConsent(profile.letNovaLearn),
     updatedAt,
   }, { merge: true });
   if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
