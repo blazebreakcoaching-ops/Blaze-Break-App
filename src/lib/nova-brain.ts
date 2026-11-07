@@ -42,6 +42,10 @@ let cachedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
 let cacheEpoch = 0;
 
+const announceNovaBrainUpdated = () => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('nova-brain-updated'));
+};
+
 const isCurrentBrainOwner = () =>
   !!auth.currentUser?.uid && cachedUid === auth.currentUser.uid;
 
@@ -211,7 +215,7 @@ export const initNovaBrain = (uid: string): Promise<void> => {
   const requestedEpoch = ++cacheEpoch;
   cachedUid = uid;
   cachedBrain = []; // Clear the previous account immediately on switch.
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
   initPromise = (async () => {
     let loadedMemories: NovaMemory[] = [];
     try {
@@ -223,8 +227,11 @@ export const initNovaBrain = (uid: string): Promise<void> => {
     }
     // Account switches and sign-outs invalidate any unfinished fetches.
     if (cachedUid !== uid || requestedEpoch !== cacheEpoch) return;
-    cachedBrain = loadedMemories;
-    window.dispatchEvent(new Event('nova-brain-updated'));
+    // A newly-added memory may have been saved locally while Firestore
+    // was still loading. Merge by id instead of erasing that new entry.
+    const localIds = new Set(cachedBrain.map(m => m.id));
+    cachedBrain = [...cachedBrain, ...loadedMemories.filter(m => !localIds.has(m.id))];
+    announceNovaBrainUpdated();
   })();
   return initPromise;
 };
@@ -234,7 +241,7 @@ export const clearNovaBrainCache = () => {
   cachedBrain = [];
   cachedUid = null;
   initPromise = null;
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 };
 
 const persistMemory = (uid: string, memory: NovaMemory) => {
@@ -286,7 +293,7 @@ export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'upd
     updatedAt: new Date().toISOString(),
   };
   cachedBrain = [...cachedBrain, newMemory];
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) persistMemory(uid, newMemory);
@@ -314,7 +321,7 @@ export const logJourney = (action: string, details?: string) => {
 
   brain = brain.filter(m => !idsToRemove.has(m.id));
   cachedBrain = brain;
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) {
@@ -326,7 +333,7 @@ export const logJourney = (action: string, details?: string) => {
 export const deleteNovaMemory = (id: string) => {
   if (!isCurrentBrainOwner()) return;
   cachedBrain = cachedBrain.filter(m => m.id !== id);
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) persistDelete(uid, id);
@@ -349,7 +356,7 @@ export const updateNovaMemoryBySourceAndType = (
       updatedAt: new Date().toISOString(),
     };
     cachedBrain = [...cachedBrain.slice(0, existingIndex), updated, ...cachedBrain.slice(existingIndex + 1)];
-    window.dispatchEvent(new Event('nova-brain-updated'));
+    announceNovaBrainUpdated();
 
     const uid = auth.currentUser?.uid;
     if (uid) persistMemory(uid, updated);
@@ -380,7 +387,7 @@ export const editNovaMemoryContent = (id: string, content: string) => {
     updatedAt: new Date().toISOString(),
   };
   cachedBrain = [...cachedBrain.slice(0, existingIndex), updated, ...cachedBrain.slice(existingIndex + 1)];
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) persistMemory(uid, updated);
