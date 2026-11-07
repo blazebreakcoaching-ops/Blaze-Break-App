@@ -1,0 +1,6 @@
+# Exclude temporary GitHub OIDC credentials from Cloud Run source uploads.
+.git
+.gitignore
+#!include:.gitignore
+gha-creds-*.json
+**/gha-creds-*.json

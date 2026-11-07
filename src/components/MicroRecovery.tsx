@@ -475,7 +475,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints, isFocusActive }: Mic
   const recommendedDuration = RECOMMENDED_DURATION_FOR_SITUATION[situation];
 
   return (
-    <div className="space-y-12 pb-24">
+    <div className="ember-midnight space-y-12 pb-24">
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
            <div className="tag">Stabilise · Core Pillar: Rebuild</div>

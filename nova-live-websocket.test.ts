@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import crypto from 'crypto';
 
 // QA Batch 2 - the Nova Live WebSocket relay (handleNovaLiveConnection in
 // server.ts) was previously only ever registered inline inside the
@@ -20,6 +21,7 @@ const h = vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
   process.env.GEMINI_API_KEY = 'test-key-not-a-placeholder';
+  process.env.MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
   // Short enough that the timeout test doesn't slow the suite down, long
   // enough that the "successful relay" tests' real (but fast) Firestore/
   // mock work never trips it by accident.
@@ -53,17 +55,27 @@ const h = vi.hoisted(() => {
 vi.mock('express-rate-limit', () => ({ default: () => (_req: any, _res: any, next: any) => next() }));
 vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{}] }));
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
+// A fixed stand-in auth_time for every simulated token in this file - real
+// decoded ID tokens always carry one, and verifyMfaSessionToken (server.ts)
+// now requires the caller's current auth_time to match the one a session
+// proof was signed for (INDEPENDENT REVIEW FOLLOW-UP, 2026-11-04 - see
+// signMfaSessionToken's own comment), so signedMfaProof below must embed
+// this exact same value for the "correctly signed" tests to still pass.
+const FIXED_AUTH_TIME = 1700000000;
+
 vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
-    verifyIdToken: async (token: string) => {
-      if (token === 'bad-token') throw new Error('invalid token');
-      return { uid: token, email: `${token}@test.dev` };
+    verifyIdToken: async (token: string, checkRevoked?: boolean) => {
+      if (token === 'bad-token' || (token === 'revoked-token' && checkRevoked === true)) {
+        throw new Error('invalid or revoked token');
+      }
+      return { uid: token, email: `${token}@test.dev`, auth_time: FIXED_AUTH_TIME };
     },
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
   const fake = await import('./test/fake-firestore');
-  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue };
+  return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue, Timestamp: fake.FakeTimestamp };
 });
 vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) }));
 vi.mock('@google/genai', () => ({
@@ -94,7 +106,20 @@ class FakeClientSocket extends EventEmitter {
   }
 }
 
-const fakeReq = (query: string) => ({ url: `/api/nova/live?${query}`, headers: { host: 'localhost' } });
+const fakeReq = (query: string, encodedMfaProof?: string) => ({
+  url: `/api/nova/live?${query}`,
+  headers: {
+    host: 'localhost',
+    ...(encodedMfaProof ? { 'sec-websocket-protocol': `nova-live-v1, nova-mfa.${encodedMfaProof}` } : {}),
+  },
+});
+
+const signedMfaProof = (uid: string, expiresAt: number, authTime: number = FIXED_AUTH_TIME): string => {
+  const payload = `${uid}.${authTime}.${expiresAt}`;
+  const signature = crypto.createHmac('sha256', Buffer.from(process.env.MFA_ENCRYPTION_KEY!, 'base64'))
+    .update(payload).digest('hex');
+  return Buffer.from(`${payload}.${signature}`).toString('base64url');
+};
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => `month-${todayKey().slice(0, 7)}`;
@@ -138,6 +163,77 @@ describe('handleNovaLiveConnection - auth and configuration gates', () => {
     expect(ws.sent).toEqual([{ error: 'Invalid or expired session. Please refresh and try again.' }]);
     expect(ws.closed).toBe(true);
     expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a revoked Firebase ID token rather than accepting it until expiry', async () => {
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=revoked-token'));
+    expect(ws.sent[0].error).toMatch(/Invalid or expired session/);
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects MFA-enabled accounts without verified session proof', async () => {
+    seedDoc('users/mfa_user/security/mfa_totp', { enabled: true });
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user'));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid MFA proof', async () => {
+    seedDoc('users/mfa_user/security/mfa_totp', { enabled: true });
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', Buffer.from('tampered').toString('base64url')));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired MFA proof', async () => {
+    seedDoc('users/mfa_user/security/mfa_totp', { enabled: true });
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', Date.now() - 60_000)));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('rejects MFA proof signed for another account', async () => {
+    seedDoc('users/mfa_user/security/mfa_totp', { enabled: true });
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('another_user', Date.now() + 120_000)));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  // INDEPENDENT REVIEW FOLLOW-UP (2026-11-04): proof reuse across sessions
+  // - a proof genuinely signed for THIS uid, correctly unexpired, is still
+  // rejected if it was signed for a DIFFERENT auth_time than the one the
+  // current connection's ID token actually carries. This is exactly the
+  // "borrow another session's verification" replay this fix closes - the
+  // uid-only check above already covered cross-ACCOUNT reuse, this covers
+  // cross-SESSION reuse on the same account.
+  it('rejects MFA proof signed for the same account under a different (unverified) session', async () => {
+    seedDoc('users/mfa_user/security/mfa_totp', { enabled: true });
+    const ws = new FakeClientSocket();
+    const otherSessionAuthTime = FIXED_AUTH_TIME + 3600;
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', Date.now() + 120_000, otherSessionAuthTime)));
+    expect(ws.sent[0]).toMatchObject({ code: 'MFA_SESSION_REQUIRED' });
+    expect(ws.closed).toBe(true);
+    expect(h.liveConnect).not.toHaveBeenCalled();
+  });
+
+  it('accepts correctly signed, unexpired MFA proof for the authenticated account', async () => {
+    seedDoc('users/mfa_user/security/mfa_totp', { enabled: true });
+    const ws = new FakeClientSocket();
+    await handleNovaLiveConnection(ws, fakeReq('token=mfa_user', signedMfaProof('mfa_user', Date.now() + 120_000)));
+    await flush();
+    expect(h.liveConnect).toHaveBeenCalledTimes(1);
+    expect(ws.sent).toContainEqual({ ready: true });
+    ws.emit('close');
   });
 
   it('rejects when Gemini is not configured on this server', async () => {
@@ -276,6 +372,102 @@ describe('handleNovaLiveConnection - successful session', () => {
     const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
     expect(functionResponses).toEqual([{ id: 'call_1', name: 'remember_about_user', response: { saved: true } }]);
     ws.emit('close');
+  });
+
+  // Phase 5K (directive §3) - offer_practical_assistance is dispatched
+  // through the exact same executeNovaTool as text chat, and its relay to
+  // the client (practicalAssistanceOffer) mirrors offer_guardian_support's
+  // own existing relay pattern - this proves voice gets the same
+  // coordinator capability text chat's planTrace already exposes.
+  //
+  // Phase 5L (directive §§1,2) added NOVA_AGENTIC_JOURNEY_ENABLED - these
+  // tests now exercise that flag explicitly rather than assuming the tool
+  // always offers, so voice can't become a bypass route around the gate.
+  describe('offer_practical_assistance - NOVA_AGENTIC_JOURNEY_ENABLED gate', () => {
+    const ORIGINAL_ENV = process.env.NOVA_AGENTIC_JOURNEY_ENABLED;
+    afterEach(() => {
+      if (ORIGINAL_ENV === undefined) delete process.env.NOVA_AGENTIC_JOURNEY_ENABLED;
+      else process.env.NOVA_AGENTIC_JOURNEY_ENABLED = ORIGINAL_ENV;
+    });
+
+    it('never relays practicalAssistanceOffer when the flag is off (the default), even with a valid reason', async () => {
+      delete process.env.NOVA_AGENTIC_JOURNEY_ENABLED;
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq('token=plate_user_off'));
+      await flush();
+
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: 'User said they are behind on three deadlines this week.' } }] },
+      });
+      await flush();
+
+      const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
+      expect(functionResponses).toEqual([{ id: 'call_1', name: 'offer_practical_assistance', response: { offered: false } }]);
+      expect(ws.sent.find((m) => m.practicalAssistanceOffer)).toBeUndefined();
+      ws.emit('close');
+    });
+
+    it('dispatches an offer_practical_assistance tool call and relays practicalAssistanceOffer to the client once the flag is on', async () => {
+      process.env.NOVA_AGENTIC_JOURNEY_ENABLED = 'true';
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq('token=plate_user'));
+      await flush();
+
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: 'User said they are behind on three deadlines this week.' } }] },
+      });
+      await flush();
+
+      expect(h.fakeLiveSession.sendToolResponse).toHaveBeenCalledTimes(1);
+      const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
+      expect(functionResponses).toEqual([{ id: 'call_1', name: 'offer_practical_assistance', response: { offered: true, reason: 'User said they are behind on three deadlines this week.' } }]);
+
+      const offerMessage = ws.sent.find((m) => m.practicalAssistanceOffer);
+      expect(offerMessage.practicalAssistanceOffer).toEqual({ reason: 'User said they are behind on three deadlines this week.' });
+      ws.emit('close');
+    });
+
+    it('never relays practicalAssistanceOffer when the tool refuses a missing reason, even with the flag on', async () => {
+      process.env.NOVA_AGENTIC_JOURNEY_ENABLED = 'true';
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq('token=plate_user_2'));
+      await flush();
+
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'offer_practical_assistance', args: { reason: '' } }] },
+      });
+      await flush();
+
+      expect(ws.sent.find((m) => m.practicalAssistanceOffer)).toBeUndefined();
+      ws.emit('close');
+    });
+  });
+
+  // Phase 5L (directive §8) - suggest_feature is how Nova offers Boundary
+  // Architect ('communicate'), Anxiety Reset, and Reset Studio (among
+  // others); this proves voice gets the same featureSuggestion relay text
+  // chat's planTrace already exposes for every one of those featureIds,
+  // not only the ones that happened to have their own dedicated test
+  // before this phase.
+  describe.each(['communicate', 'anxiety_reset', 'reset', 'recover', 'fuel'])('suggest_feature(%s) - voice relay', (featureId) => {
+    it(`relays featureSuggestion to the client for featureId=${featureId}`, async () => {
+      const ws = new FakeClientSocket();
+      await handleNovaLiveConnection(ws, fakeReq(`token=suggest_${featureId}`));
+      await flush();
+
+      h.lastCallbacks.onmessage({
+        toolCall: { functionCalls: [{ id: 'call_1', name: 'suggest_feature', args: { featureId, reason: 'User described a specific, concrete need this tool addresses.' } }] },
+      });
+      await flush();
+
+      const { functionResponses } = h.fakeLiveSession.sendToolResponse.mock.calls[0][0];
+      expect(functionResponses[0].response.suggested).toBe(true);
+      expect(functionResponses[0].response.featureId).toBe(featureId);
+
+      const suggestionMessage = ws.sent.find((m) => m.featureSuggestion);
+      expect(suggestionMessage.featureSuggestion.featureId).toBe(featureId);
+      ws.emit('close');
+    });
   });
 
   it('caps remember_about_user at 5 saves per call, independent of the Firestore-backed memory permission', async () => {

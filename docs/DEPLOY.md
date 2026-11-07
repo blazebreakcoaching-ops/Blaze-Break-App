@@ -11,44 +11,48 @@ voice. It runs on Google Cloud Run today (see the `*.run.app` origins in
 
 ---
 
-## 0. The easy way: automatic deploys via GitHub Actions
+## 0. Release control: reviewed, manually authorised deployments only
 
-Everything below this section describes deploying by hand, in a terminal.
-You shouldn't need to do that day to day. `.github/workflows/deploy.yml`
-does it automatically: every time `main` changes (or you click "Run
-workflow" on it in the GitHub Actions tab), it builds the app and ships
-it straight to the existing Cloud Run service, then updates the Firestore
-rules/indexes to match. No terminal, no `gcloud`, no Cloud Shell.
+**Current deployment status (4 November 2026): not approved.** A successful
+source test does not authorise publishing changes or moving customer traffic.
 
-It needs **one small one-time setup**, entirely by clicking through two
-websites (Google Cloud Console and GitHub) — no commands to type:
+- **The existing production `main` branch still has a `push: main`
+  deployment trigger.** Treat any main-branch merge as potentially deploying
+  Cloud Run and Firestore rules/indexes until the live repository has been
+  independently checked and the trigger removed in an approved release.
+- **The development release branch changes
+  `.github/workflows/deploy.yml` to `workflow_dispatch` only.**
+  This change is not on production main. Do not invoke GitHub Actions,
+  merge to main or deploy merely to test it.
+- A release needs a pinned full commit SHA, passing fresh web verification,
+  explicit staging project isolation, live auth/App Check/MFA/privacy checks,
+  a captured previous Cloud Run revision **and** Firestore rules rollback
+  procedure, followed by the owner's explicit approval.
+- After approval, an authorised operator can deploy with authenticated
+  Google Cloud/Firebase CLI access using least-privilege roles and verify
+  the selected project, named Firestore database and service before every
+  command. A rollback of Cloud Run traffic alone does not revert Firestore
+  security rules.
+- This candidate's manual workflow uses short-lived Workload Identity
+  Federation instead of `GCP_SA_KEY`. It defaults to `auth_only=true`:
+  authenticate and verify token issuance without deployment. Every deployment
+  step requires `auth_only=false`. There is no push trigger.
+- This combines PR #149's authentication change with the launch branch's
+  manual-only release control. PR #149 alone retains automatic deployment
+  for application changes; do not restore that trigger when reconciling.
+- Cloud identity remains unverified. Before an authorised authentication test,
+  independently confirm the provider restricts access to this repository and
+  `refs/heads/main`, and the deployment service account grants only the
+  intended repository principal `roles/iam.workloadIdentityUser`. The configured
+  provider is `projects/220686314556/locations/global/workloadIdentityPools/blaze-break-github/providers/blaze-break-github-actions`;
+  the account is `github-actions-deploy@gen-lang-client-0537893432.iam.gserviceaccount.com`.
+- Do not invoke GitHub Actions to validate this candidate. No cloud IAM, keys
+  or secrets were changed by the source update. Keep the legacy key until an
+  explicitly approved keyless deployment and rollback check succeed. Do not
+  create new long-lived keys or grant project-wide `Editor`.
 
-1. **Google Cloud Console → IAM & Admin → Service Accounts → "+ Create
-   Service Account".** Name it something like `github-actions-deploy`.
-   Click through the wizard.
-2. **On the "Grant this service account access" step**, add these two
-   roles (search each by name in the role picker):
-   - `Editor` — covers deploying to Cloud Run, building the image, and
-     updating Firestore rules/indexes.
-   - `Service Account User` — needed so the deploy is allowed to run
-     the service as its existing identity.
-
-   (`Editor` is broad on purpose, to keep this first setup simple. A
-   follow-up to narrow it to the exact handful of roles it actually
-   uses is a reasonable later improvement, not something that has to
-   happen before this works.)
-3. **Open the new service account → Keys tab → Add Key → Create new
-   key → JSON.** This downloads a `.json` file to your computer. Keep
-   it private — anyone with this file can deploy to your project.
-4. **In this GitHub repo → Settings → Secrets and variables → Actions
-   → New repository secret.** Name it `GCP_SA_KEY`, and paste the
-   *entire contents* of that downloaded `.json` file as the value.
-   Save.
-
-That's it. From then on, merging anything into `main` deploys it
-automatically, and the Actions tab shows you exactly what happened (and
-lets you re-run it, or trigger it manually any time, without waiting
-for a code change).
+See `docs/CTO_SATURDAY_LAUNCH_20261107.md` for the release checklist and
+`docs/CTO_FIREBASE_GCLOUD_DEPLOY_HANDOFF.md` for the separate cloud handoff.
 
 ---
 
@@ -421,9 +425,35 @@ gcloud run deploy blaze-break-staging \
   --project=blaze-break-staging \
   --region=europe-west2 \
   --source=. \
-  --set-env-vars=NODE_ENV=production \
+  --update-env-vars=NODE_ENV=production,FIREBASE_PROJECT_ID=blaze-break-staging \
   --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest,...  # every secret from step 7
 ```
+
+### Critical staging Firebase project isolation (CTO audit 2026-11-03)
+
+The web app embeds `firebase-applet-config.json` into the Vite build, and the
+legacy `server.ts` previously overwrote `GOOGLE_CLOUD_PROJECT` and
+`GCLOUD_PROJECT` with that JSON's production project ID. Merely deploying
+the same source to a different Cloud Run project did **not** provide genuine
+Firebase separation. This is a confirmed legacy mismatch, not a theoretical
+risk. The server now fails closed in production if its runtime project is
+missing or differs from the project's bundled client configuration.
+
+**Before a staging build:** generate the staging project-specific Firebase web
+configuration with the registered staging Firebase web app, including the
+staging project ID, API key, authDomain, app ID and named Firestore DB. Supply
+that config in an isolated staging build process. Do **not** commit it over
+the tracked production config or deploy the production-built bundle to
+staging. Set `FIREBASE_PROJECT_ID=blaze-break-staging` on the staging
+Cloud Run service (and the production project ID on production) and confirm
+the generated browser bundle matches the corresponding runtime. Keep
+`FIRESTORE_DATABASE_ID` consistent for Auth Blocking Functions. Run a
+negative test: a staging service must refuse to boot with the production
+client config. A valid production deploy also requires its runtime project
+ID to match its bundled config.
+
+This is a safety guard, not an automated staging configuration generator.
+A complete, authenticated staging build and verification remain release gates.
 
 ### Using it day to day
 
@@ -437,3 +467,9 @@ gcloud run deploy blaze-break-staging \
   infrastructure layer (separate project, separate database, separate
   secrets, separate Cloud Run service), which is what actually prevents
   a staging mistake from touching real user data.
+
+### CTO release safeguard (2026-11-03)
+
+The previous GitHub workflow deployed **Cloud Run and Firestore rules/indexes on every `main` push**, without a staging approval gate. The development branch now changes `.github/workflows/deploy.yml` to `workflow_dispatch` only, removing the automatic deployment trigger. This is an intentional release-model change: merging code does **not** constitute permission to deploy.
+
+The preferred release path is an owner-approved authenticated Firebase/GCloud deployment by the operator, after a green integration/staging gate and an explicit rollback plan. The manual GitHub workflow remains a fallback; do not run it unless separately approved. Confirm the trigger is disabled on `main` **before** a production merge; any existing automation or rules outside GitHub still requires review.

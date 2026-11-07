@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth, getAppCheckToken } from './firebase';
 import { secureApiFetch } from './secure-api';
+import { getMfaSessionToken } from './mfa-session';
 import { buildContinuityPreamble, VoiceSessionRecord } from '../../voice-continuity';
 
 // One shared home for the real-time voice-coach client logic, used by every
@@ -43,6 +44,14 @@ export interface VoiceFeatureSuggestion {
 }
 
 export interface VoiceGuardianSupportOffer {
+  reason: string;
+}
+
+// Phase 5K: the voice-side counterpart of offer_practical_assistance's
+// planTrace entry on the text side - same shape, relayed over the socket
+// instead (see server.ts's practicalAssistanceOffer relay in the Live
+// onmessage handler).
+export interface VoicePracticalAssistanceOffer {
   reason: string;
 }
 
@@ -98,6 +107,10 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
   // own saved contacts (see GuardianSupportInvitation.tsx).
   const [guardianSupportOffer, setGuardianSupportOffer] = useState<VoiceGuardianSupportOffer | null>(null);
   const guardianOfferShownRef = useRef(false);
+  // Phase 5K: same "shown once per call unless raised again" rule, for
+  // the practical-assistance offer.
+  const [practicalAssistanceOffer, setPracticalAssistanceOffer] = useState<VoicePracticalAssistanceOffer | null>(null);
+  const practicalAssistanceOfferShownRef = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -259,7 +272,16 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
       const proto = viaHostingRewrite || window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsUrl = `${proto}://${wsHost}/api/nova/live?token=${encodeURIComponent(idToken)}&appCheckToken=${encodeURIComponent(appCheckToken)}` +
         (sessionContext ? `&context=${encodeURIComponent(sessionContext)}` : '');
-      const ws = new WebSocket(wsUrl);
+      // Keep MFA proof out of the URL; browsers cannot supply custom
+      // WebSocket headers. The server negotiates only the non-sensitive
+      // first protocol, never the credential-bearing second protocol.
+      const protocols = ['nova-live-v1'];
+      const mfaProof = getMfaSessionToken(auth.currentUser.uid);
+      if (mfaProof) {
+        const encoded = window.btoa(mfaProof).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        protocols.push(`nova-mfa.${encoded}`);
+      }
+      const ws = new WebSocket(wsUrl, protocols);
       wsRef.current = ws;
 
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: CAPTURE_SAMPLE_RATE });
@@ -363,6 +385,10 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
             guardianOfferShownRef.current = true;
             setGuardianSupportOffer(msg.guardianSupportOffer);
           }
+          if (msg.practicalAssistanceOffer && !practicalAssistanceOfferShownRef.current) {
+            practicalAssistanceOfferShownRef.current = true;
+            setPracticalAssistanceOffer(msg.practicalAssistanceOffer);
+          }
           if (msg.turnComplete) { lastTranscriptRoleRef.current = null; turnCountRef.current += 1; }
           if (msg.error) {
             setError(msg.error);
@@ -414,6 +440,7 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
 
   const dismissFeatureSuggestion = useCallback(() => setFeatureSuggestion(null), []);
   const dismissGuardianSupportOffer = useCallback(() => setGuardianSupportOffer(null), []);
+  const dismissPracticalAssistanceOffer = useCallback(() => setPracticalAssistanceOffer(null), []);
 
   // Tear everything down if the host component unmounts mid-call.
   useEffect(() => () => {
@@ -423,5 +450,5 @@ export function useNovaLiveVoice(options: UseNovaLiveVoiceOptions = {}) {
     cleanupAudio();
   }, [cleanupAudio, recordSession]);
 
-  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, guardianSupportOffer, dismissGuardianSupportOffer, start, stop, toggleMute };
+  return { status, error, isNovaSpeaking, isMuted, transcript, elapsedMs, featureSuggestion, dismissFeatureSuggestion, guardianSupportOffer, dismissGuardianSupportOffer, practicalAssistanceOffer, dismissPracticalAssistanceOffer, start, stop, toggleMute };
 }

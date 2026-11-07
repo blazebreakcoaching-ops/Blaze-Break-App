@@ -20,8 +20,6 @@ import {
   Trophy,
   Award,
   Zap,
-  Moon,
-  Sun,
   Loader2,
   ChevronRight,
   ChevronLeft,
@@ -68,7 +66,10 @@ const MyBoundaries = lazy(() => import("./components/MyBoundaries.tsx").then(m =
 const ReflectSection = lazy(() => import("./components/ReflectSection.tsx").then(m => ({ default: m.ReflectSection })));
 const ActionEngine = lazy(() => import("./components/ActionEngine.tsx").then(m => ({ default: m.ActionEngine })));
 const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ default: m.NovaChat })));
+const NovaAgenticJourney = lazy(() => import("./components/NovaAgenticJourney.tsx").then(m => ({ default: m.NovaAgenticJourney })));
 const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => ({ default: m.Walkthrough })));
+const NovaGuide = lazy(() => import("./components/NovaGuide.tsx").then(m => ({ default: m.NovaGuide })));
+const NovaCoachMarks = lazy(() => import("./components/NovaCoachMarks.tsx").then(m => ({ default: m.NovaCoachMarks })));
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 const CommandPalette = lazy(() => import("./components/CommandPalette.tsx").then(m => ({ default: m.CommandPalette })));
@@ -77,6 +78,10 @@ const MySupportCircle = lazy(() => import("./components/MySupportCircle.tsx").th
 const OrgDashboard = lazy(() => import("./components/OrgDashboard.tsx").then(m => ({ default: m.OrgDashboard })));
 const PrivacyVault = lazy(() => import("./components/PrivacyVault.tsx").then(m => ({ default: m.PrivacyVault })));
 import { LandingPage } from "./components/LandingPage.tsx";
+import { BlazeBrandLogo } from "./components/BlazeBrandLogo";
+import { AppearanceMenu } from "./components/AppearanceMenu";
+import { useAppearanceTheme } from "./lib/useAppearanceTheme";
+import type { AppearanceMode } from "./lib/appearance-theme";
 import { MfaChallenge } from "./components/MfaChallenge.tsx";
 import { SituationalOnboarding } from "./components/SituationalOnboarding.tsx";
 const ConnectedDailyCheckIn = lazy(() => import("./components/ConnectedRecoveryModules.tsx").then(m => ({ default: m.ConnectedDailyCheckIn })));
@@ -114,11 +119,22 @@ const FutureSelfSimulator = lazy(() => import("./components/FutureSelfSimulator.
 const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").then(m => ({ default: m.AssuranceCentre })));
 import { AuthStatusTracker } from "./lib/sync.tsx";
 import { AccountStatusBanner } from "./components/AccountStatusBanner.tsx";
+import { AccountDataLoadGate } from "./components/AccountDataLoadGate";
 import { EmailVerificationBanner } from "./components/EmailVerificationBanner.tsx";
-import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted } from "./lib/nova-brain";
+import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted, setNovaLearningAllowedForUid, isNovaBrainReadyForAutoSync } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
+import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigation";
+import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
+import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
+import { shouldPausePassivePrompts } from "./lib/quiet-first-visit";
+import { statsForSafeWrite } from "./lib/user-stats-persistence";
+import { hasExplicitNovaLearningConsent } from './lib/nova-learning-consent';
+import { writeAccountProfile, clearAccountProfile } from "./lib/account-profile-storage";
+import { mayApplyAccountLoad, parsePulseHistory, pulseHistoryKey, pulseAlertKey, lastCheckInKey, type PulseHistoryEntry } from "./lib/pulse-account-storage";
+import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
+import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard.tsx").then(m => ({ default: m.AdminDashboard })));
 const NovaFeedbackModal = lazy(() => import("./components/NovaFeedbackModal.tsx").then(m => ({ default: m.NovaFeedbackModal })));
@@ -127,7 +143,8 @@ import { CommunicationGrid, CommunicationGridColumn } from "./components/layout/
 const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 const MicroInterventions = lazy(() => import("./components/MicroInterventions.tsx").then(m => ({ default: m.MicroInterventions })));
 const NovaOverloadShield = lazy(() => import("./components/NovaOverloadShield.tsx").then(m => ({ default: m.NovaOverloadShield })));
-import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser, setNovaMemoryConsent } from "./lib/nova-brain.ts";
+import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts";
+import { saveVerifiedProfileSettings } from "./lib/profile-settings-save";
 import { buildDashboardGreeting } from "../dashboard-greeting.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 const SubscriptionCentre = lazy(() => import("./components/SubscriptionCentre.tsx").then(m => ({ default: m.SubscriptionCentre })));
@@ -146,7 +163,7 @@ const WhatsNewModal = lazy(() => import("./components/WhatsNewModal.tsx").then(m
 import { secureApiFetch } from "./lib/secure-api";
 import { isRealGuardian } from "../guardian-alert";
 import { syncCalendarSignal } from "./lib/calendar-signals";
-import { subscribeToPushNotifications, reportPulseStatus } from "./lib/push-notifications";
+import { reportPulseStatus } from "./lib/push-notifications";
 import { logAuditAction } from "./lib/audit-logger";
 
 type AppFlow = "landing" | "onboarding" | "app" | "trust-centre" | "admin";
@@ -193,13 +210,13 @@ export const ALL_TABS: {
   {
     id: "home",
     icon: Home,
-    label: "Pulse",
+    label: "Today",
     roles: ["individual", "employee", "executive"],
   },
   {
     id: "plan",
     icon: Sparkles,
-    label: "Recovery Plan",
+    label: "My Plan",
     roles: ["individual", "employee", "executive"],
   },
   {
@@ -271,7 +288,7 @@ export const ALL_TABS: {
   {
     id: "nova",
     icon: Sparkles,
-    label: "Nova Coach",
+    label: "Nova",
     roles: ["individual", "employee", "executive"],
     featureId: "nova_text_coach",
   },
@@ -392,8 +409,8 @@ const isTabVisible = (t: (typeof ALL_TABS)[number], role: string | undefined, ti
 const Sidebar = ({
   activeTab,
   setActiveTab,
-  darkMode,
-  setDarkMode,
+  themeMode,
+  setThemeMode,
   authRole,
   currentTier,
   isCollapsed,
@@ -403,11 +420,13 @@ const Sidebar = ({
   hasManagedTeam,
   isHrViewer,
   isOrgAdmin,
+  showAllTools,
+  setShowAllTools,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
-  darkMode: boolean;
-  setDarkMode: (d: boolean) => void;
+  themeMode: AppearanceMode;
+  setThemeMode: (mode: AppearanceMode) => void;
   authRole: string;
   currentTier: SubscriptionTier;
   isCollapsed: boolean;
@@ -417,6 +436,8 @@ const Sidebar = ({
   hasManagedTeam: boolean;
   isHrViewer: boolean;
   isOrgAdmin: boolean;
+  showAllTools: boolean;
+  setShowAllTools: (show: boolean) => void;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -461,7 +482,10 @@ const Sidebar = ({
     return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
-  const tabs = ALL_TABS.filter((t) => isTabVisible(t, authRole, currentTier));
+  const tabs = ALL_TABS.filter((t) =>
+    isTabVisible(t, authRole, currentTier) &&
+    shouldShowCustomerNavTab(authRole, showAllTools, t.id, activeTab)
+  );
   // "My Team" is gated on a real, admin-assigned backend fact (teamManagers),
   // not the authRole self-selection every other tab above uses - so it's
   // appended here rather than folded into ALL_TABS' static role list.
@@ -487,7 +511,7 @@ const Sidebar = ({
       animate={isCollapsed ? "collapsed" : "expanded"}
       variants={sidebarVariants}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="fixed left-6 top-6 bottom-6 glass rounded-2xl flex flex-col gap-8 hidden md:flex z-40 shadow-2xl shadow-primary/5 transition-colors duration-500"
+      className="ember-nav fixed left-6 top-6 bottom-6 glass rounded-2xl flex flex-col gap-8 hidden md:flex z-40 shadow-2xl shadow-primary/5 transition-colors duration-500"
     >
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -510,10 +534,7 @@ const Sidebar = ({
         onClick={() => setActiveTab("home")}
         aria-label="Blaze Break, go to Home"
       >
-        <div className="w-10 h-10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all duration-500">
-          <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
-          <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
-        </div>
+        <BlazeBrandLogo className="w-12 h-12 shrink-0 group-hover:scale-105 transition-all duration-500" decorative />
         <AnimatePresence>
           {!isCollapsed && (
             <motion.div
@@ -526,8 +547,8 @@ const Sidebar = ({
               <h1 className="font-display font-black text-xl tracking-tighter text-text-main leading-none truncate">
                 Blaze Break
               </h1>
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mt-1 whitespace-normal leading-tight">
-                Recovery Companion
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary mt-1 whitespace-normal leading-tight">
+                Rethink · Reflect · Rejuvenate
               </span>
             </motion.div>
           )}
@@ -547,6 +568,7 @@ const Sidebar = ({
         </button>
       )}
 
+      {(!isCustomerRole(authRole) || showAllTools) && (
       <button
         onClick={onOpenLauncher}
         title="Quick find (Ctrl/Cmd + K)"
@@ -564,6 +586,7 @@ const Sidebar = ({
           </>
         )}
       </button>
+      )}
 
       <nav
         className={cn(
@@ -708,65 +731,24 @@ const Sidebar = ({
         })()}
       </nav>
 
-      <div className="pt-6 border-t border-border/50 flex flex-col gap-6 shrink-0 w-full">
-        <button
-          onClick={() => setDarkMode(!darkMode)}
-          className={cn(
-            "flex items-center rounded-2xl bg-surface/50 hover:bg-white dark:hover:bg-surface transition-all group",
-            isCollapsed ? "justify-center p-3" : "justify-between p-2",
-          )}
-          title={
-            isCollapsed
-              ? darkMode
-                ? "Switch to Solar"
-                : "Switch to Eclipse"
-              : undefined
-          }
-        >
-          <div
-            className={cn("flex items-center gap-3", !isCollapsed && "ml-2")}
+      <div className="pt-4 border-t border-border/50 shrink-0 w-full space-y-3">
+        {isCustomerRole(authRole) && (
+          <button
+            type="button"
+            onClick={() => setShowAllTools(!showAllTools)}
+            aria-expanded={showAllTools}
+            aria-label={showAllTools ? "Show the simpler navigation" : "Explore all available tools"}
+            className={cn(
+              "flex items-center w-full rounded-xl px-3 py-2.5 text-text-muted hover:text-text-main hover:bg-primary/10 transition-colors",
+              isCollapsed ? "justify-center" : "gap-2 text-sm"
+            )}
+            title={isCollapsed ? (showAllTools ? "Keep it simple" : "Explore all tools") : undefined}
           >
-            {darkMode ? (
-              <Moon className="w-5 h-5 text-primary shrink-0" />
-            ) : (
-              <Sun className="w-5 h-5 text-primary shrink-0" />
-            )}
-            <AnimatePresence>
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: "auto" }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="text-xs font-black uppercase tracking-[0.1em] text-text-muted group-hover:text-text-main transition-colors overflow-hidden whitespace-nowrap"
-                >
-                  {darkMode ? "Eclipse" : "Solar"}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
-          <AnimatePresence>
-            {!isCollapsed && (
-              <motion.div
-                initial={{ opacity: 0, width: 0, scale: 0.8 }}
-                animate={{ opacity: 1, width: "auto", scale: 1 }}
-                exit={{ opacity: 0, width: 0, scale: 0.8 }}
-                transition={{ duration: 0.2 }}
-                className={cn(
-                  "w-10 h-6 rounded-full p-1 transition-colors duration-500 shrink-0",
-                  darkMode ? "bg-primary" : "bg-border",
-                )}
-              >
-                <div
-                  className={cn(
-                    "w-4 h-4 bg-white rounded-full transition-transform duration-500 shadow-sm",
-                    darkMode ? "translate-x-4" : "translate-x-0",
-                  )}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </button>
+            <Compass className="w-4 h-4 shrink-0" />
+            {!isCollapsed && (showAllTools ? "Keep it simple" : "Explore all tools")}
+          </button>
+        )}
+        <AppearanceMenu mode={themeMode} onChange={setThemeMode} compact={isCollapsed} above />
       </div>
     </motion.aside>
   );
@@ -785,7 +767,7 @@ const Sidebar = ({
 // silently go blank here again the way "Dashboard Module" once could for
 // the h2 title below (see dashboard-titles.test.ts).
 const EYEBROW_LABELS: Record<string, string> = {
-  home: "Neuro-Stability Engine",
+  home: "Your Pulse",
   recovery_intelligence: "Recovery Intelligence",
   diagnose: "Loop Analysis",
   recover: "Energy Delta Management",
@@ -809,8 +791,8 @@ const EYEBROW_LABELS: Record<string, string> = {
 const Header = ({
   title,
   activeTab,
-  darkMode,
-  setDarkMode,
+  themeMode,
+  setThemeMode,
   onOpenSettings,
   onOpenTour,
   onSomaticReset,
@@ -821,8 +803,8 @@ const Header = ({
 }: {
   title: string;
   activeTab: string;
-  darkMode: boolean;
-  setDarkMode: (d: boolean) => void;
+  themeMode: AppearanceMode;
+  setThemeMode: (mode: AppearanceMode) => void;
   onOpenSettings: () => void;
   onOpenTour?: () => void;
   onSomaticReset?: () => void;
@@ -894,7 +876,7 @@ const Header = ({
   }, [handleGuardianPing]);
 
   return (
-    <header className="flex flex-col sm:flex-row sm:items-center items-start justify-between gap-6 mb-12 relative transition-colors duration-500">
+    <header className={cn("flex flex-col sm:flex-row sm:items-center items-start justify-between gap-5 sm:gap-6 mb-8 sm:mb-10 relative transition-colors duration-500", activeTab === "home" && "ember-pulse-intro px-5 py-6 sm:px-9 sm:py-9", activeTab === "reset" && "ember-reset-showcase px-5 py-6 sm:px-9 sm:py-9")}>
       <AnimatePresence>
         {toastMessage && (
           <motion.div
@@ -914,7 +896,7 @@ const Header = ({
           <div className={cn("h-3 w-3 rounded-full transition-colors duration-500 shadow-lg", 
             burnoutRisk?.toLowerCase() === 'stable' ? "bg-success shadow-success/50" : 
             burnoutRisk?.toLowerCase() === 'elevated' ? "bg-warning shadow-warning/50" : 
-            "bg-destructive shadow-destructive/50 pulse-indicator"
+            burnoutRisk ? "bg-destructive" : "bg-text-muted"
           )} />
           {/* Tooltip for at-a-glance health monitoring */}
           <div className="absolute left-0 top-6 scale-0 group-hover:scale-100 transition-all z-50 bg-card border border-border px-3 py-1.5 rounded-lg shadow-xl shrink-0 whitespace-nowrap">
@@ -937,14 +919,6 @@ const Header = ({
         )}
       </h2>
       <p className="text-text-muted text-base leading-relaxed  font-medium">
-        {activeTab === "home" &&
-          (burnoutRisk === "Elevated"
-            ? "Your recent check-ins point to elevated strain. A protected reset today would help."
-            : burnoutRisk === "Moderate"
-            ? "Things look manageable, but worth keeping an eye on your energy today."
-            : burnoutRisk === "Stable"
-            ? "Your baseline looks steady. Keep doing what's working."
-            : "Log a check-in to get a real read on your baseline today.")}
         {activeTab === "recovery_intelligence" &&
           "Nova's read on what's worth your attention right now - not a list of everything you could do."}
         {activeTab === "diagnose" &&
@@ -993,11 +967,11 @@ const Header = ({
           <button
             onClick={onOpenTour}
             className="h-12 flex items-center gap-2 px-4 bg-primary/10 hover:bg-primary/20 text-primary dark:text-primary border border-primary/20 rounded-full text-xs font-bold uppercase tracking-wider transition-all scale-[1] hover:scale-[1.03] active:scale-95 cursor-pointer shadow-sm"
-            title="Interactive System Walkthrough"
-            aria-label="Recovery Tour: Interactive System Walkthrough"
+            title="Guided tour — explain this page"
+            aria-label="Guided tour: explain this page"
           >
             <Compass className="w-3.5 h-3.5" aria-hidden="true" />
-            <span className="sr-only">Recovery Tour</span>
+            <span>Guide</span>
           </button>
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
             Not sure where to start? Get guided to the right recovery action.
@@ -1056,7 +1030,7 @@ const Header = ({
               title="Somatic Reset (60s)"
               aria-label="Somatic Reset, 60 seconds"
             >
-              <HeartPulse className="w-4 h-4 animate-pulse" aria-hidden="true" />
+              <HeartPulse className="w-4 h-4" aria-hidden="true" />
               <span className="sr-only">Somatic Reset</span>
             </button>
             <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
@@ -1066,14 +1040,9 @@ const Header = ({
           </div>
         </div>
       )}
-      <button
-        onClick={() => setDarkMode(!darkMode)}
-        className="p-2.5 rounded-full bg-surface dark:bg-card border border-border hover:border-primary/50 text-text-muted hover:text-primary transition-all md:hidden"
-        title="Toggle Theme"
-        aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
-      >
-        {darkMode ? <Sun className="w-5 h-5" aria-hidden="true" /> : <Moon className="w-5 h-5" aria-hidden="true" />}
-      </button>
+      <div className="md:hidden">
+        <AppearanceMenu mode={themeMode} onChange={setThemeMode} compact />
+      </div>
       <AuthStatusTracker />
       <button
         onClick={onOpenSettings}
@@ -1110,7 +1079,12 @@ const Header = ({
 };
 
 export default function App() {
-  const { user, appRole, loading: authLoading, accessToken, mfaPending } = useAuth();
+  const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
+  // Never show or save a previous Firebase account's data during a switch.
+  const [statsOwnerUid, setStatsOwnerUid] = useState<string | null>(null);
+  const [novaBrainReadyUid, setNovaBrainReadyUid] = useState<string | null>(null);
+  const [statsLoadError, setStatsLoadError] = useState(false);
+  const [statsLoadRetry, setStatsLoadRetry] = useState(0);
 
   // Bulletproof global super admin check, now delegating the owner-email
   // allowlist to admin-roles.ts's shared DEFAULT_OWNER_BOOTSTRAP_EMAILS
@@ -1123,11 +1097,6 @@ export default function App() {
   const isSuperAdminUser = isOwnerBootstrapEmail(user?.email) || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
 
-  // Computed once rather than inline in the animate prop - regenerating these
-  // on every render would make the sparkle burst's trajectories visibly jump
-  // mid-animation if anything causes a re-render while it's looping.
-  const sparkleOffsets = useMemo(() => [...Array(10)].map(() => 50 + Math.random() * 60), []);
-
   // Opportunistically build the real-signal data behind the Explainable
   // Recovery Score / archetype-evolution work. Calendar computes locally from
   // the user's own Google token and posts just the aggregate. Slack advances
@@ -1136,28 +1105,37 @@ export default function App() {
   // while the app is open lets a full 7-day scan complete over real usage
   // instead of needing a single, rate-limit-breaking bulk fetch.
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.isAnonymous) return;
+    const uid = user.uid;
+    let cancelled = false;
 
     if (accessToken) {
-      // DataPrivacyDashboard.tsx's "Calendar Sync" toggle previously
-      // referenced a feature-flag name that didn't exist in the schema, so
-      // it had no effect at all - this call ran regardless of what the
-      // toggle showed. Now genuinely gated on the same consent doc that
-      // toggle actually writes to.
-      isCalendarSignalConsentGranted(user.uid).then((allowed) => {
-        if (allowed) syncCalendarSignal(accessToken);
-      });
+      // A slow consent read must never sync a prior user's Google token
+      // after that user signed out or another account took over.
+      const token = accessToken;
+      isCalendarSignalConsentGranted(uid)
+        .then((allowed) => {
+          if (allowed && !cancelled && auth.currentUser?.uid === uid) {
+            return syncCalendarSignal(token);
+          }
+        })
+        .catch(() => {
+          // Missing consent, disconnected Calendar, or network failure: skip.
+        });
     }
 
     const tickSlack = () => {
+      // No background polling on hidden tabs, guest demos or old accounts.
+      if (cancelled || auth.currentUser?.uid !== uid ||
+          (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
       secureApiFetch('/api/signals/slack/tick', { method: 'POST' }).catch(() => {
-        // Not connected, rate-limited, or a transient error — all safe to skip silently.
+        // Not connected, rate-limited or offline; no customer interruption.
       });
     };
     tickSlack();
     const slackTickInterval = setInterval(tickSlack, 65 * 1000);
-    return () => clearInterval(slackTickInterval);
-  }, [user, accessToken]);
+    return () => { cancelled = true; clearInterval(slackTickInterval); };
+  }, [user?.uid, user?.isAnonymous, accessToken]);
 
   // Whether this person manages a team (org-rbac.ts's teamManagers, distinct
   // from the coarse authRole self-selection above) - drives whether the "My
@@ -1186,6 +1164,9 @@ export default function App() {
 
   const [flow, setFlow] = useState<AppFlow>("landing");
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
+  // Intentionally starts simple on each visit. The user may reveal all
+  // available tools explicitly without affecting their data or entitlements.
+  const [showAllTools, setShowAllTools] = useState(false);
   // The Nova check-in nudge (NovaCheckinNudge.tsx) explicitly promises
   // voice - "A couple of minutes by voice, whenever you're ready" - but
   // switching to the nova tab alone only opens the text chat; the live
@@ -1231,26 +1212,8 @@ export default function App() {
     awardPoints(15, "Recovery data saved locally (+15 pts)");
   };
 
-  // Dark Mode State
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("blaze_dark_mode");
-      return (
-        saved === "true" ||
-        (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)
-      );
-    }
-    return false;
-  });
-
-  useEffect(() => {
-    localStorage.setItem("blaze_dark_mode", String(darkMode));
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [darkMode]);
+  // One persisted choice; System follows device changes in real time.
+  const { mode: themeMode, setMode: setThemeMode, darkMode } = useAppearanceTheme();
 
   useEffect(() => {
     const handleNav = (e: Event) => {
@@ -1263,9 +1226,89 @@ export default function App() {
     return () => window.removeEventListener('navigate_tab', handleNav);
   }, [safeSetActiveTab]);
 
+  // NHEI Phase 5 (directive §5, "verify Energy Delta navigation"): a
+  // second, purely additive event alongside 'navigate_tab' above - that
+  // event only ever carries a bare tab id, and several tabs (the
+  // "recover" tab among them) stack multiple real tools in one scroll,
+  // so landing on the tab alone doesn't put the user on any specific
+  // one. This listener scrolls to a specific element id once its tab
+  // has actually rendered - bounded retries (not a fixed timeout) since
+  // the tab switch above is itself async (a state update + re-render).
+  // See nhei-recovery-navigation.ts for the pure id-lookup half of this
+  // fix; nothing here invents a new route - it only brings an existing,
+  // already-rendered element into view.
+  useEffect(() => {
+    const handleFocus = (e: Event) => {
+      const anchorId = (e as CustomEvent).detail;
+      if (!anchorId || typeof anchorId !== 'string') return;
+      let attempts = 0;
+      const tryScroll = () => {
+        const el = document.getElementById(anchorId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        attempts += 1;
+        if (attempts < 30) requestAnimationFrame(tryScroll); // ~0.5s ceiling at 60fps
+      };
+      requestAnimationFrame(tryScroll);
+    };
+    window.addEventListener('nhei_recovery_tool_focus', handleFocus);
+    return () => window.removeEventListener('nhei_recovery_tool_focus', handleFocus);
+  }, []);
+
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const [showNovaGuide, setShowNovaGuide] = useState(false);
+  const [novaGuideStartPage, setNovaGuideStartPage] = useState("welcome");
+  const [showNovaGuideInvite, setShowNovaGuideInvite] = useState(false);
+
+  // Only a small, dismissible invitation appears on Today, never an
+  // automatic modal. Remember dismissal per account, not across users on
+  // a shared browser. No health data or coaching messages are stored.
+  useEffect(() => {
+    setShowNovaGuide(false);
+    if (!user?.uid || !isCustomerRole(effectiveRole)) {
+      setShowNovaGuideInvite(false);
+      return;
+    }
+    try {
+      setShowNovaGuideInvite(localStorage.getItem(novaGuideInviteKey(user.uid)) !== 'dismissed');
+    } catch {
+      setShowNovaGuideInvite(true);
+    }
+  }, [user?.uid, effectiveRole]);
+
+  const dismissNovaGuideInvite = () => {
+    if (user?.uid) {
+      try { localStorage.setItem(novaGuideInviteKey(user.uid), 'dismissed'); } catch {
+        // Guide use and dismissal must work if browser storage is blocked.
+      }
+    }
+    setShowNovaGuideInvite(false);
+  };
+
+  const launchNovaGuide = (page: string) => {
+    setNovaGuideStartPage(page);
+    setShowNovaGuide(true);
+    dismissNovaGuideInvite();
+  };
+
+  const [coachMarkPage, setCoachMarkPage] = useState<NovaGuideTab | null>(null);
+  const launchNovaCoachMarks = (page: NovaGuideTab) => {
+    setShowNovaGuide(false);
+    safeSetActiveTab(page);
+    setCoachMarkPage(page);
+    dismissNovaGuideInvite();
+  };
+  // Coach marks are contextual and must never follow a different account
+  // or stay above a page after the customer navigates elsewhere.
+  useEffect(() => { setCoachMarkPage(null); }, [user?.uid]);
+  useEffect(() => {
+    if (coachMarkPage && activeTab !== coachMarkPage) setCoachMarkPage(null);
+  }, [activeTab, coachMarkPage]);
+
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   // One-shot flag consumed by LandingPage's own initialAuthModalOpen
   // effect - set true right before routing a demo session back to
@@ -1302,6 +1345,8 @@ export default function App() {
   // each chunk's fetch until actually needed without touching animations.
   const [walkthroughReadyToMount, setWalkthroughReadyToMount] = useState(false);
   useEffect(() => { if (showWalkthrough) setWalkthroughReadyToMount(true); }, [showWalkthrough]);
+  const [novaGuideReadyToMount, setNovaGuideReadyToMount] = useState(false);
+  useEffect(() => { if (showNovaGuide) setNovaGuideReadyToMount(true); }, [showNovaGuide]);
   const [launcherReadyToMount, setLauncherReadyToMount] = useState(false);
   useEffect(() => { if (showLauncher) setLauncherReadyToMount(true); }, [showLauncher]);
 
@@ -1331,6 +1376,44 @@ export default function App() {
   }, [postOnboardingProfile]);
   const [isMobileNavCollapsed, setIsMobileNavCollapsed] = useState(false);
   const [showMobileToolsSheet, setShowMobileToolsSheet] = useState(false);
+  const mobileNavRef = useRef<HTMLDivElement>(null);
+  const novaShellRef = useRef<HTMLDivElement>(null);
+
+  // Measured, not guessed: how tall the chat panel can actually be is the
+  // real viewport height minus however far down this shell's own top
+  // already sits (the page's own top padding, which varies by breakpoint)
+  // minus the real rendered nav height - not a static rem reserve for
+  // "everything above," which can't track variable content like a
+  // wrapped header or the demo-account banner. Exposed as a callback (not
+  // just an effect-local closure) so it can also be re-run deterministically
+  // when the Nova tab's own entrance transition finishes, below.
+  const recomputeNovaShellMetrics = useCallback(() => {
+    const navEl = mobileNavRef.current;
+    if (!navEl) return;
+    const navHeight = navEl.getBoundingClientRect().height;
+    document.documentElement.style.setProperty("--mobile-bottom-nav-height", `${navHeight}px`);
+    const shellEl = novaShellRef.current;
+    if (!shellEl) return;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const shellTop = shellEl.getBoundingClientRect().top;
+    const available = Math.max(0, viewportHeight - shellTop - navHeight);
+    document.documentElement.style.setProperty("--ember-nova-shell-height", `${available}px`);
+  }, []);
+
+  useEffect(() => {
+    const navEl = mobileNavRef.current;
+    if (!navEl) return;
+    recomputeNovaShellMetrics();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(recomputeNovaShellMetrics) : undefined;
+    observer?.observe(navEl);
+    window.addEventListener("resize", recomputeNovaShellMetrics);
+    window.visualViewport?.addEventListener("resize", recomputeNovaShellMetrics);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", recomputeNovaShellMetrics);
+      window.visualViewport?.removeEventListener("resize", recomputeNovaShellMetrics);
+    };
+  }, [activeTab, recomputeNovaShellMetrics]);
 
   useEffect(() => {
     if (!showMobileToolsSheet) return;
@@ -1360,23 +1443,42 @@ export default function App() {
   // handleUpdatePulseHistory below). A brand-new user with no saved history
   // yet starts at a genuinely empty array rather than a synthetic 30-day
   // sine-wave chart that would have looked exactly like a real trend.
-  const [pulseHistory, setPulseHistory] = useState(() => {
-    try {
-      const saved = localStorage.getItem("blaze_break_pulse_history");
-      if (saved) return JSON.parse(saved);
-    } catch(e) {
-      // Non-fatal - falls through to the honest empty default below.
+  const [pulseHistory, setPulseHistory] = useState<PulseHistoryEntry[]>([]);
+  const [pulseOwnerUid, setPulseOwnerUid] = useState<string | null>(null);
+
+  // Do not load the old browser-global history: it has no provable owner
+  // and could expose a different person's wellbeing data on shared devices.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) {
+      setPulseOwnerUid(null);
+      setPulseHistory([]);
+      return;
     }
-    return [];
-  });
+    let history: PulseHistoryEntry[] = [];
+    try {
+      history = parsePulseHistory(localStorage.getItem(pulseHistoryKey(uid)));
+    } catch {
+      // Disabled local storage must not prevent using Today.
+    }
+    setPulseHistory(history);
+    setPulseOwnerUid(uid);
+  }, [user?.uid]);
 
   useEffect(() => {
-    const lastCheckIn = localStorage.getItem("blaze_break_last_checkin");
-    const today = new Date().toDateString();
-    if (lastCheckIn !== today) {
-      setShowCheckIn(true);
+    if (!user?.uid || pulseOwnerUid !== user.uid) return;
+    try {
+      localStorage.setItem(pulseHistoryKey(user.uid), JSON.stringify(pulseHistory));
+    } catch {
+      // History stays available in memory for this session.
     }
-  }, []);
+  }, [pulseHistory, pulseOwnerUid, user?.uid]);
+
+  // A daily check-in is always voluntary. Opening it automatically on
+  // mount covered the brand-new account's welcome screen with a second
+  // modal, and this old localStorage check wasn't even account-scoped.
+  // Today now offers an explicit entry; the existing nudge may also open
+  // it when a user chooses that action.
 
   // Gamification State
   const [showSomaticReset, setShowSomaticReset] = useState(false);
@@ -1454,21 +1556,14 @@ export default function App() {
   // set to demo content - only what gets passed to <HomeSection> below is
   // swapped for sample data when this is true.
   const isDemoSession = isDemoUser(user?.isAnonymous, stats.profile?.fullName);
+  // Phase 5L (directive §§1,2) - fail-closed release gate for the Phase 5K
+  // NovaAgenticJourney production mount; see the hook's own comment and
+  // NOVA_AGENTIC_JOURNEY_ENABLED in server.ts.
+  const novaAgenticJourneyEnabled = useNovaAgenticJourneyEnabled();
 
-  // Pulse Alert System
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission().then((permission) => {
-        if (permission === "granted") {
-          // Real push subscription — this is what lets a notification reach
-          // this person even after they've stopped opening the app, unlike
-          // the foreground-only notification below which only fires while
-          // this tab is already open and looking at it.
-          subscribeToPushNotifications();
-        }
-      });
-    }
-  }, []);
+  // Browser notification permission must come from an explicit customer
+  // choice in Settings, never a surprise prompt on first page load.
+  // Leave previously granted foreground notifications unchanged.
 
   useEffect(() => {
     // The server-side scheduled check (low score sustained, or check-in gone
@@ -1482,38 +1577,36 @@ export default function App() {
     // JSON.stringify silently drops an undefined property, so the server
     // received an empty body and correctly 400'd on every sign-in - a real
     // request that never had anything useful to report in the first place.
-    if (user && typeof stats.recoveryScore === "number") {
+    if (user && statsOwnerUid === user.uid && typeof stats.recoveryScore === "number") {
       reportPulseStatus(stats.recoveryScore);
     }
-  }, [stats.recoveryScore, user]);
+  }, [stats.recoveryScore, statsOwnerUid, user?.uid]);
 
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      const history = JSON.parse(localStorage.getItem("blaze_break_pulse_history") || "[]");
-      const isConsecutiveLow = history.length >= 2 && 
-                               history[history.length - 1].score < 30 && 
-                               history[history.length - 2].score < 30;
-                               
-      if (stats.recoveryScore < 30 || isConsecutiveLow) {
-        const lastAlert = localStorage.getItem("lastPulseAlert");
-        const today = new Date().toISOString().split("T")[0];
-        
-        if (lastAlert !== today) {
-          const notification = new Notification("Nova: Critical Pulse Alert", {
-            body: "Your Recovery Score has dropped below 30 for two consecutive days. A 60-second Somatic Reset is highly recommended."
-          });
-          
-          notification.onclick = () => {
-             setShowSomaticReset(true);
-             window.focus();
-             notification.close();
-          };
-          
-          localStorage.setItem("lastPulseAlert", today);
-        }
-      }
+    if (!user?.uid || isDemoSession || pulseOwnerUid !== user.uid ||
+        statsOwnerUid !== user.uid || typeof stats.recoveryScore !== 'number' ||
+        !('Notification' in window) || Notification.permission !== 'granted') return;
+    const isConsecutiveLow = pulseHistory.length >= 2 &&
+      pulseHistory[pulseHistory.length - 1].score < 30 &&
+      pulseHistory[pulseHistory.length - 2].score < 30;
+    if (stats.recoveryScore >= 30 && !isConsecutiveLow) return;
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const key = pulseAlertKey(user.uid);
+      if (localStorage.getItem(key) === today) return;
+      const notification = new Notification('Nova: Recovery check-in', {
+        body: 'Your recent recovery score suggests checking in. A short reset is available whenever you want.'
+      });
+      notification.onclick = () => {
+        setShowSomaticReset(true);
+        window.focus();
+        notification.close();
+      };
+      localStorage.setItem(key, today);
+    } catch {
+      // Notifications and local storage can be unsupported on mobile.
     }
-  }, [stats.recoveryScore]);
+  }, [stats.recoveryScore, statsOwnerUid, pulseHistory, pulseOwnerUid, user?.uid, isDemoSession]);
 
   // Track previous flow / auth changes to detect transitions
   const prevUserRef = useRef<any>(null);
@@ -1583,18 +1676,26 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading) return;
+    let cancelled = false;
+    const requestUid = user?.uid ?? null;
+    statsLoadedRef.current = false;
+    fingerprintLoadedRef.current = false;
+    setStatsLoaded(false);
+    setStatsOwnerUid(null);
+    setNovaBrainReadyUid(null);
+    setStatsLoadError(false);
+    setPostOnboardingProfile(null);
 
     const email = user?.email || null;
     (window as any).__ACTIVE_USER_EMAIL__ = email;
 
     const loadStats = async () => {
-      const savedFingerprint = localStorage.getItem("blaze_fingerprint");
-
-      if (user) {
-        initNovaBrain(user.uid); // Fire-and-forget - populates the cache; callers just see an empty brain until it resolves.
-      } else {
-        clearNovaBrainCache();
-      }
+      // Never fetch/use personal Nova memories with a stale learning choice
+      // before confirming the active account's saved profile and consent.
+      clearNovaBrainCache();
+      if (user) setNovaLearningAllowedForUid(user.uid, false);
+      // The old browser-global fingerprint key has no provable owner.
+      // Importing it into a signed-in account risks leaking personal data.
 
       // A single, honest default for everyone - previously anonymous users
       // (the vast majority, since anonymous auth signs everyone in
@@ -1652,23 +1753,60 @@ export default function App() {
 
       let loadedStats = defaults;
       let loadedFingerprint: BurnoutFingerprint | null = null;
+      let persistedProfileVerified = false;
+      let profileReadSucceeded = false;
       if (user) {
         try {
           const db = await getDb();
           const { doc, getDoc } = await import("firebase/firestore");
           const snap = await getDoc(doc(db, "users", user.uid, "user_stats", "core"));
+          profileReadSucceeded = true;
           if (snap.exists()) {
             const data = snap.data();
+            persistedProfileVerified = !!data.profile?.fullName;
             loadedStats = { ...defaults, ...data } as UserStats;
             if (data.fingerprint) {
               loadedFingerprint = data.fingerprint as BurnoutFingerprint;
             }
           }
-        } catch (e) {
-          // Leaves the honest defaults in place rather than pretending progress loaded.
+        } catch {
+          // An unknown Firestore result is NOT a new/empty account. Never
+          // overwrite previously saved data with fallback defaults.
+          if (mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) {
+            setStatsLoadError(true);
+          }
+          return;
+        }
+      }
+      if (!mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) return;
+      if (user) {
+        if (persistedProfileVerified) {
+          writeAccountProfile(user.uid, loadedStats.profile);
+        } else if (profileReadSucceeded) {
+          // Only remove a local profile after Firestore actually confirmed
+          // that there is no saved profile. A network outage is not deletion.
+          clearAccountProfile(user.uid);
+        }
+        // A missing/failed Firestore profile read cannot opt Nova into
+        // learning. Only a verified account profile may restore consent.
+        const verifiedConsent = persistedProfileVerified && hasExplicitNovaLearningConsent(loadedStats.profile?.letNovaLearn);
+        setNovaLearningAllowedForUid(user.uid, verifiedConsent);
+        // Load the current account's saved memory only after a successful
+        // Firestore identity/profile read. Memory edits stay consent-gated.
+        if (persistedProfileVerified) {
+          initNovaBrain(user.uid).then(() => {
+            if (mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled) &&
+                isNovaBrainReadyForAutoSync(user.uid)) {
+              setNovaBrainReadyUid(user.uid);
+            }
+          }).catch(() => {
+            // Background memory failure must not block the dashboard.
+          });
         }
       }
       setStats(loadedStats);
+      setStatsLoadError(false);
+      setStatsOwnerUid(requestUid);
       statsLoadedRef.current = true;
       setStatsLoaded(true);
 
@@ -1679,7 +1817,9 @@ export default function App() {
       // before this existed) and reconciles local state with it.
       if (user) {
         migrateSupportCircleIfNeeded(user.uid, loadedStats.supportCircle).then((supportCircle) => {
-          setStats((prev) => ({ ...prev, supportCircle }));
+          if (mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) {
+            setStats((prev) => ({ ...prev, supportCircle }));
+          }
         }).catch(() => {
           // Non-fatal - the legacy array already in loadedStats.supportCircle
           // stays in local state either way, so contacts still render.
@@ -1692,29 +1832,32 @@ export default function App() {
       // already-onboarded users (a fresh onboarding flow creates its own
       // via initNovaPermissionsForNewUser).
       if (user && loadedStats.profile?.fullName) {
-        ensureNovaPermissionsExist(user.uid, loadedStats.profile?.letNovaLearn !== false);
+        ensureNovaPermissionsExist(user.uid, hasExplicitNovaLearningConsent(loadedStats.profile?.letNovaLearn));
       }
 
-      // Firestore is the real source of truth now. localStorage is only
-      // consulted as a one-time migration path for anyone who took the
-      // assessment before this was persisted server-side - their result
-      // gets picked up here and will save to Firestore on the next
-      // natural save cycle below, rather than being silently lost.
-      if (loadedFingerprint) {
-        setFingerprint(loadedFingerprint);
-      } else if (savedFingerprint) {
-        try {
-          setFingerprint(JSON.parse(savedFingerprint));
-        } catch (e) {
-          setFingerprint(null);
-        }
-      } else {
-        setFingerprint(null);
-      }
+      // Only restore the current account's Firestore-backed assessment.
+      // Ambiguous legacy unscoped browser data is intentionally not imported.
+      setFingerprint(loadedFingerprint);
       fingerprintLoadedRef.current = true;
 
       if (user) {
-        if (flowRef.current === "landing") {
+        // Phase 5N (directive §3) - a real-app sign-in test caught this:
+        // LandingPage's sign-in success handler (handleEmailAuthSubmit's
+        // `else` branch, and the equivalent social-sign-in branches) calls
+        // the shared finishOnboarding()/onStart(), which synchronously
+        // sets flow to "onboarding" for EVERY sign-in, not just a genuine
+        // new signup - it has no way to know yet whether this account
+        // already has a saved profile, since that only loads here,
+        // asynchronously, after Firestore responds. Before this fix, a
+        // returning real account with a complete profile was sent through
+        // onboarding again on every single sign-in, with no way back to
+        // its own dashboard short of a page reload. Checking "onboarding"
+        // here too - not just "landing" - lets this already-correct,
+        // data-driven decision also override that premature navigation
+        // once the real answer is known, while an account that genuinely
+        // has no saved profile yet (new signup, or resuming an
+        // interrupted one) simply stays on "onboarding" as before.
+        if (flowRef.current === "landing" || flowRef.current === "onboarding") {
           if (loadedStats?.profile?.fullName) {
             // A returning, already-onboarded account (real or an
             // anonymous session that's already been through onboarding
@@ -1723,15 +1866,16 @@ export default function App() {
           }
           // Otherwise (no saved profile - a fresh anonymous visitor, or a
           // real account that started but never finished onboarding):
-          // deliberately stay on "landing". The invisible anonymous
-          // sign-in that just completed in the background is a technical
-          // bootstrap, not something that should ever navigate someone
-          // away from the marketing page on its own - a visitor reading
-          // the Terms/Privacy links in the footer, or just looking
-          // around, must never be swept into onboarding (or the sample
-          // dashboard) without clicking something. "Get Started" and
-          // "See a live demo" on LandingPage are the only two paths out
-          // of "landing" from here - see onStart/onViewDemo below.
+          // deliberately stay on "landing"/"onboarding" as it already is.
+          // The invisible anonymous sign-in that just completed in the
+          // background is a technical bootstrap, not something that
+          // should ever navigate someone away from the marketing page on
+          // its own - a visitor reading the Terms/Privacy links in the
+          // footer, or just looking around, must never be swept into
+          // onboarding (or the sample dashboard) without clicking
+          // something. "Get Started" and "See a live demo" on LandingPage
+          // are the only two paths out of "landing" from here - see
+          // onStart/onViewDemo below.
         }
       } else {
         // Return back to landing only if they signed out intentionally
@@ -1744,7 +1888,8 @@ export default function App() {
     };
 
     loadStats();
-  }, [user, authLoading]);
+    return () => { cancelled = true; };
+  }, [user, authLoading, statsLoadRetry]);
 
   const checkBadges = (currentStats: UserStats): string[] => {
     const newBadges = [...currentStats.unlockedBadges];
@@ -1818,7 +1963,7 @@ export default function App() {
   }, [stats.unlockedBadges, authLoading, user]);
 
   useEffect(() => {
-    if (authLoading || !user || !statsLoadedRef.current) return;
+    if (authLoading || !user || !statsLoadedRef.current || statsOwnerUid !== user.uid) return;
     const t = setTimeout(async () => {
       try {
         const db = await getDb();
@@ -1829,7 +1974,8 @@ export default function App() {
         // not this generic merge write, which is why it was unvalidated
         // (firestore.rules could only check "is a list", never a single
         // contact's shape) in the first place.
-        const { supportCircle: _supportCircle, ...statsToPersist } = stats;
+        const statsToPersist = statsForSafeWrite(stats);
+        if (auth.currentUser?.uid !== user.uid) return;
         await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
           ...statsToPersist,
           updatedAt: new Date().toISOString(),
@@ -1839,10 +1985,10 @@ export default function App() {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [stats, authLoading, user]);
+  }, [stats, authLoading, user, statsOwnerUid]);
 
   useEffect(() => {
-    if (authLoading || !user || !fingerprintLoadedRef.current) return;
+    if (authLoading || !user || !fingerprintLoadedRef.current || statsOwnerUid !== user.uid) return;
     const t = setTimeout(async () => {
       try {
         const db = await getDb();
@@ -1856,7 +2002,7 @@ export default function App() {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [fingerprint, authLoading, user]);
+  }, [fingerprint, authLoading, user, statsOwnerUid]);
 
   const handleCheckInComplete = (data: {
     energyLevel: number;
@@ -1891,11 +2037,16 @@ export default function App() {
         newHistory.push({ date: todayStr, score });
         if (newHistory.length > 30) newHistory.shift();
       }
-      localStorage.setItem("blaze_break_pulse_history", JSON.stringify(newHistory));
       return newHistory;
     });
 
-    localStorage.setItem("blaze_break_last_checkin", new Date().toDateString());
+    if (user?.uid) {
+      try {
+        localStorage.setItem(lastCheckInKey(user.uid), new Date().toDateString());
+      } catch {
+        // A blocked browser store must not undo the completed check-in.
+      }
+    }
 
     // Auto-unlock first_step if completing first check-in
     unlockBadge("first_step");
@@ -1984,7 +2135,6 @@ export default function App() {
           copy.shift();
         }
       }
-      localStorage.setItem("blaze_break_pulse_history", JSON.stringify(copy));
       return copy;
     });
   };
@@ -2120,6 +2270,12 @@ export default function App() {
   }, [activeTab]);
 
   useEffect(() => {
+    // This effect writes multiple personal Nova memories. During an
+    // account switch or failed Firestore load, stats can still contain
+    // the prior account's React values. Never sync them across UIDs.
+    if (authLoading || !user?.uid || statsOwnerUid !== user.uid ||
+        novaBrainReadyUid !== user.uid || !statsLoadedRef.current) return;
+
     // Sync Profile
     if (stats.profile) {
       updateNovaMemoryBySourceAndType("User Setup", "profile", {
@@ -2184,32 +2340,17 @@ export default function App() {
       });
     }
 
-    // Sync Preferences
-    try {
-      const savedPrefs = localStorage.getItem("blaze_notification_preferences");
-      if (savedPrefs) {
-        const prefs = JSON.parse(savedPrefs);
-        updateNovaMemoryBySourceAndType("Settings", "preference", {
-          content: `Notification preferences: Emails ${prefs.email ? "Enabled" : "Disabled"}, Internal Warnings ${prefs.internalWarnings ? "Enabled" : "Disabled"}. Focus schedule: ${prefs.focusSchedule.start} to ${prefs.focusSchedule.end}.`,
-          confidence: "verified",
-          canEdit: true,
-        });
-      }
-    } catch (e) {
-      // Non-fatal - one memory-sync block among several here; a failure
-      // doesn't need to block the Guardian Protocol sync right below it.
-    }
+    // Never import the old browser-global notification preferences into
+    // personal Nova memory. They have no reliable account ownership.
+    // Current per-user notification preferences live in Firestore.
 
     // Sync Guardian Protocol
-    const flags = localStorage.getItem("blaze_feature_flags");
     let guardianEnabled = false;
-    if (flags) {
-      try {
-        guardianEnabled = JSON.parse(flags).enable_guardian_protocol;
-      } catch (e) {
-        // Non-fatal - guardianEnabled just stays false if this is
-        // missing or corrupted.
-      }
+    try {
+      const flags = localStorage.getItem("blaze_feature_flags");
+      guardianEnabled = flags ? JSON.parse(flags).enable_guardian_protocol === true : false;
+    } catch {
+      // Browser storage is optional; never break the dashboard or memory.
     }
     const trustedContactsCount =
       stats.supportCircle?.filter((c: any) => c.isGuardian).length || 0;
@@ -2219,7 +2360,7 @@ export default function App() {
       confidence: "verified",
       canEdit: false,
     });
-  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle]);
+  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle, user?.uid, statsOwnerUid, novaBrainReadyUid, authLoading]);
 
   // Blocks app access (not Firebase auth itself, which already fully
   // succeeded by this point) whenever the signed-in account has 2FA
@@ -2236,10 +2377,10 @@ export default function App() {
       <>
         <LandingPage
           onStart={() => setFlow("onboarding")}
-          onViewDemo={() => setFlow("app")}
+          onViewDemo={async () => { await continueAsGuest(); setFlow("app"); }}
           onOpenTrustCentre={() => setFlow("trust-centre")}
-          darkMode={darkMode}
-          setDarkMode={setDarkMode}
+          themeMode={themeMode}
+          setThemeMode={setThemeMode}
           initialAuthModalOpen={landingInitialAuthOpen}
           onInitialAuthModalOpened={() => setLandingInitialAuthOpen(false)}
         />
@@ -2277,46 +2418,47 @@ export default function App() {
     );
   }
 
+  // Registration, returning sign-in and app content must wait until
+  // Firestore confirms the current account's actual saved state. Otherwise
+  // failed reads could restart onboarding or overwrite real customer data.
+  if (user?.uid && (
+      statsLoadError && (flow === "app" || flow === "onboarding" || (!user.isAnonymous && flow === "landing")) ||
+      statsOwnerUid !== user.uid && (flow === "app" || flow === "onboarding")
+    )) {
+    return <AccountDataLoadGate error={statsLoadError} onRetry={() => setStatsLoadRetry(n => n + 1)} />;
+  }
+
   if (flow === "onboarding") {
     return (
       <>
         <SituationalOnboarding
           onComplete={async (profile) => {
-            setStats((prev) => ({ ...prev, profile }));
-            localStorage.setItem("blaze_profile", JSON.stringify(profile));
+            // Confirm the account and save FIRST. Never show completion or
+            // turn on personal memory if Firestore cannot persist the profile.
+            const uid = user?.uid;
+            if (!uid || auth.currentUser?.uid !== uid) throw new Error('Authentication is not ready');
+            // Save the profile, changelog marker and consent as ONE atomic
+            // Firestore batch. A partial setup is never presented as done.
+            await saveVerifiedProfileSettings(uid, profile, {
+              lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION,
+            });
+            if (auth.currentUser?.uid !== uid) throw new Error('Account changed while saving');
+
+            // Only a confirmed save may enter the customer dashboard.
+            setStats((prev) => ({ ...prev, profile, lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION }));
+            writeAccountProfile(uid, profile);
+            setNovaLearningAllowedForUid(uid, hasExplicitNovaLearningConsent(profile.letNovaLearn));
+            initNovaBrain(uid).then(() => {
+              if (auth.currentUser?.uid === uid && isNovaBrainReadyForAutoSync(uid)) {
+                setNovaBrainReadyUid(uid);
+              }
+            }).catch(() => {});
             setFlow("app");
             setActiveTab("home");
             setPostOnboardingProfile(profile);
 
-            // Saved immediately, not via the debounced stats-sync effect
-            // further up - that effect is keyed on `user`, so a sign-out
-            // in the next 800ms tears down its pending write before it
-            // ever reaches Firestore. profile.fullName is exactly the
-            // field the routing logic checks to decide whether to show
-            // onboarding again, so losing this write silently forced
-            // onboarding to repeat on the next sign-in.
-            if (user) {
-              try {
-                const db = await getDb();
-                const { doc, setDoc } = await import("firebase/firestore");
-                await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
-                  profile,
-                  updatedAt: new Date().toISOString(),
-                }, { merge: true });
-              } catch {
-                // Non-fatal - the debounced stats-sync effect still retries
-                // this shortly after, as long as the person stays signed in.
-              }
-            }
-
-            // Creates the users/{uid}/nova_permissions/current doc Nova's
-            // server-side context builder requires to have any context at
-            // all - without this, Nova stays blind until someone separately
-            // finds Settings > Nova Privacy Controls. Memory specifically
-            // carries through whatever the user chose on the consent step.
-            if (user) {
-              initNovaPermissionsForNewUser(user.uid, profile.letNovaLearn !== false);
-            }
+            // Nova permissions were committed in the same verified batch
+            // above, so no second background write can overwrite a choice.
 
             updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
               content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Work context: ${profile.pathway || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
@@ -2329,11 +2471,11 @@ export default function App() {
             // the "structured diffs, never raw content" rule every other
             // audit log entry in this app already follows.
             logAuditAction({
-              userId: profile.fullName || "anonymous",
+              userId: uid,
               action: "Completed onboarding",
               target: "onboarding_consent",
               status: "authorised",
-              details: `useNameInGreetings=${profile.useNameInGreetings !== false}, letNovaLearn=${profile.letNovaLearn !== false}, sendNovaNudges=${profile.sendNovaNudges !== false}`,
+              details: `useNameInGreetings=${profile.useNameInGreetings !== false}, letNovaLearn=${hasExplicitNovaLearningConsent(profile.letNovaLearn)}, sendNovaNudges=${profile.sendNovaNudges !== false}`,
             });
           }}
         />
@@ -2349,10 +2491,26 @@ export default function App() {
     );
   }
 
+  const pausePassivePrompts = shouldPausePassivePrompts({
+    welcome: !!postOnboardingProfile,
+    novaGuide: showNovaGuide,
+    coachMarks: !!coachMarkPage,
+    dailyCheckIn: showCheckIn,
+    settings: showSettings,
+    walkthrough: showWalkthrough,
+    support: showCrisisSupport,
+    launcher: showLauncher,
+  });
+
+  // No old account's data may appear while auth resolves.
+  if (flow === "app" && (!user?.uid || statsOwnerUid !== user.uid)) {
+    return <AccountDataLoadGate error={false} onRetry={() => setStatsLoadRetry(n => n + 1)} />;
+  }
+
   return (
     <div
       className={cn(
-        "min-h-screen bg-surface transition-colors duration-500",
+        "ember-shell ember-workspace min-h-screen bg-surface transition-colors duration-500",
         darkMode ? "dark" : "",
       )}
     >
@@ -2365,8 +2523,8 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={safeSetActiveTab as any}
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
+        themeMode={themeMode}
+        setThemeMode={setThemeMode}
         authRole={effectiveRole}
         currentTier={stats.profile?.subscription || "recovery"}
         isCollapsed={isSidebarCollapsed}
@@ -2376,6 +2534,8 @@ export default function App() {
         hasManagedTeam={managedTeams.length > 0}
         isHrViewer={isHrViewer}
         isOrgAdmin={isOrgAdmin}
+        showAllTools={showAllTools}
+        setShowAllTools={setShowAllTools}
       />
 
       <motion.main
@@ -2385,7 +2545,7 @@ export default function App() {
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
         className={cn(
           "relative transition-colors duration-500 min-w-0",
-          "p-8 md:p-12 lg:p-16",
+          "p-4 sm:p-6 md:p-10 lg:p-12",
           isSidebarCollapsed ? "md:ml-32" : "md:ml-72",
         )}
       >
@@ -2400,7 +2560,7 @@ export default function App() {
             containing block automatically; adding w-full back would make
             width 100% of the containing block with the margin added on
             top, overflowing the right edge by exactly the sidebar offset. */}
-        <div className="max-w-7xl mx-auto min-w-0">
+        <div ref={novaShellRef} className={cn("max-w-7xl mx-auto min-w-0", activeTab === "nova" && "ember-nova-shell")}>
         <AccountStatusBanner
           isDemoSession={isDemoSession}
           onSignUp={() => { setFlow("landing"); setLandingInitialAuthOpen(true); }}
@@ -2419,37 +2579,8 @@ export default function App() {
               role="status"
               aria-live="polite"
             >
-              {/* Floating Sparkle Particles Burst */}
-              {[...Array(10)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ scale: 0, x: 0, y: 0, opacity: 1 }}
-                  animate={{
-                    scale: [0, 1.3, 0],
-                    x: [
-                      0,
-                      Math.sin((i * 2 * Math.PI) / 10) *
-                        sparkleOffsets[i],
-                    ],
-                    y: [
-                      0,
-                      Math.cos((i * 2 * Math.PI) / 10) *
-                        sparkleOffsets[i],
-                    ],
-                    opacity: [1, 1, 0],
-                  }}
-                  transition={{
-                    duration: 1.2,
-                    ease: "easeOut",
-                    repeat: Infinity,
-                    repeatDelay: 0.6,
-                  }}
-                  className="absolute w-2 h-2 rounded-full bg-warning pointer-events-none"
-                  style={{ left: "50%", top: "50%", filter: "blur(0.5px)" }}
-                />
-              ))}
               <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center text-primary relative z-10 shrink-0">
-                <Trophy className="w-6 h-6 animate-bounce" />
+                <Trophy className="w-6 h-6" />
               </div>
               <div className="relative z-10">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
@@ -2489,10 +2620,10 @@ export default function App() {
         <Header
           title={titles[activeTab] || "Dashboard Module"}
           activeTab={activeTab}
-          darkMode={darkMode}
-          setDarkMode={setDarkMode}
+          themeMode={themeMode}
+          setThemeMode={setThemeMode}
           onOpenSettings={() => setShowSettings(true)}
-          onOpenTour={() => setShowWalkthrough(true)}
+          onOpenTour={() => isCustomerRole(effectiveRole) ? launchNovaGuide(activeTab) : setShowWalkthrough(true)}
           onSomaticReset={() => setShowSomaticReset(true)}
           profile={stats.profile}
           burnoutRisk={burnoutRisk}
@@ -2514,12 +2645,14 @@ export default function App() {
 
         <AnimatePresence mode="wait">
           <motion.div
+            className="ember-tab-panel"
             layout
             key={activeTab}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3 }}
+            onAnimationComplete={activeTab === "nova" ? recomputeNovaShellMetrics : undefined}
           >
             <Suspense fallback={
               <div className="flex items-center justify-center py-32">
@@ -2533,34 +2666,73 @@ export default function App() {
             <ErrorBoundary level="section" sectionName={activeTab} key={activeTab}>
             <>
             {activeTab === "home" && (
-              <HomeSection
-                onChatRequest={(voice) => {
-                  setActiveTab("nova");
-                  if (voice) setNovaAutoVoiceRequested(true);
-                }}
-                onEnergyRequest={() => setActiveTab("recover")}
-                onDiagnoseRequest={() => setActiveTab("diagnose")}
-                // Only these five are swapped for sample content during a
-                // demo session - everything below (callbacks, badges,
-                // etc.) stays wired to the visitor's real, honest, empty
-                // account. See isDemoSession above and demo-data.ts.
-                fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
-                stats={isDemoSession ? DEMO_STATS : stats}
-                onClaimDaily={handleClaimDaily}
-                hasClaimedDaily={hasClaimedDaily}
-                shipStage={shipStage}
-                energyLevel={isDemoSession ? DEMO_ENERGY_LEVEL : energyLevel}
-                burnoutRisk={isDemoSession ? DEMO_BURNOUT_RISK : burnoutRisk}
-                onOpenCheckIn={() => setShowCheckIn(true)}
-                pulseHistory={isDemoSession ? DEMO_PULSE_HISTORY : pulseHistory}
-                onAwardPoints={awardPoints}
-                onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
-                onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
-                onUpdatePulseHistory={handleUpdatePulseHistory}
-                onLogJourney={logJourney}
-                isDemoSession={isDemoSession}
-                onShipStageChange={setShipStage}
-              />
+              <section aria-labelledby="today-question" className="mx-auto max-w-4xl">
+                <h2 id="today-question" className="font-display text-3xl sm:text-4xl text-text-main">What would help right now?</h2>
+                <p className="text-text-muted mt-3 max-w-xl">Start with one small step. The rest can wait.</p>
+                <div className="flex flex-col sm:flex-row gap-3 mt-6 mb-3">
+                  <button data-nova-guide-target="today-reset" className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
+                  <button data-nova-guide-target="today-nova" className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
+                </div>
+                {!isDemoSession && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCheckIn(true)}
+                    className="mb-10 text-sm text-text-muted hover:text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    Or do a daily check-in
+                  </button>
+                )}
+                {showNovaGuideInvite && user?.uid && isCustomerRole(effectiveRole) && !postOnboardingProfile && (
+                  <div className="mb-8 max-w-xl rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 flex items-start gap-4">
+                    <div className="shrink-0 h-11 w-11 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                      <Sparkles className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <p className="text-sm font-semibold text-text-main">New here? Nova can show you around.</p>
+                      <p className="text-sm text-text-muted">Five little steps. Simple pictures. Skip whenever you like.</p>
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <button type="button" onClick={() => launchNovaGuide('welcome')} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-primary">
+                          Show me around
+                        </button>
+                        <button type="button" onClick={dismissNovaGuideInvite} className="rounded-xl px-3 py-2.5 text-sm text-text-muted underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary">
+                          Not now
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <details>
+                  <summary data-nova-guide-target="today-progress" className="cursor-pointer py-4 text-text-muted">My check-ins and recovery progress</summary>
+                  <HomeSection
+                    onChatRequest={(voice) => {
+                      setActiveTab("nova");
+                      if (voice) setNovaAutoVoiceRequested(true);
+                    }}
+                    onEnergyRequest={() => setActiveTab("recover")}
+                    onDiagnoseRequest={() => setActiveTab("diagnose")}
+                    // Only these five are swapped for sample content during a
+                    // demo session - everything below (callbacks, badges,
+                    // etc.) stays wired to the visitor's real, honest, empty
+                    // account. See isDemoSession above and demo-data.ts.
+                    fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
+                    stats={isDemoSession ? DEMO_STATS : stats}
+                    onClaimDaily={handleClaimDaily}
+                    hasClaimedDaily={hasClaimedDaily}
+                    shipStage={shipStage}
+                    energyLevel={isDemoSession ? DEMO_ENERGY_LEVEL : energyLevel}
+                    burnoutRisk={isDemoSession ? DEMO_BURNOUT_RISK : burnoutRisk}
+                    onOpenCheckIn={() => setShowCheckIn(true)}
+                    pulseHistory={isDemoSession ? DEMO_PULSE_HISTORY : pulseOwnerUid === user?.uid ? pulseHistory : []}
+                    onAwardPoints={awardPoints}
+                    onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
+                    onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
+                    onUpdatePulseHistory={handleUpdatePulseHistory}
+                    onLogJourney={logJourney}
+                    isDemoSession={isDemoSession}
+                    onShipStageChange={setShipStage}
+                  />
+                </details>
+              </section>
             )}
 
             {activeTab === "plan" && (
@@ -2636,7 +2808,8 @@ export default function App() {
 
             {activeTab === "communicate" && (
               <div className="space-y-32">
-                <div className="flex justify-end">
+                <div className="flex justify-between items-center gap-3">
+                  <ReturnToNovaLink onNavigate={safeSetActiveTab} />
                   <button
                     onClick={() => setShowMyBoundaries((v) => !v)}
                     className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"
@@ -2764,12 +2937,33 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === "nova" && (
-              <div className="space-y-32">
-                <NovaChat
-                  fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
-                  profile={isDemoSession ? undefined : stats.profile}
-                  systemInstruction={`You are Nova, the recovery coach.
+            {activeTab === "nova" && (() => {
+              // Phase 5K (directive §§2,4,6) built NovaAgenticJourney
+              // (Invisible Load/Calendar Protection/Task Deferral/Before
+              // Words, already built and tested since Phase 5D-5J but
+              // previously reachable only through the dev-preview harness)
+              // as a drop-in wrapper around the exact same <NovaChat> -
+              // same props, same backend - adding only the "Continue to
+              // what's on your plate" path and the offer_practical_assistance
+              // card's "Open" action.
+              //
+              // Phase 5L correction (directive §§1,2): Phase 5K then mounted
+              // that wrapper for every production user unconditionally, with
+              // no release flag - "do not treat a passing automated test as
+              // production-release authorisation." Every other previously-
+              // dev-only or newly-introduced Nova surface in this codebase
+              // (Guardian Support Invitation, NHEI's own modes) defaults OFF
+              // until a human explicitly turns it on; this one should have
+              // too. novaAgenticJourneyEnabled (useNovaAgenticJourneyEnabled,
+              // backed by NOVA_AGENTIC_JOURNEY_ENABLED in server.ts) now
+              // fails closed to the existing, already-approved plain
+              // <NovaChat> - identical props either way, so turning the flag
+              // on later changes nothing about what a user sees except
+              // adding the practical-assistance path on top.
+              const sharedNovaChatProps = {
+                fingerprint: isDemoSession ? DEMO_FINGERPRINT : fingerprint,
+                profile: isDemoSession ? undefined : stats.profile,
+                systemInstruction: `You are Nova, the recovery coach.
                   User's current stats: Points: ${isDemoSession ? DEMO_STATS.points : stats.points}.
                   Recovery Debt Profile: ${JSON.stringify((isDemoSession ? DEMO_STATS.debts : stats.debts) || [])}.
                   Use this data to give direct, grounded advice. If Sleep Shortfall is high, recommend rest. If Mental Fatigue is high, recommend a break before anything that needs focus.
@@ -2777,21 +2971,28 @@ export default function App() {
                     isDemoSession
                       ? " This visitor is previewing a sample account before signing up - the stats above are illustrative example data, not their own real progress. It's fine to naturally mention signing up, but never claim these sample numbers are the visitor's own history."
                       : ""
-                  }`}
-                  initialMessage={
-                    (isDemoSession ? DEMO_FINGERPRINT : fingerprint)
-                      ? `Hey! As a "${(isDemoSession ? DEMO_FINGERPRINT : fingerprint)!.profile}", today's recovery is critical. How can I help you set boundaries?`
-                      : "I'm Nova. I help high achievers recover without losing their ambition. What's draining you today?"
-                  }
-                  onAwardPoints={awardPoints}
-                  onNavigate={safeSetActiveTab as any}
-                  onToneChange={handleNovaToneChange}
-                  onStyleChange={handleNovaStyleChange}
-                  autoOpenVoice={novaAutoVoiceRequested}
-                  onVoiceAutoOpened={() => setNovaAutoVoiceRequested(false)}
-                />
-              </div>
-            )}
+                  }`,
+                initialMessage: (isDemoSession ? DEMO_FINGERPRINT : fingerprint)
+                  ? `Hey! As a "${(isDemoSession ? DEMO_FINGERPRINT : fingerprint)!.profile}", today's recovery is critical. How can I help you set boundaries?`
+                  : "I'm Nova. I help high achievers recover without losing their ambition. What's draining you today?",
+                onAwardPoints: awardPoints,
+                onNavigate: safeSetActiveTab as any,
+                onToneChange: handleNovaToneChange,
+                onStyleChange: handleNovaStyleChange,
+                autoOpenVoice: novaAutoVoiceRequested,
+                onVoiceAutoOpened: () => setNovaAutoVoiceRequested(false),
+                onShowMeHow: isCustomerRole(effectiveRole) ? () => launchNovaCoachMarks('nova') : undefined,
+              };
+              return (
+                <div className="ember-nova-tab space-y-32">
+                  {novaAgenticJourneyEnabled ? (
+                    <NovaAgenticJourney initialStep="chat" {...sharedNovaChatProps} />
+                  ) : (
+                    <NovaChat {...sharedNovaChatProps} />
+                  )}
+                </div>
+              );
+            })()}
 
             {activeTab === "subscription" && (
               <div className="space-y-32">
@@ -2801,6 +3002,7 @@ export default function App() {
 
             {activeTab === "anxiety_reset" && (
               <div className="space-y-32">
+                <ReturnToNovaLink onNavigate={safeSetActiveTab} />
                 <AnxietyResetMode
                   onAwardPoints={awardPoints}
                   onNavigate={safeSetActiveTab as any}
@@ -2814,6 +3016,7 @@ export default function App() {
 
             {activeTab === "reset" && (
               <div className="space-y-32">
+                <ReturnToNovaLink onNavigate={safeSetActiveTab} />
                 <ResetStudio
                   fingerprint={fingerprint}
                   onAwardPoints={awardPoints}
@@ -3015,7 +3218,7 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {user && showCheckIn && !isDemoSession && (
+          {user && showCheckIn && !isDemoSession && !postOnboardingProfile && !showNovaGuide && !coachMarkPage && (
             <Suspense fallback={null}>
               <ConnectedDailyCheckIn
                 onClose={() => setShowCheckIn(false)}
@@ -3035,6 +3238,7 @@ export default function App() {
               activeTab={activeTab}
               fingerprint={fingerprint}
               stats={stats}
+              onNavigate={safeSetActiveTab}
             />
             <NovaFeedbackModal />
           </Suspense>
@@ -3073,10 +3277,12 @@ export default function App() {
           )}
         </button>
         <motion.div
+          ref={mobileNavRef}
           initial={false}
           animate={{ y: isMobileNavCollapsed ? "100%" : 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="fixed bottom-0 left-0 w-full bg-card/80 backdrop-blur-xl border-t border-border pt-2 px-2 z-40 transition-colors duration-500"
+          data-testid="mobile-bottom-nav"
           style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
         >
           <AnimatePresence>
@@ -3088,7 +3294,11 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="absolute bottom-full left-2 right-2 mb-2 p-3 rounded-2xl bg-card border border-border shadow-2xl grid grid-cols-3 gap-2"
               >
-                {ALL_TABS.filter((t) => t.group === "recovery_tools").map((tab) => (
+                {ALL_TABS.filter((t) =>
+                  t.group === "recovery_tools" &&
+                  isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
+                  shouldShowCustomerNavTab(effectiveRole, showAllTools, t.id, activeTab)
+                ).map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => {
@@ -3110,7 +3320,8 @@ export default function App() {
           <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-2 gap-2">
             {(() => {
               const visibleTabs = ALL_TABS.filter((t) =>
-                isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery"),
+                isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
+                shouldShowCustomerNavTab(effectiveRole, showAllTools, t.id, activeTab),
               );
               const renderedGroups = new Set<string>();
               return visibleTabs.map((tab) => {
@@ -3155,6 +3366,21 @@ export default function App() {
                 );
               });
             })()}
+            {isCustomerRole(effectiveRole) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAllTools((v) => !v);
+                  setShowMobileToolsSheet(false);
+                }}
+                aria-expanded={showAllTools}
+                aria-label={showAllTools ? "Show the simpler navigation" : "Explore all available tools"}
+                className="p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] text-text-muted hover:text-text-main"
+              >
+                <span className="p-1.5 rounded-full"><Menu className="w-5 h-5" /></span>
+                <span className="text-[11px] font-bold tracking-wide">{showAllTools ? "Less" : "More"}</span>
+              </button>
+            )}
           </div>
         </motion.div>
       </div>
@@ -3171,18 +3397,18 @@ export default function App() {
             <SettingsModal
               profile={stats.profile}
               onClose={() => setShowSettings(false)}
-              onSave={(profile) => {
-                setStats((prev) => ({ ...prev, profile }));
-                // Keeps blaze_profile in sync outside onboarding too - it's
-                // the only source nova-brain.ts's isNovaLearningAllowed() (and
-                // NovaChat.tsx's situational-context reads) can check
-                // synchronously, so a Settings change to "Behavioural
-                // Learning" needs to land here immediately, not just in
-                // Firestore on the next debounced save.
-                localStorage.setItem("blaze_profile", JSON.stringify(profile));
-                if (user) {
-                  setNovaMemoryConsent(user.uid, profile.letNovaLearn !== false);
+              onSave={async (profile) => {
+                const uid = user?.uid;
+                if (!uid || auth.currentUser?.uid !== uid || statsOwnerUid !== uid) {
+                  throw new Error('Account not verified for this save');
                 }
+                // Commit the profile and its Nova-memory consent together.
+                // Only then update the customer-visible success state.
+                await saveVerifiedProfileSettings(uid, profile);
+                if (auth.currentUser?.uid !== uid) return;
+                setStats((prev) => ({ ...prev, profile }));
+                writeAccountProfile(uid, profile);
+                setNovaLearningAllowedForUid(uid, hasExplicitNovaLearningConsent(profile.letNovaLearn));
               }}
               onOpenPrivacyCentre={() => {
                 setShowSettings(false);
@@ -3197,6 +3423,30 @@ export default function App() {
               isOpen={showWalkthrough}
               onClose={() => setShowWalkthrough(false)}
               onAwardPoints={awardPoints}
+            />
+          </Suspense>
+        )}
+        {novaGuideReadyToMount && isCustomerRole(effectiveRole) && (
+          <Suspense fallback={null}>
+            <NovaGuide
+              isOpen={showNovaGuide}
+              startPage={novaGuideStartPage}
+              accountId={user?.uid}
+              onClose={() => setShowNovaGuide(false)}
+              onNavigate={(tab) => {
+                safeSetActiveTab(tab);
+                setShowNovaGuide(false);
+              }}
+              onShowOnPage={launchNovaCoachMarks}
+            />
+          </Suspense>
+        )}
+        {coachMarkPage && isCustomerRole(effectiveRole) && (
+          <Suspense fallback={null}>
+            <NovaCoachMarks
+              key={coachMarkPage}
+              page={coachMarkPage}
+              onClose={() => setCoachMarkPage(null)}
             />
           </Suspense>
         )}
@@ -3215,12 +3465,15 @@ export default function App() {
           />
         </Suspense>
       )}
-      <InAppNudge />
-      {user && (
+      <InAppNudge suspended={pausePassivePrompts} />
+      {/* Changelog is for existing registered accounts, not anonymous demos.
+          Avoid interrupting a first-time visitor's Nova or onboarding flow. */}
+      {user && !user.isAnonymous && (
         <Suspense fallback={null}>
           <WhatsNewModal
             lastSeenVersion={stats.lastSeenChangelogVersion}
             loaded={statsLoaded}
+            paused={pausePassivePrompts}
             onSeen={(version) => setStats(prev => ({ ...prev, lastSeenChangelogVersion: version }))}
           />
         </Suspense>
@@ -3267,7 +3520,7 @@ export default function App() {
                     {postOnboardingProfile.fullName ? `Welcome, ${postOnboardingProfile.fullName.split(" ")[0]}.` : "Welcome."}
                   </h2>
                   <p className="text-sm text-text-muted leading-relaxed">
-                    You'll earn points and unlock badges as you go - check your progress anytime from the home screen. Not sure where to start? Just ask Nova; it can point you to the right tool.
+                    You're ready to begin. Pick one small step, or let Nova show you the essentials. There's no need to learn everything today.
                   </p>
                 </div>
                 {rec && (
@@ -3279,10 +3532,17 @@ export default function App() {
                   </div>
                 )}
                 <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { dismiss(); launchNovaGuide('welcome'); }}
+                    className="w-full py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:opacity-90 transition-opacity focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    Show me around
+                  </button>
                   {rec && (
                     <button
                       onClick={() => { setActiveTab(rec.tab); dismiss(); }}
-                      className="w-full py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:opacity-90 transition-opacity"
+                      className="w-full py-3 border border-border text-text-main font-bold text-sm rounded-xl hover:bg-surface transition-colors focus-visible:outline-2 focus-visible:outline-primary"
                     >
                       Take me there
                     </button>

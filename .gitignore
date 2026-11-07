@@ -7,3 +7,12 @@ coverage/
 .env*
 !.env.example
 functions/lib/
+test-results/
+release-gate-logs/
+playwright-report/
+blob-report/
+firestore-debug.log
+ui-debug.log
+
+# Never commit short-lived GitHub OIDC credential files.
+gha-creds-*.json

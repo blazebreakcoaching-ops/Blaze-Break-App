@@ -115,7 +115,7 @@ have access to (`functions/src/`):
 - **`beforeSignIn`** (`signin-velocity.ts` + `index.ts`, tested): tracks
   how many *distinct accounts* have successfully signed in from one IP
   address within a 10-minute rolling window (Firestore-backed —
-  `signin_ip_velocity/{ip}/events/{eventId}` — since Cloud Functions
+  `signin_ip_velocity/{ip}/events/{eventId}` in the NAMED Firestore database (not `(default)`) — since Cloud Functions
   instances are stateless/ephemeral, same reasoning as `totp-mfa.ts`'s
   existing lockout). A credential-stuffing bot trying many stolen
   email/password pairs from one IP eventually succeeds on several of
@@ -183,3 +183,6 @@ eslint.cleanup.config.js --ignore-pattern app/`, the full `npm run test`
 suite, and a real production build (`npm run build`) — plus, for
 `functions/`, its own separate `npx tsc --noEmit` / `npx vitest run` /
 `npm run build` inside that directory.
+
+## CTO 2026-11-03 correction — Auth Blocking Functions database
+The legacy `functions/src/index.ts` used `getFirestore()` without a database ID, which targeted `(default)` even though this app and `firebase.json` use a named Enterprise database. It now calls `getFirestore(resolveBlockingFunctionsDatabaseId(process.env.FIRESTORE_DATABASE_ID))`. The helper defaults to the named ID required by both production and the staging setup plan. Set `FIRESTORE_DATABASE_ID` explicitly if the deployed environment uses a different named database; it must never be `(default)`. Test with Firebase emulators and authenticate against the actual staging Identity Platform before activating `beforeSignIn`. Existing live deployment/configuration is **unverified**; code change does not deploy functions.

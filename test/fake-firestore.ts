@@ -26,6 +26,20 @@ export const FakeFieldValue = {
   increment: (n: number): IncrementOp => ({ __increment: n }),
 };
 
+// A minimal stand-in for firebase-admin's Timestamp class - just enough of
+// its real surface (fromMillis, toMillis, instanceof) for route-handler
+// code that stores/compares a real Firestore Timestamp (e.g. MFA session
+// expiry) to round-trip through this fake store exactly like it would
+// against real Firestore, without pulling in the real SDK's class (which
+// vi.mock('firebase-admin/firestore', ...) call sites already replace
+// wholesale - this is what they export as `Timestamp` instead).
+export class FakeTimestamp {
+  constructor(private readonly millis: number) {}
+  static fromMillis(millis: number): FakeTimestamp { return new FakeTimestamp(millis); }
+  static now(): FakeTimestamp { return new FakeTimestamp(Date.now()); }
+  toMillis(): number { return this.millis; }
+}
+
 let autoIdCounter = 0;
 const nextAutoId = () => `auto_${(++autoIdCounter).toString(36)}_${Date.now().toString(36)}`;
 
@@ -431,6 +445,51 @@ export function forceTransactionError(error: Error): () => void {
   };
   return () => {
     FakeFirestore.prototype.runTransaction = original;
+  };
+}
+
+// Same mechanism as forceTransactionError, but lets the first `skipCount`
+// runTransaction calls proceed normally before failing. Needed for a
+// single request that legitimately uses TWO separate transactions in
+// sequence - e.g. verify-at-signin's own lockout-counter transaction,
+// immediately followed by markFirestoreMfaSessionVerified's - where a
+// test needs the FIRST to genuinely succeed (the code really was correct)
+// and only the SECOND to fail, to prove the route reports that failure
+// honestly rather than reporting the overall request as fully successful.
+export function forceTransactionErrorAfter(skipCount: number, error: Error): () => void {
+  const original = FakeFirestore.prototype.runTransaction;
+  let calls = 0;
+  FakeFirestore.prototype.runTransaction = function (fn: any): Promise<any> {
+    calls += 1;
+    if (calls > skipCount) return Promise.reject(error);
+    return original.call(this, fn);
+  };
+  return () => {
+    FakeFirestore.prototype.runTransaction = original;
+  };
+}
+
+// Same idea as forceTransactionErrorAfter, but for a specific doc path's
+// method - needed once a path is read by more than one caller in
+// sequence within a single request (e.g. authenticateFirebaseUser's own
+// authoritative MFA-enrollment check reads users/{uid}/security/mfa_totp
+// BEFORE a route handler's own later read of that same path), so a test
+// can target specifically the LATER read without the earlier one failing
+// first and masking it.
+export function forceDocErrorAfter(path: string, method: 'get' | 'set' | 'update' | 'delete', skipCount: number, error: Error): () => void {
+  const probe = fakeDb.collection('__force_doc_error_probe__').doc('__probe__');
+  const DocRefCtor = Object.getPrototypeOf(probe).constructor as any;
+  const original = DocRefCtor.prototype[method];
+  let calls = 0;
+  DocRefCtor.prototype[method] = function (this: any, ...args: any[]) {
+    if (this.path === path) {
+      calls += 1;
+      if (calls > skipCount) return Promise.reject(error);
+    }
+    return original.apply(this, args);
+  };
+  return () => {
+    DocRefCtor.prototype[method] = original;
   };
 }
 

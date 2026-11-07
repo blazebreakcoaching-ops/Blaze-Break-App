@@ -1,32 +1,42 @@
 name: Deploy
 
 # Ships the app to the already-running Cloud Run service (see docs/DEPLOY.md)
-# whenever main changes, or on demand via the "Run workflow" button - so
+# only on demand via the "Run workflow" button - so
 # "going live" never again means running gcloud/firebase commands by hand in
 # Cloud Shell. Builds straight from source using Cloud Run's own buildpacks
 # support (no Dockerfile needed - Node.js is auto-detected from
 # package.json's "engines"/"scripts" fields), then deploys the current
 # Firestore rules and indexes alongside it.
 #
-# Deliberately does NOT touch the Cloud Run service's env vars/secrets/IAM -
-# those were configured once during the original manual setup (see
-# docs/DEPLOY.md sections 1-3) and are left exactly as they are on every
-# redeploy. This workflow only ever ships new code.
+# Set the runtime Firebase project from the deployment target.
+# Preserve other environment settings and existing secret bindings.
 #
-# One-time setup required before this can run (see docs/DEPLOY.md section 0
-# for the full walkthrough): a GCP service account with deploy permissions,
-# with its JSON key pasted into this repo's GCP_SA_KEY secret
-# (Settings -> Secrets and variables -> Actions).
+# Uses GitHub OpenID Connect and Google Workload Identity Federation to
+# obtain temporary credentials; no long-lived service-account key is needed.
+# All production runs are manual. Use auth_only=true (the default) to
+# validate access without changing Cloud Run or Firestore.
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      auth_only:
+        description: 'Verify Google Cloud identity only; do not deploy'
+        type: boolean
+        default: true
+      confirm_production:
+        description: 'I approve production deployment of the exact reviewed SHA'
+        type: boolean
+        default: false
+      approved_sha:
+        description: 'Exact reviewed 40-character commit SHA (required to deploy)'
+        type: string
+        default: ''
 
 env:
   GCP_PROJECT_ID: gen-lang-client-0537893432
   CLOUD_RUN_SERVICE: blaze-break
   CLOUD_RUN_REGION: europe-west2
+  FIRESTORE_DATABASE: ai-studio-67723f85-0bfc-4690-ac83-580d6face1fc
 
 jobs:
   deploy:
@@ -34,38 +44,88 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
+      - name: Block unapproved or non-main production deployment
+        if: ${{ inputs.auth_only == false }}
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Production deployment is permitted only from main."
+            exit 1
+          fi
+          if [ "$CONFIRM_PRODUCTION" != "true" ]; then
+            echo "::error::Explicit production approval is required."
+            exit 1
+          fi
+          if ! [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::Approved SHA must exactly match the selected main commit."
+            exit 1
+          fi
+          echo "Production deployment approval verified for $GITHUB_SHA."
+
+      - name: Authenticate to Google Cloud with OIDC
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: projects/220686314556/locations/global/workloadIdentityPools/blaze-break-github/providers/blaze-break-github-actions
+          service_account: github-actions-deploy@gen-lang-client-0537893432.iam.gserviceaccount.com
+          create_credentials_file: true
+          export_environment_variables: true
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
+      - name: Verify federated authentication and read-only target access
+        run: |
+          gcloud auth print-access-token > /dev/null
+          gcloud run services describe "$CLOUD_RUN_SERVICE" \
+            --region "$CLOUD_RUN_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --format='value(metadata.name)' > /dev/null
+          gcloud firestore databases describe \
+            --database "$FIRESTORE_DATABASE" \
+            --project "$GCP_PROJECT_ID" \
+            --format='value(name)' > /dev/null
+          echo 'Google Cloud, Cloud Run and named Firestore access verified; no deployment performed.'
+
+      - name: Verify temporary Google credentials are excluded from build source
+        if: ${{ inputs.auth_only == false }}
+        run: |
+          test -f .gcloudignore
+          if gcloud meta list-files-for-upload | grep -E '(^|/)gha-creds-[^/]+\.json$'; then
+            echo "::error::Temporary Google credentials would be included in the Cloud Run upload."
+            exit 1
+          fi
+          echo 'Cloud Run upload excludes temporary Google credentials.'
+
       # --source builds the container via Cloud Build + Buildpacks on
       # Google's side - nothing to build or push locally in this job.
       - name: Deploy to Cloud Run
+        if: ${{ inputs.auth_only == false }}
         run: |
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             --source . \
             --region "$CLOUD_RUN_REGION" \
             --project "$GCP_PROJECT_ID" \
+            --update-env-vars "FIREBASE_PROJECT_ID=$GCP_PROJECT_ID" \
             --quiet
 
       - name: Set up Node.js (for the Firebase CLI)
+        if: ${{ inputs.auth_only == false }}
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      # Authenticates via the same service-account credentials from the
-      # "Authenticate to Google Cloud" step above (firebase-tools picks up
-      # GOOGLE_APPLICATION_CREDENTIALS automatically) - no separate Firebase
-      # login/token needed.
+      # firebase-tools reads the temporary GOOGLE_APPLICATION_CREDENTIALS
+      # exported by the auth action, not a long-lived JSON key.
       - name: Deploy Firestore rules + indexes
+        if: ${{ inputs.auth_only == false }}
         run: npx firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project "$GCP_PROJECT_ID" --non-interactive

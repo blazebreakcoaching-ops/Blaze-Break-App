@@ -12,11 +12,23 @@ import { useAuth } from '../lib/auth';
 // no way to intercept onAuthStateChanged before it fires.
 
 export const MfaChallenge = () => {
-  const { verifyMfaAtSignIn, logOut } = useAuth();
+  const { verifyMfaAtSignIn, logOut, mfaStatusError, retryMfaStatus } = useAuth();
   const [input, setInput] = useState('');
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const retryStatus = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await retryMfaStatus();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Security status is unavailable.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +45,30 @@ export const MfaChallenge = () => {
       setBusy(false);
     }
   };
+
+  if (mfaStatusError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4 text-text-main">
+        <div className="bg-surface border border-border rounded-xl p-8 max-w-md w-full shadow-lg space-y-5" role="alert">
+          <ShieldCheck className="w-8 h-8 text-primary" aria-hidden="true" />
+          <h2 className="text-xl font-bold">Security verification unavailable</h2>
+          <p className="text-sm text-text-muted">
+            We couldn't confirm this account's security requirements. Your account remains protected;
+            reconnect and check again, or sign out.
+          </p>
+          {error && <p role="status" className="text-xs text-destructive">{error}</p>}
+          <button type="button" onClick={retryStatus} disabled={busy}
+            className="w-full rounded-xl py-3 bg-primary text-primary-foreground font-bold disabled:opacity-50">
+            {busy ? 'Checking…' : 'Retry security check'}
+          </button>
+          <button type="button" onClick={() => { void logOut(); }}
+            className="w-full text-sm text-text-muted hover:text-text-main">
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 text-text-main">

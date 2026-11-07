@@ -1,8 +1,9 @@
-# Setting Up Real Integrations (Slack, Jira, Asana, Calendly, Monday.com)
+# Setting Up Real Integrations (Slack, Jira, Asana, Calendly, Monday.com, Google Calendar Actions)
 
-Google Workspace is already live — it goes through Firebase Auth and needs no
-setup here. The five services below each need their own OAuth app registered
-on that provider's developer portal before "Connect" will work for your users.
+Google Workspace's existing READ-only calendar signal is already live — it
+goes through Firebase Auth client-side and needs no setup here. The six
+services below each need their own OAuth app registered on that provider's
+developer portal before "Connect" will work for your users.
 
 For every service, the **redirect URI** you register must be exactly:
 
@@ -12,7 +13,7 @@ For every service, the **redirect URI** you register must be exactly:
 
 Where `{APP_URL}` is your deployed app's base URL (the same value as the
 `APP_URL` env var — e.g. `https://blaze-break.example.com`), and `{service}` is
-one of: `slack`, `jira`, `asana`, `calendly`, `monday`.
+one of: `slack`, `jira`, `asana`, `calendly`, `monday`, `google_calendar_actions`.
 
 Once you have a Client ID + Secret for a service, add them to your environment
 (`.env` locally, or your host's secrets panel in production) using the exact
@@ -104,6 +105,51 @@ provider-specific, set it once.
 4. The app currently requests `me:read boards:read` — extend this in
    `server.ts` (`OAUTH_PROVIDERS.monday.scope`) if you need write access later.
 
+## Google Calendar Actions (Phase 5E, directive §2 — founder action required)
+
+This is a NEW, separate OAuth connection from the existing Firebase-popup
+Google sign-in. It exists so Nova Take the Load's Calendar Protection
+workflow has a real, server-side, refreshable token to eventually act with —
+today, even once connected, nothing in this codebase will use it to write
+anything, because `CALENDAR_PROTECTION_EXECUTION_ENABLED` in
+`nova-calendar-protection-service.ts` is hardcoded `false` and `server.ts`
+imports no connector at all. Setting this up makes the CONNECTION real; it
+does not turn on execution.
+
+1. Go to **https://console.cloud.google.com/** and either use the same
+   project your existing Firebase project already runs on, or a new one —
+   either works, since this is a separate OAuth client from Firebase Auth's.
+2. **APIs & Services → Library** → enable the **Google Calendar API** for
+   that project (it is not enabled by default).
+3. **APIs & Services → OAuth consent screen**: if this project has never
+   configured one, you'll need to do that first — choose **External** unless
+   every user is inside your own Google Workspace organisation, fill in the
+   app name/support email, and add the scope
+   `https://www.googleapis.com/auth/calendar.events` (plus `email`, `openid`
+   — Google adds these automatically for most flows, but check). **While the
+   app is in "Testing" mode, only the test users you explicitly list can
+   connect** — add your own account and anyone else testing this before
+   requesting verification. **Google's own app verification review is
+   required before this can go out to the public** for a scope this
+   sensitive (`calendar.events` is a "restricted" or at minimum a
+   "sensitive" scope) — this can take days to weeks and may ask for a
+   demo video and a privacy policy URL. This step is explicitly the
+   founder's own decision and cannot be done from this codebase.
+4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
+   → **Web application**. Add this exact redirect URI:
+   `{APP_URL}/api/integrations/callback/google_calendar_actions`
+5. Copy the **Client ID** and **Client secret** into
+   `GOOGLE_CALENDAR_ACTIONS_CLIENT_ID` / `GOOGLE_CALENDAR_ACTIONS_CLIENT_SECRET`.
+6. This flow uses **PKCE** (code_verifier/code_challenge) in addition to the
+   client secret — nothing further to configure for this; the server
+   generates and stores the verifier itself.
+7. **No recurring cost**: the Google Calendar API's standard usage quota
+   (as of this writing) is free for the request volumes this feature would
+   realistically produce; there is no paid tier requirement to enable the
+   API itself. Confirm current quotas/pricing on Google's own console before
+   relying on this if usage ever becomes large — this codebase does not
+   provision or enable any paid Google Cloud service.
+
 ---
 
 ## Deploying the Firestore rules
@@ -127,7 +173,16 @@ Firestore project.
   CSRF and replay attacks on the callback.
 - Each service can be enabled independently — if `SLACK_CLIENT_ID` isn't set,
   Slack's card shows "Not Yet Available" instead of erroring, and the other
-  four are unaffected.
+  services are unaffected.
+- A refresh that fails with the OAuth2 `invalid_grant` error (a revoked or
+  dead refresh token) now marks that integration disconnected rather than
+  silently returning a token guaranteed to keep failing — added Phase 5E.
+- `google_calendar_actions` additionally uses PKCE (an S256 code_challenge/
+  code_verifier pair, the verifier held server-side in
+  `users/{uid}/oauth_pkce/{service}` for the few minutes between redirect
+  and callback, never client-visible) and records which Google account
+  actually connected (`connectedAccountEmail` on the redacted status doc) —
+  neither is needed by, or added to, the other five providers.
 
 ## What's also already built
 
@@ -139,3 +194,12 @@ the `/api/signals/*` routes call real provider APIs with it: Jira issue
 counts, Asana task load, Monday board load, Calendly meeting load, Slack
 message volume. `NovaOverloadShield.tsx` and Boundary Autopilot both consume
 this live data today, not stored/stale tokens sitting unused.
+
+`google_calendar_actions` is the one exception to "the tokens are genuinely
+used": connecting it stores a real, refreshable token, but nothing calls it
+yet. `nova-google-calendar-connector.ts` (Phase 5E) is a real, independently
+tested connector built to use it — but it is never imported by `server.ts`,
+and the execute route that would eventually use any connector stays hardcoded
+disabled regardless. See `docs/NOVA_FULL_VISION_CAPABILITY_REGISTER.md`
+workstream L for the full account of what connecting this does, and does not,
+enable today.

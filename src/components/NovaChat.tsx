@@ -20,24 +20,27 @@ import type { UserProfileData } from "../types";
 import { addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
 import { auth } from '../lib/firebase';
-import { db } from '../lib/firestore';
-import { doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { novaStorageKey, canPersistNovaChatState } from "../lib/nova-chat-storage";
+import { readAccountProfile, patchAccountProfile } from "../lib/account-profile-storage";
 import { NovaVoiceCall } from "./NovaVoiceCall";
 import { NovaToneControl } from "./NovaToneControl";
 import { NovaStyleControl, QUESTIONING_STYLE_OPTIONS, NovaQuestioningStyle } from "./NovaStyleControl";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { getFeatureFlags } from "../lib/feature-flags";
 import { GuardianSupportInvitation } from "./GuardianSupportInvitation";
+import { NovaPracticalAssistanceOffer } from "./NovaPracticalAssistanceOffer";
 import { useGuardianSupportInvitationEnabled } from "../lib/useGuardianSupportInvitationEnabled";
 import { logGuardianSupportEvent } from "../lib/guardian-support-analytics";
+import type { NovaTemporaryBeforeWordsContext } from "../../nova-before-words-temporary-context";
 
 // The server's ChatRequestSchema (server.ts) caps history at 50 entries
 // and systemInstruction at 3000 characters, and rejects the whole request
 // if either is exceeded. The localStorage-persisted chat history grows
 // unbounded over real, long-term use, so this component stays well under
 // those caps rather than relying on the server's hard ceiling - see
-// handleSend and getDynamicContext below. Nova's saved-memory content is no
-// longer assembled here at all (see getDynamicContext/buildVoiceContext) -
+// handleSend below. Automatic persisted context is assembled server-side
+// behind account-specific consent checks, not in this browser -
 // the server's own getNovaContextAndMetadata is the single place that
 // happens now, so it can't be duplicated or bypass the consent gate.
 const NOVA_CHAT_HISTORY_LIMIT = 20;
@@ -50,12 +53,7 @@ const NOVA_SYSTEM_INSTRUCTION_LIMIT = 2800;
 // ad-hoc "read blaze_profile directly" pattern already used elsewhere in
 // this file (readStyle, the initial-greeting effect).
 function readStoredFullName(): string | undefined {
-  try {
-    const raw = localStorage.getItem("blaze_profile");
-    return raw ? JSON.parse(raw)?.fullName : undefined;
-  } catch {
-    return undefined;
-  }
+  return readAccountProfile(auth.currentUser?.uid).fullName;
 }
 
 interface Message {
@@ -84,6 +82,10 @@ export const NovaChat = ({
   onStyleChange,
   autoOpenVoice,
   onVoiceAutoOpened,
+  temporaryBeforeWordsContext,
+  onTemporaryBeforeWordsContextConsumed,
+  onRequestPracticalAssistance,
+  onShowMeHow,
 }: {
   systemInstruction?: string;
   initialMessage?: string;
@@ -109,30 +111,40 @@ export const NovaChat = ({
   // unprompted.
   autoOpenVoice?: boolean;
   onVoiceAutoOpened?: () => void;
+  // Phase 5E (directive §5), corrected by Phase 5F (directive §4): a
+  // session-only Before Words handoff for this ONE outgoing turn only,
+  // never persisted by this component. Sent as its own `beforeWordsContext`
+  // field in the request body (see handleSend) - the server quarantines
+  // and places it in the model's ordinary message channel, never in
+  // `systemInstruction`/the elevated-trust channel Phase 5E's version used.
+  // The caller (not this component) owns the context's lifetime; `onTemporaryBeforeWordsContextConsumed`
+  // fires once it has actually been sent so the caller can clear its own
+  // state - "allow skipping and withdrawing temporary context" means the
+  // caller can simply never set this prop, or clear it before the next
+  // send, rather than this component offering its own separate controls
+  // for something that isn't its own data.
+  temporaryBeforeWordsContext?: NovaTemporaryBeforeWordsContext | null;
+  onTemporaryBeforeWordsContextConsumed?: () => void;
+  // Phase 5K: lets a host screen (App.tsx's NovaAgenticJourney mount) open
+  // Nova's existing practical-assistance workflow (Invisible Load ->
+  // Calendar Protection / Task Deferral) when the user accepts the
+  // offer_practical_assistance card below. Optional - when absent (e.g. the
+  // dev-preview or other embeddings that don't mount the full journey), the
+  // card simply never renders at all, same as onNavigate being absent for
+  // suggest_feature.
+  onRequestPracticalAssistance?: () => void;
+  // Fixed, user-invoked UI help; never sends a message to the model.
+  onShowMeHow?: () => void;
 }) => {
-  // How Nova should sound, re-tunable at any time. Source of truth for the
-  // chat's own context is localStorage's blaze_profile (what getDynamicContext
-  // reads); changing it here updates that immediately AND bubbles up via
-  // onToneChange so the canonical Firestore profile stays in sync. The
-  // `profile` prop (read first, below) covers the device/cache-miss case
-  // where localStorage itself was never populated.
-  const readTone = (): string => {
-    try {
-      const p = localStorage.getItem("blaze_profile");
-      return p ? (JSON.parse(p).novaTone || "") : "";
-    } catch {
-      return "";
-    }
-  };
+  // Tone is stored per signed-in account, not in the old browser-wide
+  // profile key. The canonical Firestore profile remains authoritative;
+  // the passed-in profile covers device cache misses.
+  const readTone = (): string =>
+    readAccountProfile(auth.currentUser?.uid).novaTone || "";
   const [novaTone, setNovaTone] = useState<string>(() => profile?.novaTone || readTone());
   const handleToneChange = (tone: string) => {
     setNovaTone(tone);
-    try {
-      const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-      localStorage.setItem("blaze_profile", JSON.stringify({ ...p, novaTone: tone }));
-    } catch {
-      // Non-fatal - the in-session context below still uses the new value.
-    }
+    patchAccountProfile(auth.currentUser?.uid, { novaTone: tone });
     onToneChange?.(tone);
   };
   // If the canonical profile only becomes available (or changes to a real
@@ -145,29 +157,18 @@ export const NovaChat = ({
   useEffect(() => {
     if (profile?.novaTone && !novaTone) {
       setNovaTone(profile.novaTone);
-      try {
-        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, novaTone: profile.novaTone }));
-      } catch {
-        // Non-fatal - novaTone state above is already updated either way.
-      }
+      patchAccountProfile(auth.currentUser?.uid, { novaTone: profile.novaTone });
     }
   }, [profile?.novaTone]);
   // How Nova questions the user - a separate, opt-in axis from tone above.
   // Purely a server-side concern (the chosen style is read fresh from
   // Firestore by both /api/nova/chat and the Nova Live voice route), so
-  // unlike novaTone this never needs to be threaded into getDynamicContext
-  // or the client-built systemInstruction below - only persisted (and kept
-  // in sync locally purely so this component's own controls show the
-  // right selection).
+  // unlike Nova's preferred tone, questioningStyle is read by the server
+  // and should only be persisted and reflected in the local control.
   const readStyle = (): NovaQuestioningStyle | undefined => {
-    try {
-      const p = localStorage.getItem("blaze_profile");
-      const style = p ? JSON.parse(p).questioningStyle : undefined;
-      return QUESTIONING_STYLE_OPTIONS.some((s) => s.value === style) ? style : undefined;
-    } catch {
-      return undefined;
-    }
+    const style = readAccountProfile(auth.currentUser?.uid).questioningStyle;
+    return QUESTIONING_STYLE_OPTIONS.some((s) => s.value === style)
+      ? style as NovaQuestioningStyle : undefined;
   };
   const [questioningStyle, setQuestioningStyle] = useState<NovaQuestioningStyle | undefined>(
     () => (QUESTIONING_STYLE_OPTIONS.some((s) => s.value === profile?.questioningStyle)
@@ -176,12 +177,7 @@ export const NovaChat = ({
   );
   const handleStyleChange = (style: NovaQuestioningStyle | undefined) => {
     setQuestioningStyle(style);
-    try {
-      const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-      localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
-    } catch {
-      // Non-fatal - onStyleChange below still updates the canonical profile.
-    }
+    patchAccountProfile(auth.currentUser?.uid, { questioningStyle: style });
     onStyleChange?.(style);
   };
   // Same resync reasoning as novaTone above, for the same class of gap.
@@ -192,25 +188,25 @@ export const NovaChat = ({
     ) {
       const style = profile!.questioningStyle as NovaQuestioningStyle;
       setQuestioningStyle(style);
-      try {
-        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
-      } catch {
-        // Non-fatal - questioningStyle state above is already updated either way.
-      }
+      patchAccountProfile(auth.currentUser?.uid, { questioningStyle: style });
     }
   }, [profile?.questioningStyle]);
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem("nova_chat_history");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return [];
-      }
+  const loadMessages = (identityOverride?: string): Message[] => {
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_history", identityOverride));
+      if (!saved) return [];
+      const parsed: unknown = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item): item is Message =>
+        !!item && (item.role === 'user' || item.role === 'model') &&
+        Array.isArray(item.parts) && typeof item.parts[0]?.text === 'string');
+    } catch {
+      // Corrupt or blocked browser storage is not a chat or signup failure.
+      return [];
     }
-    return [];
-  });
+  };
+  const [messages, setMessages] = useState<Message[]>(loadMessages);
+  const [messagesOwnerUid, setMessagesOwnerUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
   // Reads from the single shared source of truth (feature-flags.ts)
   // rather than a hand-duplicated default that had drifted out of sync
   // with it - this local default said enable_nova_voice: false, and
@@ -232,49 +228,53 @@ export const NovaChat = ({
 
   const voiceFeatureEnabled = flags.enable_nova_voice;
 
-  const [ratings, setRatings] = useState<{
-    [key: number]: "up" | "down" | null;
-  }>(() => {
+  const loadRatings = (identityOverride?: string): { [key: number]: "up" | "down" | null } => {
     try {
-      const saved = localStorage.getItem("nova_chat_ratings");
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_ratings", identityOverride));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
-  });
+  };
+  const [ratings, setRatings] = useState<{
+    [key: number]: "up" | "down" | null;
+  }>(loadRatings);
   const [activeFeedbackForm, setActiveFeedbackForm] = useState<number | null>(
     null,
   );
-  const [feedbackNotes, setFeedbackNotes] = useState<{ [key: number]: string }>(
-    () => {
-      try {
-        const saved = localStorage.getItem("nova_chat_feedback_notes");
-        return saved ? JSON.parse(saved) : {};
-      } catch {
-        return {};
-      }
-    },
-  );
-  const [feedbackTag, setFeedbackTag] = useState<{ [key: number]: string }>(
-    () => {
-      try {
-        const saved = localStorage.getItem("nova_chat_feedback_tags");
-        return saved ? JSON.parse(saved) : {};
-      } catch {
-        return {};
-      }
-    },
-  );
-  const [isFeedbackSubmitted, setIsFeedbackSubmitted] = useState<{
-    [key: number]: boolean;
-  }>(() => {
+  const loadFeedbackNotes = (identityOverride?: string): { [key: number]: string } => {
     try {
-      const saved = localStorage.getItem("nova_chat_feedback_submitted");
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_notes", identityOverride));
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
-  });
+  };
+  const [feedbackNotes, setFeedbackNotes] = useState<{ [key: number]: string }>(
+    loadFeedbackNotes,
+  );
+  const loadFeedbackTag = (identityOverride?: string): { [key: number]: string } => {
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_tags", identityOverride));
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  };
+  const [feedbackTag, setFeedbackTag] = useState<{ [key: number]: string }>(
+    loadFeedbackTag,
+  );
+  const loadIsFeedbackSubmitted = (identityOverride?: string): { [key: number]: boolean } => {
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_chat_feedback_submitted", identityOverride));
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  };
+  const [isFeedbackSubmitted, setIsFeedbackSubmitted] = useState<{
+    [key: number]: boolean;
+  }>(loadIsFeedbackSubmitted);
 
   const submitFeedbackMemory = (index: number) => {
     const rating = ratings[index];
@@ -297,18 +297,18 @@ export const NovaChat = ({
     const newSubmitted = { ...isFeedbackSubmitted, [index]: true };
     setIsFeedbackSubmitted(newSubmitted);
     localStorage.setItem(
-      "nova_chat_feedback_submitted",
+      novaStorageKey("nova_chat_feedback_submitted", currentUid),
       JSON.stringify(newSubmitted),
     );
 
     // Persist all other states
-    localStorage.setItem("nova_chat_ratings", JSON.stringify(ratings));
+    localStorage.setItem(novaStorageKey("nova_chat_ratings", currentUid), JSON.stringify(ratings));
     localStorage.setItem(
-      "nova_chat_feedback_notes",
+      novaStorageKey("nova_chat_feedback_notes", currentUid),
       JSON.stringify({ ...feedbackNotes, [index]: notes }),
     );
     localStorage.setItem(
-      "nova_chat_feedback_tags",
+      novaStorageKey("nova_chat_feedback_tags", currentUid),
       JSON.stringify({ ...feedbackTag, [index]: selectedTag }),
     );
 
@@ -321,10 +321,94 @@ export const NovaChat = ({
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => {
-    const saved = localStorage.getItem("nova_voice_enabled");
-    return saved !== null ? saved === "true" : true;
-  });
+  const loadIsVoiceEnabled = (identityOverride?: string): boolean => {
+    try {
+      const saved = localStorage.getItem(novaStorageKey("nova_voice_enabled", identityOverride));
+      return saved !== null ? saved === "true" : true;
+    } catch {
+      return true;
+    }
+  };
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(loadIsVoiceEnabled);
+  const [voiceOwnerUid, setVoiceOwnerUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
+
+  // Phase 5N (directive §1/§2) - App.tsx never remounts NovaChat across a
+  // sign-out/sign-in transition (only AuthProvider's context value
+  // changes, which re-renders the SAME component instance), so even
+  // though every key above is now scoped by novaStorageKey() to the
+  // identity that was active when this component first mounted, the
+  // in-memory state above would otherwise keep showing that FIRST
+  // identity's messages/ratings/feedback/voice-preference after a real
+  // sign-out and a different sign-in on the same tab - the exact
+  // cross-account leak this phase's audit set out to close, just moved
+  // from storage into memory. This effect re-reads every one of those
+  // pieces of state the moment the signed-in Firebase uid actually
+  // changes, so a new identity always sees its OWN data (or a correct
+  // empty state, if it has none yet) and never a stale previous one.
+  // didMountRef skips the very first run: the lazy useState initializers
+  // above already loaded the correct data for whichever identity was
+  // active at first paint, and re-running immediately would be redundant
+  // (not wrong, just wasted work) and race with their own render.
+  const [currentUid, setCurrentUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
+  const observedUidRef = useRef(currentUid);
+  const identityEpochRef = useRef(0);
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      const nextUid = user?.uid ?? '__pending__';
+      if (observedUidRef.current !== nextUid) {
+        observedUidRef.current = nextUid;
+        identityEpochRef.current += 1;
+        // An old request must not leave the new account stuck on "thinking".
+        setLoading(false);
+        setInput('');
+        stopAudio();
+        setShowVoiceCall(false);
+        setSpeakingIndex(null);
+        setAudioLoading(false);
+      }
+      setCurrentUid(nextUid);
+    });
+    return () => unsubscribe();
+  }, []);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    // Pass the uid this effect actually fired for explicitly, rather than
+    // letting loadX() re-read the live auth.currentUser - a real,
+    // demonstrated race otherwise: linkWithCredential (anonymous -> real
+    // account, same uid) can still deliver more than one onAuthStateChanged
+    // notification before settling, and the plain [messages]-dependent
+    // autosave effect below re-reads the live uid too, so a load triggered
+    // by an intermediate notification could be followed by a save that
+    // targets whatever identity is live *by then* - not the one this
+    // reload actually read from - overwriting that identity's real saved
+    // history with the stale/empty state this reload produced.
+    const restored = loadMessages(currentUid);
+    if (restored.length > 0) {
+      setMessages(restored);
+    } else {
+      const savedProfile = readAccountProfile(currentUid);
+      const firstName = savedProfile.useNameInGreetings && typeof savedProfile.fullName === 'string'
+        ? savedProfile.fullName.trim().split(/\s+/)[0] : '';
+      setMessages([{
+        role: 'model',
+        parts: [{ text: initialMessage || `I'm Nova. ${firstName ? `Welcome, ${firstName}. ` : ''}What's on your mind today?` }],
+      }]);
+    }
+    setMessagesOwnerUid(currentUid);
+    setRatings(loadRatings(currentUid));
+    setFeedbackNotes(loadFeedbackNotes(currentUid));
+    setFeedbackTag(loadFeedbackTag(currentUid));
+    setIsFeedbackSubmitted(loadIsFeedbackSubmitted(currentUid));
+    setIsVoiceEnabled(loadIsVoiceEnabled(currentUid));
+    setVoiceOwnerUid(currentUid);
+    setActiveToolSuggestion(null);
+    setActiveGuardianOffer(null);
+    setActivePracticalAssistanceOffer(null);
+  }, [currentUid]);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
@@ -333,6 +417,18 @@ export const NovaChat = ({
     tab?: string;
     description: string;
   } | null>(null);
+  // Phase 5L (directive §6) - "prevent repetitive prompting after
+  // dismissal": once the user has explicitly closed a suggestion for a
+  // specific feature (Start or Ignore - either way they've addressed it),
+  // that exact featureId is never auto-offered again this session. Mirrors
+  // the guardian/practical-assistance "shown once" refs below, just keyed
+  // per-feature since suggest_feature can legitimately suggest several
+  // different features across one conversation.
+  const dismissedFeatureIdsRef = useRef<Set<string>>(new Set());
+  const dismissActiveToolSuggestion = () => {
+    if (activeToolSuggestion?.tab) dismissedFeatureIdsRef.current.add(activeToolSuggestion.tab);
+    setActiveToolSuggestion(null);
+  };
   // Guardian Support Invitation: whether Nova has offered it in THIS
   // session already - never re-offered more than once in a conversation
   // unless the user raises it again themselves (matches
@@ -342,6 +438,10 @@ export const NovaChat = ({
   const [activeGuardianOffer, setActiveGuardianOffer] = useState<{ reason: string } | null>(null);
   const guardianOfferShownRef = useRef(false);
   const guardianInvitationEnabled = useGuardianSupportInvitationEnabled();
+  // Phase 5K: same "offered once per session unless raised again" rule as
+  // the Guardian Support Invitation above, for offer_practical_assistance.
+  const [activePracticalAssistanceOffer, setActivePracticalAssistanceOffer] = useState<{ reason: string } | null>(null);
+  const practicalAssistanceOfferShownRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -451,54 +551,44 @@ export const NovaChat = ({
   // directly here (rather than re-parsing localStorage) always reflects
   // the person's current choice, matching NovaToneControl's own promise
   // that "Nova switches straightaway."
-  const buildSituationalContext = (): string => {
+
+  useEffect(() => {
+    // currentUid (the identity this component currently believes is
+    // active, updated by the onAuthStateChanged listener above), not a
+    // fresh live read - see novaStorageKey's own comment on why a plain
+    // live read here can race the identity-reload effect above and
+    // overwrite a different identity's saved history.
+    if (!canPersistNovaChatState(messagesOwnerUid, currentUid, auth.currentUser?.uid ?? null)) return;
     try {
-      const profileStr = localStorage.getItem("blaze_profile");
-      const profile = profileStr ? JSON.parse(profileStr) : {};
-      let ctx = `\n[SITUATIONAL ONBOARDING CONTEXT]\n`;
-      let hasAny = false;
-      if (profile.purpose) { ctx += `- Primary Goal: ${profile.purpose}\n`; hasAny = true; }
-      if (profile.primaryDrain) { ctx += `- Current Pressure Point: ${profile.primaryDrain}\n`; hasAny = true; }
-      if (profile.pathway) { ctx += `- Environment: ${profile.pathway}\n`; hasAny = true; }
-      if (novaTone) { ctx += `- Preferred Nova Tone: ${novaTone}\n`; hasAny = true; }
-      return hasAny ? ctx : "";
-    } catch (e) {
-      console.error(e);
-      return "";
+      localStorage.setItem(novaStorageKey("nova_chat_history", currentUid), JSON.stringify(messages));
+    } catch {
+      // Private mode can restrict storage. Messages remain in this session.
     }
-  };
+  }, [messages, messagesOwnerUid, currentUid]);
 
   useEffect(() => {
-    localStorage.setItem("nova_chat_history", JSON.stringify(messages));
-  }, [messages]);
-
-  useEffect(() => {
-    localStorage.setItem("nova_voice_enabled", String(isVoiceEnabled));
-  }, [isVoiceEnabled]);
+    if (!canPersistNovaChatState(voiceOwnerUid, currentUid, auth.currentUser?.uid ?? null)) return;
+    try {
+      localStorage.setItem(novaStorageKey("nova_voice_enabled", currentUid), String(isVoiceEnabled));
+    } catch {
+      // A browser preference is optional; never break Nova's chat.
+    }
+  }, [isVoiceEnabled, voiceOwnerUid, currentUid]);
 
   useEffect(() => {
     if (messages.length === 0) {
       let greeting =
         initialMessage ||
-        "Nova interface active. What behavioral pattern are we breaking today?";
-      const profileStr = localStorage.getItem("blaze_profile");
-      let profileData: any = null;
-      try {
-        if (profileStr) profileData = JSON.parse(profileStr);
-      } catch (e) {
-        // Non-fatal - profileData just stays null if this is corrupted.
-      }
+        "I'm Nova. What's on your mind today?";
+      const profileData = readAccountProfile(auth.currentUser?.uid);
 
-      if (!initialMessage && (fingerprint || profileData)) {
-        const username = profileData?.useNameInGreetings
-          ? profileData?.fullName.split(" ")[0]
-          : "Executive";
-        const role =
-          profileData?.role || fingerprint?.profile || "High Achiever";
-        const purpose = profileData?.purpose
-          ? `your priority is to ${profileData.purpose.toLowerCase()}`
-          : "we need to secure your baseline";
-        greeting = `Nova active. Good to see you, ${username}. As a ${role}, ${purpose}. Where are we seeing the most friction in your operating environment today?`;
+      if (!initialMessage && (fingerprint || Object.keys(profileData).length > 0)) {
+        // Use a name only when the person has explicitly allowed greetings.
+        // Do not infer a job title, identity or needs from their profile.
+        const firstName = profileData?.useNameInGreetings && typeof profileData?.fullName === "string"
+          ? profileData.fullName.trim().split(/\s+/)[0]
+          : "";
+        greeting = `I'm Nova. ${firstName ? `Welcome, ${firstName}. ` : ""}What would help you most today?`;
       }
 
       setMessages([{ role: "model", parts: [{ text: greeting }] }]);
@@ -523,8 +613,7 @@ export const NovaChat = ({
   // server's own liveSystemInstruction (built from getNovaContextAndMetadata,
   // server.ts) is now the only carrier of memory content into a voice call.
   const buildVoiceContext = () => {
-    return `User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
-Recent chat history: ${messages
+    return `Recent chat history: ${messages
       .slice(-5)
       .map((m) => m.role + ": " + m.parts[0].text)
       .join("\n")}.
@@ -561,7 +650,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
   };
 
-  const playPcmAudio = async (base64Audio: string) => {
+  const playPcmAudio = async (base64Audio: string, shouldPlay: () => boolean = () => true) => {
+    if (!shouldPlay()) return;
     if (!audioCtxRef.current) {
       audioCtxRef.current = new window.AudioContext({ sampleRate: 24000 });
     }
@@ -569,6 +659,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     if (audioCtx.state === "suspended") {
       await audioCtx.resume();
     }
+    if (!shouldPlay()) return;
 
     stopAudio();
 
@@ -595,11 +686,22 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     source.onended = () => {
       setSpeakingIndex(null);
     };
+    if (!shouldPlay()) {
+      source.disconnect();
+      return;
+    }
     source.start(0);
     activeSourceRef.current = source;
   };
 
   const speakText = async (text: string, index: number) => {
+    const requestUid = currentUid;
+    const requestEpoch = identityEpochRef.current;
+    const stillCurrentPlayback = () =>
+      auth.currentUser?.uid === requestUid &&
+      observedUidRef.current === requestUid &&
+      identityEpochRef.current === requestEpoch;
+    if (!stillCurrentPlayback()) return;
     if (speakingIndex === index) {
       stopAudio();
       setSpeakingIndex(null);
@@ -616,17 +718,19 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
       });
 
       const data = await response.json();
+      if (!stillCurrentPlayback()) return;
       setAudioLoading(false);
 
       if (data.error) throw new Error(data.error);
 
       if (data.audio) {
-        await playPcmAudio(data.audio);
+        await playPcmAudio(data.audio, stillCurrentPlayback);
       } else {
         setSpeakingIndex(null);
       }
     } catch (error: any) {
-      console.error("Playback error:", error);
+      if (!stillCurrentPlayback()) return;
+      console.warn("Nova voice playback unavailable", { status: typeof error?.status === 'number' ? error.status : undefined });
       setAudioLoading(false);
       setSpeakingIndex(null);
       // Let the user know the TTS failed for visibility
@@ -636,7 +740,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           role: "model",
           parts: [
             {
-              text: `*System Note: Voice Module Offline (${error.message || "Failed to connect"})*`,
+              text: '*Voice is unavailable just now. You can continue by typing.*',
             },
           ],
         },
@@ -644,64 +748,17 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
   };
 
-  const getDynamicContext = async () => {
-    let contextStr = "";
-
-    contextStr += buildSituationalContext();
-
-    // Saved-memory content used to be assembled here directly from
-    // getNovaBrain() - unfiltered, with no consent check, and duplicated
-    // against the server's own separately-fetched, consent-gated memories
-    // (getNovaContextAndMetadata in server.ts). The server is now the only
-    // place memory content enters the prompt, for both text and voice.
-
-    try {
-      if (auth.currentUser) {
-        const snap = await getDoc(doc(db, "users", auth.currentUser.uid, "workload_reality_check", "state"));
-        const workload = snap.exists() ? snap.data().answers : null;
-        if (workload) {
-          const answeredKeys = Object.keys(workload).filter(
-            (k) => (workload[k] || "").trim() !== "",
-          );
-          if (answeredKeys.length > 0) {
-            contextStr += `\nLatest Workload Reality Check Answers:\n`;
-            if (workload.must)
-              contextStr += `- Must happen today: ${workload.must}\n`;
-            if (workload.wait) contextStr += `- Can wait: ${workload.wait}\n`;
-            if (workload.delegate)
-              contextStr += `- Can delegate: ${workload.delegate}\n`;
-            if (workload.pretend)
-              contextStr += `- Pretending is urgent: ${workload.pretend}\n`;
-            if (workload.future)
-              contextStr += `- Future self wants removed: ${workload.future}\n`;
-          }
-        }
-      }
-    } catch (e) {
-      // Non-fatal - same reasoning as the other context sources above.
-    }
-
-    try {
-      if (auth.currentUser) {
-        const recoverySnap = await getDoc(doc(db, "users", auth.currentUser.uid, "micro_recovery", "latest"));
-        if (recoverySnap.exists()) {
-          const recovery = recoverySnap.data();
-          contextStr += `\nLatest Completed Micro-Recovery Session:\n`;
-          contextStr += `- Protocol duration: ${recovery.duration || "N/A"}\n`;
-          contextStr += `- Executed time: ${recovery.time || "N/A"}\n`;
-          contextStr += `- Description: ${recovery.description || "N/A"}\n`;
-          contextStr += `- Completed at: ${recovery.completedAt || "N/A"}\n`;
-        }
-      }
-    } catch (e) {
-      // Non-fatal - same reasoning as the other context sources above.
-    }
-    return contextStr;
-  };
 
   const handleSend = async (overrideInput?: string) => {
     const messageText = overrideInput || input;
-    if (!messageText.trim() || loading) return;
+    const requestUid = currentUid;
+    const requestEpoch = identityEpochRef.current;
+    const stillCurrentRequest = () =>
+      auth.currentUser?.uid === requestUid &&
+      observedUidRef.current === requestUid &&
+      identityEpochRef.current === requestEpoch;
+    if (!messageText.trim() || loading ||
+        !canPersistNovaChatState(messagesOwnerUid, currentUid, auth.currentUser?.uid ?? null)) return;
 
     const userMsg: Message = { role: "user", parts: [{ text: messageText }] };
     setMessages((prev) => [...prev, userMsg]);
@@ -709,23 +766,32 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     setLoading(true);
 
     try {
-      const dynamicContext = await getDynamicContext();
-      let toneModifier = "";
-      if (fingerprint?.profile === "High-Functioning Exhausted") {
-        toneModifier =
-          "TONE OVERRIDE: Be extremely direct. Focus on baseline stability and nervous system regulation over optimization. Do not let them 'hack' their way out of tiredness.";
-      } else if (fingerprint?.profile === "Silent Resenter") {
-        toneModifier =
-          "TONE OVERRIDE: Validate their resentment as valuable data. Encourage radical candor and setting boundaries, even if it causes minor friction.";
-      }
-
+      if (!stillCurrentRequest()) return;
+      // The server's consent-gated context builder is the ONLY source of
+      // persisted fingerprint, workload, recovery and onboarding details.
+      // The client sends the current message/history plus host instructions,
+      // not silent reads of private Firestore documents.
       const fullSystemInstruction = `
             ${systemInstruction || ""}
-            User Burnout Fingerprint: ${JSON.stringify(fingerprint || "Not taken yet")}.
-            ${dynamicContext}
-            Conversation context is critical. Refer to past behaviors mentioned in history if relevant. Match the user's preferred tone noted above. Gently call out performance-identity fawning or anxiety-driven overwork if they're pretending things are urgent, but stay warm - this is a person going through burnout, not a performance review.
-            ${toneModifier}
+            Use recent messages in this conversation when relevant, without assuming unshared background details.
+            ${novaTone ? `User-selected Nova tone: ${novaTone}.` : ""}
           `;
+      // Phase 5F (directive §4): Before Words content travels as its own
+      // field now, never folded into `fullSystemInstruction` above. Phase
+      // 5E's version concatenated the person's own words into the exact
+      // string sent as `systemInstruction` - the model's elevated-trust
+      // channel, the same one Blaze Break's own safety rules occupy - with
+      // no framing marking it as untrusted and nothing stopping it from
+      // forging a fake instruction boundary. The server now quarantines
+      // this field itself (nonce-delimited, explicitly framed as "not an
+      // instruction") and sends it in the ordinary message channel instead -
+      // see server.ts's `/api/nova/chat` handler and
+      // quarantineTemporaryBeforeWordsContextForPrompt. Included for THIS
+      // turn only - never stored in `messages`/localStorage history
+      // (`userMsg` above is built from the raw `messageText`, untouched by
+      // this), never re-sent on a later turn unless the caller explicitly
+      // keeps setting the prop.
+      if (temporaryBeforeWordsContext) onTemporaryBeforeWordsContextConsumed?.();
 
       const response = await secureApiFetch("/api/nova/chat", {
         method: "POST",
@@ -741,17 +807,24 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           // answer could still push this over the server's 3000-character
           // cap and silently break the whole chat with a "forbidden fields"
           // validation error.
-          systemInstruction: fullSystemInstruction.length > NOVA_SYSTEM_INSTRUCTION_LIMIT
+          // Context is untrusted; the server places it only in the
+          // user-turn message, never its privileged system prompt.
+          conversationContext: fullSystemInstruction.length > NOVA_SYSTEM_INSTRUCTION_LIMIT
             ? fullSystemInstruction.slice(0, NOVA_SYSTEM_INSTRUCTION_LIMIT)
             : fullSystemInstruction,
+          ...(temporaryBeforeWordsContext ? { beforeWordsContext: temporaryBeforeWordsContext } : {}),
         },
       });
 
       const data = await response.json();
+      if (!stillCurrentRequest()) return;
 
       if (data.error) throw new Error(data.error);
 
-      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested);
+      // Phase 5L (directive §6) - never re-offer a specific feature the
+      // user already explicitly closed this session (see
+      // dismissedFeatureIdsRef's own comment above).
+      const suggestFeatureCall = (data.planTrace || []).find((t: any) => t.tool === 'suggest_feature' && t.result?.suggested && !dismissedFeatureIdsRef.current.has(t.result.featureId));
       const botMessage: Message = {
         role: "model",
         parts: [{ text: data.text }],
@@ -784,6 +857,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         logGuardianSupportEvent('invitation_shown');
       }
 
+      // Phase 5K - same planTrace pattern again, for the new
+      // offer_practical_assistance coordinator tool. Only renders when
+      // onRequestPracticalAssistance is actually provided, so this card
+      // never appears for a host that hasn't wired a destination for it.
+      const practicalAssistanceOfferCall = (data.planTrace || []).find((t: any) => t.tool === 'offer_practical_assistance' && t.result?.offered);
+      if (practicalAssistanceOfferCall && onRequestPracticalAssistance && !practicalAssistanceOfferShownRef.current) {
+        practicalAssistanceOfferShownRef.current = true;
+        setActivePracticalAssistanceOffer({ reason: practicalAssistanceOfferCall.result.reason });
+      }
+
       const newMessages = [...messages, userMsg, botMessage];
       setMessages(newMessages);
 
@@ -791,33 +874,48 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         speakText(data.text, newMessages.length - 1);
       }
     } catch (error: any) {
-      console.error("Chat Error:", error);
+      if (!stillCurrentRequest()) return;
+      // Do not render backend errors, server stack details or model output
+      // marked as an error verbatim into the user's private conversation.
+      console.warn("Nova chat request unsuccessful", {
+        status: typeof error?.status === 'number' ? error.status : undefined,
+      });
       const errorMessage: Message = {
         role: "model",
         parts: [
           {
-            text:
-              error.message ||
-              "I'm having trouble connecting right now. Please try again in a moment.",
+            text: "Nova couldn't respond just now. You can try sending your message again.",
           },
         ],
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
-      setLoading(false);
+      if (stillCurrentRequest()) setLoading(false);
     }
   };
 
+  // Hiding stale React state on identity changes is important even though
+  // storage keys are UID-specific. The previous chat must never flash on
+  // screen while new-user effects restore the correct conversation.
+  if (!canPersistNovaChatState(messagesOwnerUid, currentUid, auth.currentUser?.uid ?? null) ||
+      voiceOwnerUid !== currentUid) {
+    return (
+      <div role="status" aria-live="polite" className="h-full min-h-48 flex items-center justify-center rounded-2xl bg-card border border-border p-5 text-sm text-text-muted">
+        Loading your conversation…
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full bg-card rounded-xl border border-border overflow-hidden relative transition-all duration-500">
-      <div className="p-5 border-b border-border flex items-center justify-between">
+    <div className="ember-midnight ember-nova-room flex flex-col h-full bg-card rounded-2xl border border-border overflow-hidden relative transition-all duration-500">
+      <div className="px-4 py-4 sm:p-5 border-b border-border flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary relative overflow-hidden group">
+          <div className="ember-nova-mark w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary relative overflow-hidden group">
             <Sparkles className="w-4 h-4 relative z-10" />
           </div>
           <div>
             <h3 className="text-sm font-display font-medium text-text-main tracking-tight">
-              Nova
+              Nova Blaze
             </h3>
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-primary" />
@@ -827,9 +925,26 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <NovaToneControl value={novaTone} onChange={handleToneChange} />
-          <NovaStyleControl value={questioningStyle} onChange={handleStyleChange} />
+        <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
+          {onShowMeHow && (
+            <button
+              type="button"
+              data-nova-guide-target="nova-show-how"
+              onClick={onShowMeHow}
+              className="min-h-10 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              Show me how
+            </button>
+          )}
+          <details className="text-sm text-text-muted">
+            <summary className="cursor-pointer px-2 py-2 rounded-lg hover:text-text-main focus-visible:outline-2 focus-visible:outline-primary">
+              Preferences
+            </summary>
+            <div className="flex flex-wrap gap-2 items-center py-2">
+              <NovaToneControl value={novaTone} onChange={handleToneChange} />
+              <NovaStyleControl value={questioningStyle} onChange={handleStyleChange} />
+            </div>
+          </details>
           {voiceFeatureEnabled && (
             <button
               onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
@@ -866,16 +981,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           aria-live="polite"
           aria-atomic="false"
           aria-relevant="additions"
-          className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar"
+          className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 sm:space-y-8 no-scrollbar"
         >
           {messages.length === 0 && !loading && (
             <div className="h-full flex flex-col items-center justify-center max-w-sm mx-auto text-center space-y-8">
               <div className="space-y-4">
-                <div className="w-16 h-16 rounded-xl bg-primary/10 mx-auto flex items-center justify-center text-primary">
+                <div className="ember-nova-mark w-20 h-20 rounded-full bg-primary/10 mx-auto flex items-center justify-center text-primary">
                   <Sparkles className="w-7 h-7" />
                 </div>
-                <h4 className="text-2xl font-display font-medium text-text-main tracking-tight">
-                  Nova is ready
+                <h4 className="text-2xl font-serif font-semibold text-text-main tracking-tight">
+                  Nova Blaze is ready
                 </h4>
                 <p className="text-text-muted font-serif italic leading-relaxed">
                   "I don't do surface-level tips. I look at what's actually
@@ -1021,7 +1136,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                 const newR = { ...ratings, [i]: "up" as const };
                                 setRatings(newR);
                                 localStorage.setItem(
-                                  "nova_chat_ratings",
+                                  novaStorageKey("nova_chat_ratings", currentUid),
                                   JSON.stringify(newR),
                                 );
                                 setActiveFeedbackForm(
@@ -1048,7 +1163,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                 };
                                 setRatings(newR);
                                 localStorage.setItem(
-                                  "nova_chat_ratings",
+                                  novaStorageKey("nova_chat_ratings", currentUid),
                                   JSON.stringify(newR),
                                 );
                                 setActiveFeedbackForm(
@@ -1158,7 +1273,17 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                     )}
                   </div>
 
+                  {/* Phase 5L (directive §6) - "prevent duplicate offers
+                      from competing tools": these three cards all attach
+                      to this same last model message, but only ever render
+                      one at a time, in a fixed priority - a safety-related
+                      Guardian offer outranks the organisational Practical
+                      Assistance offer, which outranks a generic feature
+                      suggestion - rather than stacking whichever happened
+                      to fire. */}
                   {activeToolSuggestion &&
+                    !activeGuardianOffer &&
+                    !activePracticalAssistanceOffer &&
                     i === messages.length - 1 &&
                     msg.role === "model" && (
                       <motion.div
@@ -1194,6 +1319,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                     `Navigated to ${activeToolSuggestion.name} via Coach Nudge`,
                                   );
                                 }
+                                dismissActiveToolSuggestion();
                               }}
                               className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25 cursor-pointer"
                             >
@@ -1205,14 +1331,14 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                               handleSend(
                                 `Start ${activeToolSuggestion.name}.`,
                               );
-                              setActiveToolSuggestion(null);
+                              dismissActiveToolSuggestion();
                             }}
                             className="px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-all cursor-pointer"
                           >
                             Start
                           </button>
                           <button
-                            onClick={() => setActiveToolSuggestion(null)}
+                            onClick={dismissActiveToolSuggestion}
                             className="px-3 py-2 border border-border text-text-muted hover:text-text-main font-medium text-[11px] uppercase tracking-wider rounded-lg hover:bg-surface transition-colors cursor-pointer"
                           >
                             Ignore
@@ -1228,6 +1354,22 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                         <GuardianSupportInvitation
                           userName={readStoredFullName()}
                           onDismiss={() => setActiveGuardianOffer(null)}
+                        />
+                      </div>
+                    )}
+
+                  {activePracticalAssistanceOffer &&
+                    !activeGuardianOffer &&
+                    i === messages.length - 1 &&
+                    msg.role === "model" && (
+                      <div className="relative z-10 pt-1">
+                        <NovaPracticalAssistanceOffer
+                          reason={activePracticalAssistanceOffer.reason}
+                          onOpen={() => {
+                            setActivePracticalAssistanceOffer(null);
+                            onRequestPracticalAssistance?.();
+                          }}
+                          onDismiss={() => setActivePracticalAssistanceOffer(null)}
                         />
                       </div>
                     )}
@@ -1336,6 +1478,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSend()}
                 aria-label="Message Nova"
+                data-nova-guide-target="nova-message-input"
                 placeholder={
                   dictationError
                     ? dictationError
@@ -1375,7 +1518,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
                 aria-label="Send message"
-                className="absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
+                className="ember-nova-send absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
               >
                 <Send className="w-4.5 h-4.5" />
               </button>
@@ -1390,6 +1533,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         buildInitialPrompt={buildVoiceContext}
         onNavigate={onNavigate}
         onAwardPoints={onAwardPoints}
+        onRequestPracticalAssistance={onRequestPracticalAssistance}
       />
 
       <ConfirmDialog
@@ -1399,7 +1543,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         confirmLabel="Clear"
         onConfirm={() => {
           setMessages([]);
-          localStorage.removeItem("nova_chat_history");
+          localStorage.removeItem(novaStorageKey("nova_chat_history", currentUid));
           setConfirmingClear(false);
         }}
         onCancel={() => setConfirmingClear(false)}

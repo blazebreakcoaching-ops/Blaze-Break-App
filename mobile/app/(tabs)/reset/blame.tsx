@@ -5,7 +5,10 @@
 // BlameLocateAcceptExchange.tsx's own note) - no entitlement fetch, no
 // voice button, nothing to gate.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { Text } from '../../../src/lib/native-ui';
+import { useNativeTheme } from '../../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../../src/lib/native-theme-palette';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { addDoc, collection } from 'firebase/firestore';
@@ -85,6 +88,7 @@ const MANAGE_CHOICES: { key: ManageChoice; label: string; description: string }[
 type Phase = 'intro' | 'step' | 'exchange' | 'complete';
 
 export default function BlameResetScreen() {
+  const styles = useThemedStyles();
   const { awardPoints } = usePoints();
   const [phase, setPhase] = useState<Phase>('intro');
   const [speed, setSpeed] = useState<Speed | null>(null);
@@ -291,31 +295,36 @@ export default function BlameResetScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   container: { padding: 24, paddingTop: 32 },
   centered: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  eyebrow: { fontSize: 11, fontWeight: '800', color: '#9a3412', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 },
+  eyebrow: { fontSize: 11, fontWeight: '800', color: colors.accent, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 },
   title: { fontSize: 28, fontWeight: '800', marginBottom: 12 },
-  subtitle: { fontSize: 14, color: '#666', lineHeight: 20, marginBottom: 28 },
-  choiceCard: { backgroundColor: '#fafafa', borderRadius: 16, borderWidth: 1, borderColor: '#eee', padding: 18, marginBottom: 12 },
+  subtitle: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: 28 },
+  choiceCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 18, marginBottom: 12 },
   choiceTitle: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
-  choiceSubtitle: { fontSize: 12, color: '#777', lineHeight: 17 },
-  stepMeta: { fontSize: 11, fontWeight: '800', color: '#9a3412', textTransform: 'uppercase', letterSpacing: 1, fontVariant: ['tabular-nums'] },
+  choiceSubtitle: { fontSize: 12, color: colors.muted, lineHeight: 17 },
+  stepMeta: { fontSize: 11, fontWeight: '800', color: colors.accent, textTransform: 'uppercase', letterSpacing: 1, fontVariant: ['tabular-nums'] },
   stepLetter: { fontSize: 32, fontWeight: '900', marginVertical: 8 },
   stepTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  stepInstruction: { fontSize: 13, color: '#666', textAlign: 'center', lineHeight: 18, marginTop: 6 },
+  stepInstruction: { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18, marginTop: 6 },
   stepPrompt: { fontSize: 15, fontWeight: '700', fontStyle: 'italic', textAlign: 'center', marginTop: 8, marginBottom: 8 },
   choiceList: { width: '100%', gap: 10, marginTop: 12 },
-  manageCard: { borderWidth: 1, borderColor: '#eee', borderRadius: 14, padding: 14, backgroundColor: '#fafafa' },
-  manageCardSelected: { borderColor: '#ea580c', backgroundColor: '#fff7ed' },
+  manageCard: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14, backgroundColor: colors.surface },
+  manageCardSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
   manageLabel: { fontSize: 14, fontWeight: '700' },
-  manageDescription: { fontSize: 12, color: '#777', marginTop: 2 },
-  continueButton: { backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 40, marginTop: 20 },
-  continueButtonText: { color: '#fff', fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
+  manageDescription: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  continueButton: { backgroundColor: colors.accent, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 40, marginTop: 20 },
+  continueButtonText: { color: colors.onAccent, fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
   completeTitle: { fontSize: 24, fontWeight: '800' },
-  completeBody: { fontSize: 13, color: '#666', textAlign: 'center', lineHeight: 19, maxWidth: 280 },
-  doneButton: { backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 48, marginTop: 16 },
-  doneButtonText: { color: '#fff', fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
+  completeBody: { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
+  doneButton: { backgroundColor: colors.accent, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 48, marginTop: 16 },
+  doneButtonText: { color: colors.onAccent, fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

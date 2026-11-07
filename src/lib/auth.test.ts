@@ -26,14 +26,16 @@ vi.mock('firebase/auth', async () => {
     signInWithPopup: vi.fn(),
     linkWithPopup: vi.fn(),
     signInWithCredential: vi.fn(),
+    signInAnonymously: vi.fn(),
+    signInWithEmailAndPassword: vi.fn(),
     GoogleAuthProvider,
     OAuthProvider,
     FacebookAuthProvider,
   };
 });
 
-import { signInWithPopup, linkWithPopup, signInWithCredential, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider } from 'firebase/auth';
-import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook } from './auth';
+import { signInWithPopup, linkWithPopup, signInWithCredential, signInAnonymously, signInWithEmailAndPassword, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider } from 'firebase/auth';
+import { signInWithGoogle, signInWithGoogleCalendar, signInWithMicrosoft, signInWithFacebook, revokeGoogleCalendarAccess, continueAsGuest, signInExistingEmail } from './auth';
 
 const fakeAuth = (currentUser: { isAnonymous: boolean } | null): Auth => ({ currentUser } as unknown as Auth);
 const fakeResult = { user: { uid: 'real-uid' } } as any;
@@ -109,11 +111,21 @@ describe('signInWithGoogleCalendar', () => {
     // calendar/gmail scopes this variant adds beyond signInWithGoogle.
     const providerArg = (linkWithPopup as any).mock.calls[0][1];
     expect(providerArg.scopes).toEqual(expect.arrayContaining([
-      'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/calendar.events',
       'https://www.googleapis.com/auth/gmail.readonly',
     ]));
     expect(result).toBe(fakeResult);
+  });
+
+  // Phase 5J, directive §3 - calendar.readonly was removed as genuinely
+  // redundant (every real caller only ever reads calendars/primary/events,
+  // which calendar.events already covers for reading) - this proves it
+  // is gone, not just that the two still-needed scopes are present.
+  it('no longer requests the redundant calendar.readonly scope', async () => {
+    (linkWithPopup as any).mockResolvedValue(fakeResult);
+    await signInWithGoogleCalendar(fakeAuth({ isAnonymous: true }));
+    const providerArg = (linkWithPopup as any).mock.calls[0][1];
+    expect(providerArg.scopes).not.toContain('https://www.googleapis.com/auth/calendar.readonly');
   });
 
   it('falls back to signing into the real account on a collision, same as signInWithGoogle', async () => {
@@ -125,5 +137,74 @@ describe('signInWithGoogleCalendar', () => {
     const result = await signInWithGoogleCalendar(fakeAuth({ isAnonymous: true }));
     expect(signInWithCredential).toHaveBeenCalledWith(expect.anything(), extractedCredential);
     expect(result).toBe(fakeResult);
+  });
+});
+
+// Calendar Pilot readiness audit, Task 1 - closes the gap where
+// "Disconnect Google Workspace" claimed to revoke the cached access
+// token but never actually called Google. This is the real revoke call
+// that claim now relies on being true.
+describe('revokeGoogleCalendarAccess', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  it('calls Google\'s real revoke endpoint with the token, and reports success', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true });
+    const result = await revokeGoogleCalendarAccess('tok_abc');
+    expect(result).toBe(true);
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://oauth2.googleapis.com/revoke');
+    expect(opts.method).toBe('POST');
+    expect(opts.body).toBe('token=tok_abc');
+  });
+
+  it('reports failure (without throwing) when Google rejects the revoke - e.g. the token was already invalid', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false });
+    await expect(revokeGoogleCalendarAccess('stale_tok')).resolves.toBe(false);
+  });
+
+  it('reports failure (without throwing) on a network error - the caller must still be able to sign the user out regardless', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    await expect(revokeGoogleCalendarAccess('tok')).resolves.toBe(false);
+  });
+
+  it('URL-encodes a token containing special characters rather than sending it raw', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true });
+    await revokeGoogleCalendarAccess('tok/with+special=chars');
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(opts.body).toBe(`token=${encodeURIComponent('tok/with+special=chars')}`);
+  });
+});
+
+describe('continueAsGuest (the fix for "See a live demo" not re-establishing a session after sign-out)', () => {
+  it('signs in anonymously when there is no current session', async () => {
+    (signInAnonymously as any).mockResolvedValue(undefined);
+    await continueAsGuest(fakeAuth(null));
+    expect(signInAnonymously).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when a session (anonymous or real) already exists - never swaps an active identity', async () => {
+    await continueAsGuest(fakeAuth({ isAnonymous: true }));
+    await continueAsGuest(fakeAuth({ isAnonymous: false }));
+    expect(signInAnonymously).not.toHaveBeenCalled();
+  });
+
+  it('reports a real demo authentication failure instead of silently opening a broken preview', async () => {
+    (signInAnonymously as any).mockRejectedValue(new Error('offline'));
+    await expect(continueAsGuest(fakeAuth(null))).rejects.toThrow('offline');
+  });
+});
+
+
+describe('returning customer email sign-in', () => {
+  it('signs into the existing identity even when there is an anonymous guest', async () => {
+    (signInWithEmailAndPassword as any).mockResolvedValue(fakeResult);
+    const result = await signInExistingEmail(fakeAuth({ isAnonymous: true }), 'person@example.test', 'test-password');
+    expect(result).toBe(fakeResult);
+    expect(signInWithEmailAndPassword).toHaveBeenCalledOnce();
+    expect(linkWithPopup).not.toHaveBeenCalled();
   });
 });

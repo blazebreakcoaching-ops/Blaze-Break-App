@@ -1,3 +1,4 @@
+import { hasExplicitCalendarSignalConsent } from './calendar-signal-consent';
 import { auth, getDb } from './firebase';
 import { NOVA_MEMORY_DATA_ZONE, deriveCanonicalKey } from '../../nova-memory-governance';
 
@@ -40,6 +41,31 @@ export interface NovaMemory {
 let cachedBrain: NovaMemory[] = [];
 let cachedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
+let cacheEpoch = 0;
+let cacheLoadSucceeded = false;
+
+export const isNovaBrainReadyForAutoSync = (uid: string): boolean =>
+  cachedUid === uid && auth.currentUser?.uid === uid && cacheLoadSucceeded;
+
+const announceNovaBrainUpdated = () => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('nova-brain-updated'));
+};
+
+const isCurrentBrainOwner = () =>
+  !!auth.currentUser?.uid && cachedUid === auth.currentUser.uid;
+
+// Store only a consent bit, never private profile answers. The account
+// must be verified by Firebase Auth before a client memory write is allowed.
+export const novaLearningConsentKey = (uid: string) =>
+  `blaze_nova_learning_consent_v2:${encodeURIComponent(uid)}`;
+
+export const setNovaLearningAllowedForUid = (uid: string, allowed: boolean) => {
+  try {
+    localStorage.setItem(novaLearningConsentKey(uid), allowed ? 'yes' : 'no');
+  } catch {
+    // Fail closed if browser storage is unavailable.
+  }
+};
 
 const memoriesCollection = async (uid: string) => {
   const db = await getDb();
@@ -47,31 +73,25 @@ const memoriesCollection = async (uid: string) => {
   return collection(db, 'users', uid, 'nova_memories');
 };
 
-// The onboarding "Personalised learning" toggle (profile.letNovaLearn) is
-// the one real switch for whether Nova learns about someone at all. It's
-// mirrored into localStorage's blaze_profile (kept in sync by App.tsx on
-// both onboarding completion and every Settings save) because every
-// function below is called synchronously, fire-and-forget, from deep
-// inside ~40 feature components that have no React context to read the
-// canonical Firestore profile from directly.
+// The saved profile in Firestore is authoritative. App.tsx refreshes this
+// synchronous, account-scoped consent bit after loading that profile and
+// when onboarding or Settings changes the preference. Never reuse the
+// previous account's browser-global "blaze_profile" preference.
 export const isNovaLearningAllowed = (): boolean => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return false;
   try {
-    const stored = localStorage.getItem('blaze_profile');
-    // No profile yet means onboarding hasn't completed - default open,
-    // matching the toggle's own on-by-default stance once it does exist.
-    if (!stored) return true;
-    const profile = JSON.parse(stored);
-    return profile.letNovaLearn !== false;
-  } catch (e) {
-    return true;
+    return localStorage.getItem(novaLearningConsentKey(uid)) === 'yes';
+  } catch {
+    return false;
   }
 };
 
 // Everything Nova's server-side context builder (getNovaContextAndMetadata
-// in server.ts) is willing to use, gated per category on this doc. Defaults
-// to on for every category except the two memory ones, which the caller
-// decides based on what the user actually chose during onboarding.
-const NOVA_PERMISSION_DEFAULTS = {
+// in server.ts) is willing to use, gated per category on this doc. Memory
+// requires onboarding opt-in; Calendar aggregation also requires an explicit
+// opt-in beyond the Google OAuth scope.
+export const NOVA_PERMISSION_DEFAULTS = {
   allowCheckins: true,
   allowEnergyBudgets: true,
   allowMoodPulses: true,
@@ -89,7 +109,7 @@ const NOVA_PERMISSION_DEFAULTS = {
   // runs at all. Lives in the same doc since it's the same "how Nova-branded
   // features use my data" consent surface the user sees in one place
   // (DataPrivacyDashboard.tsx / "Nova Privacy Controls").
-  allowCalendarSignals: true,
+  allowCalendarSignals: false,
   // Broader "Nova sees the whole app" pass - same default-on, compact-
   // aggregate-only treatment as every category above. Each gates one more
   // module's summary in server.ts's getNovaContextAndMetadata.
@@ -111,68 +131,87 @@ const NOVA_PERMISSION_DEFAULTS = {
 // who never separately visits Settings > Nova Privacy Controls would
 // otherwise leave Nova completely context-blind. allowMemory carries
 // through exactly what the user chose on the onboarding consent step.
+// The entrypoint and existing-user backfill use the SAME create-only
+// transaction. A late onboarding write cannot reset someone's revoked
+// permissions from Settings or the Privacy Centre.
 export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean) => {
-  (async () => {
-    try {
-      const db = await getDb();
-      const { doc, setDoc } = await import('firebase/firestore');
-      await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
-        ...NOVA_PERMISSION_DEFAULTS,
-        allowNovaMemory: allowMemory,
-        allowNovaUseSavedMemories: allowMemory,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-    } catch {
-      // Non-fatal - Nova just stays context-blind for this session; the next
-      // successful write (e.g. a later Settings change) will fix it.
-    }
-  })();
+  void ensureNovaPermissionsExist(uid, allowMemory);
 };
 
-// Backfills the same defaults for anyone who onboarded before this existed
-// and has never visited Settings > Nova Privacy Controls, so they aren't
-// stuck context-blind forever. Only fills in what's missing - never
-// overwrites a doc that already exists, since someone may have
-// deliberately turned individual categories off.
+/** Atomic create-only defaults: a concurrent consent edit always wins. */
 export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boolean) => {
   try {
     const db = await getDb();
-    const { doc, getDoc, setDoc } = await import('firebase/firestore');
+    const { doc, runTransaction } = await import('firebase/firestore');
     const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, {
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      if (snap.exists()) return;
+      transaction.set(ref, {
         ...NOVA_PERMISSION_DEFAULTS,
-        allowNovaMemory: allowMemory,
-        allowNovaUseSavedMemories: allowMemory,
+        allowNovaMemory: allowMemory === true,
+        allowNovaUseSavedMemories: allowMemory === true,
         updatedAt: new Date().toISOString(),
       });
-    }
-  } catch (e) {
-    // Non-fatal, same reasoning as initNovaPermissionsForNewUser.
+    });
+  } catch {
+    // Failure leaves the permission unset. Nova's context builder fails
+    // closed; a later eligible page load can retry without overwriting
+    // any preference the customer already saved.
   }
 };
 
-// Gate for App.tsx's calendar-signal sync (src/lib/calendar-signals.ts),
-// which previously ran unconditionally for anyone signed in with a Google
-// access token - the DataPrivacyDashboard.tsx toggle for it referenced a
-// feature-flag name that didn't exist in the flag schema, so it had no
-// effect at all. Fails open (true) on a missing doc or a read error, same
-// default as every other category here - the real gate on whether this
-// even fires is still "did the user grant the Google Calendar OAuth scope
-// in the first place."
+// Calendar OAuth scope alone does not grant permission to aggregate it
+// for coaching. Missing/failed consent reads must fail closed. Onboarding
+// may create a permissions document, and the user can change it in Settings.
 export const isCalendarSignalConsentGranted = async (uid: string): Promise<boolean> => {
+  if (!uid || auth.currentUser?.uid !== uid) return false;
   try {
     const db = await getDb();
+    if (auth.currentUser?.uid !== uid) return false;
     const { doc, getDoc } = await import('firebase/firestore');
     const snap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
-    if (snap.exists() && typeof snap.data().allowCalendarSignals === 'boolean') {
-      return snap.data().allowCalendarSignals;
-    }
-    return true;
-  } catch (e) {
-    return true;
+    // Never let an old account's delayed read authorise a background sync
+    // after another Firebase identity has taken over the browser.
+    return auth.currentUser?.uid === uid && snap.exists() &&
+      hasExplicitCalendarSignalConsent(snap.data());
+  } catch {
+    return false;
   }
+};
+
+/** An explicit Calendar choice may create a new permission record, but
+ * must never replace the customer's existing granular consent choices. */
+export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): Promise<void> => {
+  if (!uid || auth.currentUser?.uid !== uid) throw new Error('Account changed');
+  const db = await getDb();
+  if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+  const { doc, runTransaction } = await import('firebase/firestore');
+  const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref);
+    if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+    const explicitOptInAt = enabled === true ? new Date().toISOString() : null;
+    if (snap.exists()) {
+      transaction.update(ref, {
+        allowCalendarSignals: enabled === true,
+        calendarSignalsExplicitConsentAt: explicitOptInAt,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      // Firestore's creation rules require the standard named categories.
+      // Never default memory or Calendar aggregation to on.
+      transaction.set(ref, {
+        ...NOVA_PERMISSION_DEFAULTS,
+        allowNovaMemory: false,
+        allowNovaUseSavedMemories: false,
+        allowCalendarSignals: enabled === true,
+        calendarSignalsExplicitConsentAt: explicitOptInAt,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
+  if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
 };
 
 // Updates just the memory-specific permissions from Settings or the Trust
@@ -197,27 +236,41 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
 
 export const initNovaBrain = (uid: string): Promise<void> => {
   if (cachedUid === uid && initPromise) return initPromise;
+  const requestedEpoch = ++cacheEpoch;
   cachedUid = uid;
+  cachedBrain = []; // Clear the previous account immediately on switch.
+  cacheLoadSucceeded = false;
+  announceNovaBrainUpdated();
   initPromise = (async () => {
+    let loadedMemories: NovaMemory[] = [];
+    let succeeded = false;
     try {
       const { getDocs, query, orderBy } = await import('firebase/firestore');
       const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
-      cachedBrain = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
-    } catch (e) {
-      // Leaves the cache empty rather than pretending memories loaded.
-      cachedBrain = [];
+      loadedMemories = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
+      succeeded = true;
+    } catch {
+      // Do not automatically write replacement memory during a failed read.
     }
-    window.dispatchEvent(new Event('nova-brain-updated'));
+    // Account switches and sign-outs invalidate any unfinished fetches.
+    if (cachedUid !== uid || requestedEpoch !== cacheEpoch) return;
+    cacheLoadSucceeded = succeeded;
+    // A newly-added memory may have been saved locally while Firestore
+    // was still loading. Merge by id instead of erasing that new entry.
+    const localIds = new Set(cachedBrain.map(m => m.id));
+    cachedBrain = [...cachedBrain, ...loadedMemories.filter(m => !localIds.has(m.id))];
+    announceNovaBrainUpdated();
   })();
   return initPromise;
 };
 
-// Called on sign-out so the next user's session never sees a stale cache
-// from whoever was signed in before them.
 export const clearNovaBrainCache = () => {
+  ++cacheEpoch;
   cachedBrain = [];
   cachedUid = null;
   initPromise = null;
+  cacheLoadSucceeded = false;
+  announceNovaBrainUpdated();
 };
 
 const persistMemory = (uid: string, memory: NovaMemory) => {
@@ -257,11 +310,11 @@ const persistDelete = (uid: string, id: string) => {
 };
 
 export const getNovaBrain = (): NovaMemory[] => {
-  return cachedBrain;
+  return isCurrentBrainOwner() ? cachedBrain : [];
 };
 
 export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt'>) => {
-  if (!isNovaLearningAllowed()) return;
+  if (!isCurrentBrainOwner() || !isNovaLearningAllowed()) return;
   const newMemory: NovaMemory = {
     ...memory,
     id: `mem_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -269,14 +322,14 @@ export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'upd
     updatedAt: new Date().toISOString(),
   };
   cachedBrain = [...cachedBrain, newMemory];
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) persistMemory(uid, newMemory);
 };
 
 export const logJourney = (action: string, details?: string) => {
-  if (!isNovaLearningAllowed()) return;
+  if (!isCurrentBrainOwner() || !isNovaLearningAllowed()) return;
   const content = `User Action: ${action}${details ? ` - ${details}` : ''}`;
   const newMemory: NovaMemory = {
     id: `mem_journey_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -297,7 +350,7 @@ export const logJourney = (action: string, details?: string) => {
 
   brain = brain.filter(m => !idsToRemove.has(m.id));
   cachedBrain = brain;
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) {
@@ -307,8 +360,9 @@ export const logJourney = (action: string, details?: string) => {
 };
 
 export const deleteNovaMemory = (id: string) => {
+  if (!isCurrentBrainOwner()) return;
   cachedBrain = cachedBrain.filter(m => m.id !== id);
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) persistDelete(uid, id);
@@ -319,11 +373,19 @@ export const updateNovaMemoryBySourceAndType = (
   type: MemoryType,
   memoryParams: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt' | 'source' | 'type'>
 ) => {
-  if (!isNovaLearningAllowed()) return;
+  if (!isCurrentBrainOwner() || !isNovaLearningAllowed()) return;
   const canonicalKey = deriveCanonicalKey(source, type);
   const existingIndex = cachedBrain.findIndex(m => m.source === source && m.type === type);
 
   if (existingIndex > -1) {
+    const previous = cachedBrain[existingIndex];
+    // This app synchronises several profile-derived memories on ordinary
+    // renders. Identical values are not new information: no Firestore write,
+    // updatedAt churn or changed-event should be generated.
+    const identical = previous.canonicalKey === canonicalKey &&
+      Object.entries(memoryParams).every(([key, value]) =>
+        (previous as unknown as Record<string, unknown>)[key] === value);
+    if (identical) return;
     const updated: NovaMemory = {
       ...cachedBrain[existingIndex],
       ...memoryParams,
@@ -331,7 +393,7 @@ export const updateNovaMemoryBySourceAndType = (
       updatedAt: new Date().toISOString(),
     };
     cachedBrain = [...cachedBrain.slice(0, existingIndex), updated, ...cachedBrain.slice(existingIndex + 1)];
-    window.dispatchEvent(new Event('nova-brain-updated'));
+    announceNovaBrainUpdated();
 
     const uid = auth.currentUser?.uid;
     if (uid) persistMemory(uid, updated);
@@ -352,6 +414,7 @@ export const updateNovaMemoryBySourceAndType = (
 // cachedBrain, so other open surfaces (NovaChat.tsx, EvolutionEngine.tsx)
 // would keep showing the old content until a reload.
 export const editNovaMemoryContent = (id: string, content: string) => {
+  if (!isCurrentBrainOwner()) return;
   const existingIndex = cachedBrain.findIndex(m => m.id === id);
   if (existingIndex === -1) return;
 
@@ -361,7 +424,7 @@ export const editNovaMemoryContent = (id: string, content: string) => {
     updatedAt: new Date().toISOString(),
   };
   cachedBrain = [...cachedBrain.slice(0, existingIndex), updated, ...cachedBrain.slice(existingIndex + 1)];
-  window.dispatchEvent(new Event('nova-brain-updated'));
+  announceNovaBrainUpdated();
 
   const uid = auth.currentUser?.uid;
   if (uid) persistMemory(uid, updated);

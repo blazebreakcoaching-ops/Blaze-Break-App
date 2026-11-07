@@ -1,12 +1,8 @@
-// RN port of ../../../src/lib/firebase.ts (the web app's Firebase init).
-// Reuses the SAME Firebase project/config as the web app via Metro's
-// cross-repo resolution (see metro.config.js) - same account, same data,
-// day one. No native App Check module wired in yet: Firestore reads/writes
-// and Auth work fine without it (firestore.rules only checks request.auth,
-// never request.app), so this file is enough to get sign-in and Pulse's
-// quick check-in working in plain Expo Go. Only server.ts's REST routes
-// need App Check, and that's wired in separately once we add the
-// EAS dev-client build (see mobile/src/lib/secure-api.ts).
+// Native Firebase initialization. Every EAS profile must inject its own
+// explicit public Firebase project configuration. The web project's
+// firebase-applet-config.json is deliberately NOT imported here: doing
+// so would send staging builds to production Auth/Firestore.
+// Native App Check remains a separate EAS/dev-client prerequisite.
 import 'react-native-get-random-values';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 // Deliberately from '@firebase/auth', not the 'firebase/auth' umbrella
@@ -21,9 +17,25 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeAuth, getAuth, type Auth, type Persistence } from '@firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Firestore } from 'firebase/firestore';
-import firebaseConfig from '../../../firebase-applet-config.json';
+import { buildNativeFirebaseConfig } from './firebase-build-config';
 
-export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const firebaseConfig = buildNativeFirebaseConfig({
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  firestoreDatabaseId: process.env.EXPO_PUBLIC_FIREBASE_FIRESTORE_DATABASE_ID,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+});
+
+const existing = getApps()[0];
+// React Native Fast Refresh can retain a previous initialized Firebase
+// app. Refuse to reuse it if a build/environment switch changed projects.
+if (existing && existing.options.projectId !== firebaseConfig.projectId) {
+  throw new Error('Native Firebase project mismatch: restart with the correct environment');
+}
+export const app = existing ? getApp() : initializeApp(firebaseConfig);
 
 // getReactNativePersistence is genuinely part of @firebase/auth's public
 // API (its own JSDoc example imports it exactly this way - see

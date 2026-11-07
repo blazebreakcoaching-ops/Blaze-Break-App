@@ -6,7 +6,10 @@
 // localStorage tools not in Phase 1 - see the mobile plan). Widget grid,
 // gamification, streaks etc. are out of scope this phase.
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { Text } from '../../src/lib/native-ui';
+import { useNativeTheme } from '../../src/lib/native-theme';
+import type { NativeThemeColors } from '../../src/lib/native-theme-palette';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +23,8 @@ type Recommendation = {
   title: string;
   message: string;
   points: number;
+  type?: string;
+  decisionId?: string | null;
 };
 
 type WeeklyRecap =
@@ -32,17 +37,46 @@ type WeeklyRecap =
 const TAB_ROUTES: Record<string, string> = {
   diagnose: '/(tabs)/checkin',
   reset: '/(tabs)/reset',
+  nova: '/(tabs)/nova',
 };
 
 export default function PulseScreen() {
+  const styles = useThemedStyles();
   const { user } = useAuth();
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(true);
   const [weeklyRecap, setWeeklyRecap] = useState<WeeklyRecap | null>(null);
   const [checkInVisible, setCheckInVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [outcomeSaving, setOutcomeSaving] = useState(false);
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+
+  const recordRecommendationOutcome = async (action: 'started' | 'declined'): Promise<boolean> => {
+    if (!recommendation?.decisionId || outcomeSaving) return false;
+    setOutcomeSaving(true);
+    setOutcomeError(null);
+    try {
+      await secureApiFetch('/api/recovery/routing-outcome', {
+        method: 'POST', data: { decisionId: recommendation.decisionId, action },
+      });
+      if (action === 'declined') {
+        setRecommendation(prev => prev ? {
+          ...prev, decisionId: null, type: 'no_action', tool: '', tab: '', points: 0,
+          title: 'No pressure to do more right now',
+          message: 'Not now is a valid choice. You can return to your recovery tools whenever you want.',
+        } : prev);
+      }
+      return true;
+    } catch {
+      setOutcomeError('Could not save your choice. Please try again.');
+      return false;
+    } finally {
+      setOutcomeSaving(false);
+    }
+  };
 
   const load = useCallback(async () => {
+    setOutcomeError(null);
     setRecommendationLoading(true);
     try {
       const resumeRes = await secureApiFetch('/api/user/resume-prompt');
@@ -92,14 +126,22 @@ export default function PulseScreen() {
     setRefreshing(false);
   };
 
-  const handleRecommendationPress = () => {
-    if (!recommendation) return;
-    const route = TAB_ROUTES[recommendation.tab];
-    if (route) {
-      router.push(route as never);
-    } else if (recommendation.tab === 'home') {
+  const handleRecommendationPress = async () => {
+    if (!recommendation || recommendation.type === 'no_action' || outcomeSaving) return;
+    // A fallback route to Nova is not the user starting the recommended
+    // intervention. Report "started" only for an actual native destination.
+    const actualNativeTool = recommendation.tab === 'home'
+      || recommendation.tab === 'diagnose' || recommendation.tab === 'reset';
+    if (recommendation.decisionId && actualNativeTool && !(await recordRecommendationOutcome('started'))) return;
+    if (recommendation.tab === 'home') {
       setCheckInVisible(true);
+      return;
     }
+    // Every other recommendation now has a real native destination:
+    // explicit Phase 1 tools, or Nova to talk through a feature that
+    // has not yet been ported. Never render a dead action.
+    const route = TAB_ROUTES[recommendation.tab] ?? '/(tabs)/nova';
+    router.push(route as never);
   };
 
   return (
@@ -111,7 +153,7 @@ export default function PulseScreen() {
         <View style={styles.headerRow}>
           <Text style={styles.header}>Pulse</Text>
           <TouchableOpacity onPress={() => router.push('/account')} accessibilityLabel="Account" hitSlop={12}>
-            <Ionicons name="person-circle-outline" size={28} color="#9a3412" />
+            <Ionicons name="person-circle-outline" size={28} color={styles.colors.accent} />
           </TouchableOpacity>
         </View>
 
@@ -122,18 +164,33 @@ export default function PulseScreen() {
         )}
 
         <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>Nova&apos;s suggestion</Text>
+          <Text style={styles.cardEyebrow}>{recommendation?.type === 'no_action' ? 'Recovery update' : "Nova's suggestion"}</Text>
           {recommendationLoading ? (
             <ActivityIndicator style={styles.cardLoading} />
           ) : recommendation ? (
             <>
               <Text style={styles.cardTitle}>{recommendation.title}</Text>
               <Text style={styles.cardMessage}>{recommendation.message}</Text>
-              <TouchableOpacity style={styles.cardButton} onPress={handleRecommendationPress}>
+              {recommendation.type !== 'no_action' && <TouchableOpacity style={styles.cardButton} disabled={outcomeSaving} onPress={handleRecommendationPress} accessibilityRole="button">
                 <Text style={styles.cardButtonText}>
-                  {TAB_ROUTES[recommendation.tab] ? `Open ${recommendation.tool}` : 'Talk it through with Nova'}
+                  {recommendation.decisionId && (recommendation.tab === 'home' || recommendation.tab === 'diagnose' || recommendation.tab === 'reset')
+                    ? `Start ${recommendation.tool}`
+                    : recommendation.tab === 'home'
+                      ? 'Open quick check-in'
+                      : recommendation.tab === 'diagnose' || recommendation.tab === 'reset'
+                        ? `Open ${recommendation.tool}`
+                        : 'Talk it through with Nova'}
                 </Text>
-              </TouchableOpacity>
+              </TouchableOpacity>}
+              {recommendation.decisionId && recommendation.type !== 'no_action' && (
+                <TouchableOpacity disabled={outcomeSaving}
+                  onPress={() => { void recordRecommendationOutcome('declined'); }}
+                  accessibilityRole="button" accessibilityLabel="Not now"
+                  style={styles.declineButton}>
+                  <Text style={styles.declineButtonText}>Not now</Text>
+                </TouchableOpacity>
+              )}
+              {outcomeError && <Text accessibilityRole="alert" style={styles.outcomeError}>{outcomeError}</Text>}
             </>
           ) : (
             <Text style={styles.cardMessage}>Nothing urgent right now - come back any time.</Text>
@@ -171,48 +228,56 @@ export default function PulseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   container: { padding: 20, paddingBottom: 40 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   header: { fontSize: 28, fontWeight: '800' },
   signUpBanner: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.accentSoft,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#fed7aa',
+    borderColor: colors.accentBorder,
   },
-  signUpBannerText: { color: '#9a3412', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  signUpBannerText: { color: colors.accent, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   card: {
-    backgroundColor: '#fafafa',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     padding: 18,
     marginBottom: 16,
   },
-  cardEyebrow: { fontSize: 11, fontWeight: '800', color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  cardEyebrow: { fontSize: 11, fontWeight: '800', color: colors.subtle, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   cardTitle: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
-  cardMessage: { fontSize: 14, color: '#444', lineHeight: 20 },
-  cardSubtext: { fontSize: 13, color: '#777', marginTop: 6 },
+  cardMessage: { fontSize: 14, color: colors.muted, lineHeight: 20 },
+  cardSubtext: { fontSize: 13, color: colors.muted, marginTop: 6 },
   cardLoading: { marginVertical: 8 },
   cardButton: {
-    backgroundColor: '#ea580c',
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
     marginTop: 14,
   },
-  cardButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  cardButtonText: { color: colors.onAccent, fontWeight: '700', fontSize: 14 },
+  declineButton: { alignItems: 'center', paddingVertical: 12 },
+  declineButtonText: { color: colors.muted, fontWeight: '600', fontSize: 14 },
+  outcomeError: { color: colors.accent, fontSize: 12, marginTop: 6 },
   claimButton: {
     borderWidth: 2,
-    borderColor: '#ea580c',
+    borderColor: colors.accent,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
   },
-  claimButtonText: { color: '#ea580c', fontWeight: '800', fontSize: 16 },
+  claimButtonText: { color: colors.accent, fontWeight: '800', fontSize: 16 },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { useNovaLiveVoice } from '../lib/useNovaLiveVoice';
 import { GuardianSupportInvitation } from './GuardianSupportInvitation';
+import { NovaPracticalAssistanceOffer } from './NovaPracticalAssistanceOffer';
 import { NovaVoiceOrb } from './NovaVoiceOrb';
 import { secureApiFetch } from '../lib/secure-api';
 
@@ -31,6 +32,12 @@ interface NovaVoiceCallProps {
   // NovaChat already uses for its own suggest_feature card.
   onNavigate?: (tab: string) => void;
   onAwardPoints?: (amount: number, reason: string) => void;
+  // Phase 5K: lets a voice call offer the same practical-assistance
+  // workflow text chat can (see NovaChat.tsx's identically-named prop).
+  // Accepting it ends the call and hands off to the host's own
+  // destination for it - optional, so a host with nothing to open simply
+  // never renders this card.
+  onRequestPracticalAssistance?: () => void;
   // Selects which server-side capability gates this call - see
   // useNovaLiveVoice's UseNovaLiveVoiceOptions.
   sessionContext?: 'blame';
@@ -66,13 +73,15 @@ function formatResetDate(d: Date): string {
 // reconnect - rather than the inline mic toggle. Everything real-time lives in
 // the shared useNovaLiveVoice hook; this component is only presentation and
 // call lifecycle.
-export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate, onAwardPoints, sessionContext }: NovaVoiceCallProps) => {
+export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate, onAwardPoints, onRequestPracticalAssistance, sessionContext }: NovaVoiceCallProps) => {
   const dialogRef = useFocusTrap(isOpen);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const {
     status, error, isNovaSpeaking, isMuted, transcript, elapsedMs,
     featureSuggestion, dismissFeatureSuggestion,
-    guardianSupportOffer, dismissGuardianSupportOffer, start, stop, toggleMute,
+    guardianSupportOffer, dismissGuardianSupportOffer,
+    practicalAssistanceOffer, dismissPracticalAssistanceOffer,
+    start, stop, toggleMute,
   } = useNovaLiveVoice({ buildInitialPrompt, sessionContext });
   const [voiceMinutes, setVoiceMinutes] = useState<VoiceMinutesInfo | null>(null);
 
@@ -273,6 +282,24 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
                 <GuardianSupportInvitation
                   userName={readStoredFullNameForVoice()}
                   onDismiss={dismissGuardianSupportOffer}
+                />
+              )}
+            </AnimatePresence>
+
+            {/* Phase 5K - same pattern, for offer_practical_assistance.
+                Accepting ends the call and hands off to the host's own
+                destination for the workflow, same as suggest_feature's
+                "Open Tool" button above. */}
+            <AnimatePresence>
+              {practicalAssistanceOffer && onRequestPracticalAssistance && (
+                <NovaPracticalAssistanceOffer
+                  reason={practicalAssistanceOffer.reason}
+                  onOpen={() => {
+                    dismissPracticalAssistanceOffer();
+                    onRequestPracticalAssistance();
+                    handleEnd();
+                  }}
+                  onDismiss={dismissPracticalAssistanceOffer}
                 />
               )}
             </AnimatePresence>

@@ -5,7 +5,10 @@
 // so there's no voiceEligible prop, no NovaVoiceCall import, nothing to
 // gate - the whole voice code path simply doesn't exist in this file.
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { Text, TextInput } from '../lib/native-ui';
+import { useNativeTheme } from '../lib/native-theme';
+import type { NativeThemeColors } from '../lib/native-theme-palette';
 import { secureApiFetch } from '../lib/secure-api';
 
 interface GeminiHistoryTurn {
@@ -34,6 +37,7 @@ Locate asks: "What am I actually reacting to?" Accept asks: "What's true right n
 Every reply: offer exactly ONE short, warm, grounding reflection or clarifying question that helps them name the real trigger underneath the surface reaction, and/or accept what's true without fighting it. Never a lecture, never a numbered list, never more than 2-3 sentences, never more than one question at a time. Do not introduce a new framework. This exchange is capped at a few messages - treat every reply as possibly the last thing you say before they move to deciding what to do about it next.`;
 
 export function BlameLocateAcceptExchange({ title, instruction, prompt, onContinue }: BlameLocateAcceptExchangeProps) {
+  const styles = useThemedStyles();
   const [history, setHistory] = useState<GeminiHistoryTurn[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -121,33 +125,38 @@ export function BlameLocateAcceptExchange({ title, instruction, prompt, onContin
   );
 }
 
-const styles = StyleSheet.create({
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
   container: { width: '100%', gap: 16 },
   title: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  instruction: { fontSize: 13, color: '#666', textAlign: 'center', lineHeight: 18 },
+  instruction: { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 },
   prompt: { fontSize: 15, fontWeight: '700', fontStyle: 'italic', textAlign: 'center' },
   history: { maxHeight: 200 },
   historyContent: { gap: 10 },
   bubble: { maxWidth: '85%', borderRadius: 16, padding: 12 },
-  bubbleUser: { alignSelf: 'flex-end', backgroundColor: '#fed7aa' },
-  bubbleModel: { alignSelf: 'flex-start', backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#eee' },
-  bubbleText: { fontSize: 13, lineHeight: 18, color: '#222' },
-  error: { color: '#dc2626', fontSize: 12, textAlign: 'center' },
+  bubbleUser: { alignSelf: 'flex-end', backgroundColor: colors.accentSoft },
+  bubbleModel: { alignSelf: 'flex-start', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  bubbleText: { fontSize: 13, lineHeight: 18, color: colors.text },
+  error: { color: colors.danger, fontSize: 12, textAlign: 'center' },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     borderRadius: 14,
     padding: 12,
     fontSize: 14,
     minHeight: 44,
     maxHeight: 100,
   },
-  sendButton: { backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 18 },
-  sendButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  cappedText: { fontSize: 11, color: '#999', textAlign: 'center', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
-  continueButton: { backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  continueButtonText: { color: '#fff', fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
-  skipLink: { textAlign: 'center', color: '#999', fontSize: 12, fontWeight: '600', textDecorationLine: 'underline' },
+  sendButton: { backgroundColor: colors.accent, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 18 },
+  sendButtonText: { color: colors.onAccent, fontWeight: '700', fontSize: 13 },
+  cappedText: { fontSize: 11, color: colors.subtle, textAlign: 'center', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  continueButton: { backgroundColor: colors.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  continueButtonText: { color: colors.onAccent, fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
+  skipLink: { textAlign: 'center', color: colors.subtle, fontSize: 12, fontWeight: '600', textDecorationLine: 'underline' },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

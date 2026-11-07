@@ -400,6 +400,230 @@ async function runTests() {
   });
   await assertFails(userA.firestore().collection('anxiety_reset_events').doc('eB').get());
 
+  console.log("Testing NHEI Phase 2 rules...");
+
+  // nhei_evidence / nhei_evidence/{id}/corrections / nhei_temporal_relations
+  // are server (Admin SDK) only - "if false" for every operation,
+  // including read, for the owner themselves. nhei-persistence-service.ts
+  // is the only code that ever touches these paths, and it enforces
+  // consent server-side before any Firestore call - there is no client
+  // write path at all, so a "trusted"/"verified" sourceType can never be
+  // created by a client simply naming it.
+  const nheiEvidenceRef = userA.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev1');
+
+  // * user A cannot read their own NHEI evidence directly.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev1').set({
+      id: 'ev1', sourceType: 'USER_REPORTED_EVENT', timeUncertainty: 'unknown',
+      evidenceQuality: 'medium', confirmationState: 'not_applicable',
+      selfSystems: [], dimensions: [], relatedEventIds: [], sourceRef: null,
+      createdAt: '2026-06-01', updatedAt: '2026-06-01',
+    });
+  });
+  await assertFails(nheiEvidenceRef.get());
+
+  // * user A cannot create NHEI evidence directly, with a benign sourceType...
+  await assertFails(userA.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev2').set({
+    id: 'ev2', sourceType: 'USER_REPORTED_EVENT', timeUncertainty: 'unknown',
+    evidenceQuality: 'medium', confirmationState: 'not_applicable',
+    selfSystems: [], dimensions: [], relatedEventIds: [],
+  }));
+
+  // * ...or with a "trusted" sourceType a client should never be able to
+  //   self-assert - proving the restriction holds at the data layer, not
+  //   just via application-code validation.
+  await assertFails(userA.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev3').set({
+    id: 'ev3', sourceType: 'EXTERNALLY_VERIFIED_EVENT', timeUncertainty: 'unknown',
+    evidenceQuality: 'high', confirmationState: 'user_confirmed',
+    selfSystems: [], dimensions: [], relatedEventIds: [],
+  }));
+
+  // * user A cannot update or delete an existing NHEI evidence record either.
+  await assertFails(nheiEvidenceRef.update({ confirmationState: 'user_confirmed' }));
+  await assertFails(nheiEvidenceRef.delete());
+
+  // * user A cannot read user B's NHEI evidence.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userB').collection('nhei_evidence').doc('evB').set({
+      id: 'evB', sourceType: 'USER_REPORTED_EVENT', timeUncertainty: 'unknown',
+      evidenceQuality: 'medium', confirmationState: 'not_applicable',
+      selfSystems: [], dimensions: [], relatedEventIds: [], sourceRef: null,
+      createdAt: '2026-06-01', updatedAt: '2026-06-01',
+    });
+  });
+  await assertFails(userA.firestore().collection('users').doc('userB').collection('nhei_evidence').doc('evB').get());
+
+  // * the nested corrections subcollection is equally locked down.
+  const correctionRef = userA.firestore().collection('users').doc('userA')
+    .collection('nhei_evidence').doc('ev1').collection('corrections').doc('c1');
+  await assertFails(correctionRef.set({ previousConfirmationState: null, newConfirmationState: 'user_disputed', changedAt: '2026-06-01' }));
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userA').collection('nhei_evidence').doc('ev1')
+      .collection('corrections').doc('c1').set({ previousConfirmationState: null, newConfirmationState: 'user_disputed', changedAt: '2026-06-01' });
+  });
+  await assertFails(correctionRef.get());
+
+  // * nhei_temporal_relations is the same server-only shape.
+  const relationRef = userA.firestore().collection('users').doc('userA').collection('nhei_temporal_relations').doc('r1');
+  await assertFails(relationRef.set({
+    fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE',
+    interpretationConfidence: 'high', derivedBy: 'caller_asserted', rationale: 'caller_supplied', createdAt: '2026-06-01',
+  }));
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection('users').doc('userA').collection('nhei_temporal_relations').doc('r1').set({
+      fromEventId: 'a', toEventId: 'b', relationType: 'USER_ATTRIBUTED_INFLUENCE',
+      interpretationConfidence: 'high', derivedBy: 'caller_asserted', rationale: 'caller_supplied', createdAt: '2026-06-01',
+    });
+  });
+  await assertFails(relationRef.get());
+
+  // * the three new NHEI consent fields on nova_permissions/current
+  //   behave like every other optional field there: owner-writable,
+  //   bool-only, and additive (not required by hasAll) so an existing
+  //   write that has never heard of NHEI still succeeds.
+  const nheiPermRef = userA.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertSucceeds(nheiPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowNheiReflectionStorage: true, allowNheiLongitudinalTracking: false, allowNheiRoutingInsights: false,
+  }));
+  await assertFails(nheiPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowNheiReflectionStorage: 'yes', // wrong type - must fail, not coerce
+  }));
+
+  // ------------------------------------------------------------------
+  // Phase 5F, directive §3: real Firestore-emulator rules tests for the
+  // server-only secret/action-record collections. Each gets the full
+  // three-identity sweep (unauthenticated, an unrelated authenticated
+  // user, and the document's own owner) PLUS a proof that the real
+  // server's own access path - the Admin SDK, via withSecurityRulesDisabled
+  // - still works, since these rules exist specifically to block the
+  // CLIENT SDK, never the Admin SDK server.ts actually uses.
+  console.log("Testing Phase 5F secret/action-record rules...");
+
+  const userB = testEnv.authenticatedContext('userB');
+
+  async function assertDeniedToEveryoneButAdmin(path, sampleData) {
+    const ownerRef = userA.firestore().doc(path);
+    const otherRef = userB.firestore().doc(path);
+    const unauthRef = unauth.firestore().doc(path);
+
+    // Seed via the Admin SDK first (exactly how the real server writes
+    // these) so the read-denial assertions below have a real doc to deny
+    // access to, not just an absent one (Firestore denies reads of
+    // nonexistent docs too, which would make the assertion meaningless).
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(path).set(sampleData);
+    });
+
+    await assertFails(ownerRef.get());
+    await assertFails(ownerRef.set(sampleData));
+    await assertFails(otherRef.get());
+    await assertFails(otherRef.set(sampleData));
+    await assertFails(unauthRef.get());
+    await assertFails(unauthRef.set(sampleData));
+
+    // The real server's own access path must still work - these rules
+    // exist to block the client SDK, never the Admin SDK.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await assertSucceeds(ctx.firestore().doc(path).get());
+      await assertSucceeds(ctx.firestore().doc(path).set(sampleData));
+    });
+  }
+
+  // * integration_tokens: raw OAuth access/refresh tokens.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/integration_tokens/slack',
+    { accessToken: 'at', refreshToken: 'rt', expiresAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * oauth_pkce: a live PKCE code_verifier mid-flow.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/oauth_pkce/google_calendar_actions',
+    { codeVerifier: 'verifier-value', createdAt: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * security: the encrypted TOTP secret and hashed recovery codes.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/security/mfa_totp',
+    { secretEncrypted: 'enc', enabled: true, enrolledAt: '2026-01-01T00:00:00.000Z', recoveryCodesHashed: [], failedAttempts: 0, lockedUntil: null, updatedAt: '2026-01-01T00:00:00.000Z' },
+  );
+  // Clean up immediately: the line above seeded a REAL enabled:true
+  // enrollment record for userA (needed to prove even the owner can't
+  // read their own 2FA secret doc directly). Left in place, every
+  // isOwner(uid)-gated assertion for userA for the REST of this script
+  // would now correctly require a verified MFA session per
+  // mfaSessionSatisfied() (PRIORITY ZERO MFA FIX, firestore.rules) - which
+  // userA's plain testEnv.authenticatedContext('userA') never has. That's
+  // the gate genuinely doing its job, not a bug - but every assertion
+  // below this point assumes userA is a normal, non-MFA account, so this
+  // fixture must not outlive the one test it was for.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc('users/userA/security/mfa_totp').delete();
+  });
+
+  // * calendar_protection_proposals: server-authoritative proposal state
+  //   (directive's own "secrets AND server-authoritative action records
+  //   cannot be modified or accessed directly by ordinary clients").
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/calendar_protection_proposals/cpp_test1',
+    { proposalId: 'cpp_test1', state: 'awaiting_approval', startIso: '2026-01-01T00:00:00.000Z', endIso: '2026-01-01T01:00:00.000Z', title: 'Protected block', approvalFingerprint: 'fp', failureReason: null, retryCount: 0, approvedAt: null, approvalExpiresAt: null, activeAttemptId: null, externalEventId: null, lastTransitionAt: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * calendar_protection_audit: the append-only audit trail for the above.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/calendar_protection_audit/entry1',
+    { proposalId: 'cpp_test1', event: 'prepared', detail: {}, at: '2026-01-01T00:00:00.000Z' },
+  );
+
+  // * platform_pilot_access/calendar_protection: Calendar Pilot readiness
+  //   audit (Task 2) - the admin-only pilot-eligibility gate. Unlike
+  //   nova_permissions/current below (the user's OWN consent, which the
+  //   owner can read/write), this is the PLATFORM's decision about which
+  //   accounts are in a controlled rollout - it must be denied even to
+  //   the account it names, not just to other users, since the entire
+  //   point of this gate is that no account can grant it to itself. The
+  //   shared assertDeniedToEveryoneButAdmin helper already proves the
+  //   owner case along with other-user and unauthenticated.
+  await assertDeniedToEveryoneButAdmin(
+    'users/userA/platform_pilot_access/calendar_protection',
+    { eligible: true, grantedAt: '2026-01-01T00:00:00.000Z', grantedBy: 'admin_uid', revokedAt: null },
+  );
+
+  // * Calendar action permission (allowCalendarActions, on the shared
+  //   nova_permissions/current doc) - explicitly named separately from
+  //   the NHEI consent fields above, even though it's the same doc/rule:
+  //   owner can set it with the right type, an unrelated user and an
+  //   unauthenticated caller cannot read or write it at all, and a wrong
+  //   type is rejected rather than coerced.
+  const calendarActionsPermRef = userA.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertSucceeds(calendarActionsPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowCalendarActions: true, allowCalendarActionsGrantedAt: '2026-01-01T00:00:00.000Z', allowCalendarActionsWithdrawnAt: null,
+  }));
+  await assertFails(calendarActionsPermRef.set({
+    allowCheckins: true, allowEnergyBudgets: true, allowMoodPulses: true, allowBodyCheckins: true,
+    allowWins: true, allowWeeklyReviews: true, allowBoundaryScripts: true, allowGoals: true,
+    allowRecoveryDebt: true, allowRecoveryVelocity: true, allowEnergyTrend: true, allowMoodTrend: true,
+    allowNovaMemory: true, allowNovaUseSavedMemories: true,
+    allowCalendarActions: 'yes', // wrong type - must fail, not coerce
+  }));
+  const otherUserCalendarActionsRef = userB.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertFails(otherUserCalendarActionsRef.get());
+  await assertFails(otherUserCalendarActionsRef.set({ allowCalendarActions: true }));
+  const unauthCalendarActionsRef = unauth.firestore().collection('users').doc('userA').collection('nova_permissions').doc('current');
+  await assertFails(unauthCalendarActionsRef.get());
+  await assertFails(unauthCalendarActionsRef.set({ allowCalendarActions: true }));
+
   console.log("All rule tests passed successfully!");
   await testEnv.cleanup();
 }

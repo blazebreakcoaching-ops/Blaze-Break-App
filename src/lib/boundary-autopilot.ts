@@ -2,6 +2,29 @@
 // rehearsing what to say. Uses the same direct-browser-call pattern as
 // calendar-signals.ts and MicroRecovery.tsx (Google Calendar API supports this
 // with the user's own OAuth token).
+//
+// AUTHORISATION MODEL (Calendar Pilot readiness audit, Task 1): every call
+// here runs with the user's own client-held Google OAuth token
+// (signInWithGoogleCalendar, src/lib/auth.tsx - `calendar.events` scope).
+// Neither function here enforces anything on its own; the real approval
+// gate is BoundaryAutopilot.tsx's own two-step UI (an explicit "Review
+// before declining" step naming the exact meeting, then a separate
+// "Decline '<title>' and notify attendees?" confirm) - this module is
+// intentionally just the Google API mechanics, with no implicit trigger
+// path into either function from anywhere else in the app (verified: the
+// only production import is BoundaryAutopilot.tsx).
+//
+// REVOKED-CREDENTIAL HANDLING: a 401/403 here means the token Google
+// issued has expired or been revoked since the user connected - callers
+// get an actionable message rather than a bare status code, so the UI
+// can tell the user to reconnect instead of leaving them with "status
+// 401" and no next step.
+function describeGoogleCalendarHttpError(status: number, action: string): string {
+  if (status === 401 || status === 403) {
+    return `Your Google Calendar connection has expired or been revoked - reconnect Google Workspace in Settings and try again. (Could not ${action}.)`;
+  }
+  return `Google Calendar could not ${action} (status ${status}).`;
+}
 
 export interface UpcomingEvent {
   id: string;
@@ -16,7 +39,7 @@ export const fetchUpcomingEvents = async (accessToken: string): Promise<Upcoming
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(weekAhead.toISOString())}&singleEvents=true&orderBy=startTime&maxResults=25`;
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!res.ok) throw new Error(`Google Calendar API returned status ${res.status}`);
+  if (!res.ok) throw new Error(describeGoogleCalendarHttpError(res.status, 'load your upcoming meetings'));
   const data = await res.json();
 
   return (data.items || [])
@@ -35,7 +58,7 @@ export const fetchUpcomingEvents = async (accessToken: string): Promise<Upcoming
 export const declineCalendarEvent = async (accessToken: string, eventId: string): Promise<void> => {
   const eventUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`;
   const getRes = await fetch(eventUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!getRes.ok) throw new Error(`Could not load event details (status ${getRes.status})`);
+  if (!getRes.ok) throw new Error(describeGoogleCalendarHttpError(getRes.status, 'load this meeting\'s details'));
   const event = await getRes.json();
 
   const selfEntry = (event.attendees || []).find((a: any) => a.self);
@@ -54,5 +77,5 @@ export const declineCalendarEvent = async (accessToken: string, eventId: string)
     },
     body: JSON.stringify({ attendees: updatedAttendees }),
   });
-  if (!patchRes.ok) throw new Error(`Google Calendar rejected the update (status ${patchRes.status})`);
+  if (!patchRes.ok) throw new Error(describeGoogleCalendarHttpError(patchRes.status, 'decline this meeting'));
 };

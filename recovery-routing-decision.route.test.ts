@@ -26,7 +26,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, getDocRaw } from './test/fake-firestore';
 
 const USER = 'user_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -82,6 +82,95 @@ describe('POST /api/recovery/routing-decision', () => {
     const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
     expect(res.body.selectedRoute).toBe('STABILISE');
     expect(res.body.selectedModule).toBe('guided_reset');
+  });
+
+  // Report 26: the legacy /api/user/recommendation chain has always treated
+  // a raw numeric severity of exactly 7 as acute (its own recentHighSeverity
+  // check is `severity >= 7`). Before this fix, the shared classifier used
+  // by this route classified 7 as "medium", so this router stayed silent on
+  // exactly the trigger the legacy chain already treats as acute - a real
+  // detection gap, now closed by matching the older, already-approved
+  // threshold rather than loosening it.
+  it('STABILISE: a raw numeric severity of exactly 7 is acute, matching the legacy chain\'s own threshold', async () => {
+    seedDoc(`users/${USER}/capacity_checkins/ci1`, {
+      physical: 'low', mental: 'low', emotional: 'low', score: 25, createdAt: new Date().toISOString(),
+    });
+    seedDoc(`users/${USER}/stress_triggers/tr1`, {
+      source: 'Meetings', severity: 7, createdAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.body.selectedRoute).toBe('STABILISE');
+    expect(res.body.selectedModule).toBe('guided_reset');
+  });
+
+  it('uses the same recent, high recovery-debt summary as Pulse through the existing router', async () => {
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'available', direction: 'rising', value: 75,
+      calculatedAt: new Date().toISOString(),
+    });
+    // No capacity signal: the existing bandwidth gate still asks first,
+    // even with a derived summary available.
+    const unknown = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({});
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.routingOutcome).toBe('needs_clarification');
+
+    const res = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(res.status).toBe(200);
+    expect(res.body.selectedRoute).toBe('RECOVER');
+    expect(res.body.selectedModule).toBe('energy_delta');
+    expect(res.body.routingOutcome).toBe('selected');
+  });
+
+  it('does not route stale or insufficient derived summaries, nor cross another account boundary', async () => {
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'early_signal', direction: 'rising', value: 99,
+      calculatedAt: new Date().toISOString(),
+    });
+    seedDoc('users/another_member/derived/recovery_debt', {
+      status: 'available', direction: 'rising', value: 99,
+      calculatedAt: new Date().toISOString(),
+    });
+    const partial = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(partial.body.routingOutcome).toBe('none_needed');
+
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'available', direction: 'rising', value: 99,
+      calculatedAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+    });
+    const stale = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(stale.body.routingOutcome).toBe('none_needed');
+  });
+
+  it('keeps acute user-reported signals ahead of derived recovery debt', async () => {
+    seedDoc(`users/${USER}/derived/recovery_debt`, {
+      status: 'available', direction: 'rising', value: 85,
+      calculatedAt: new Date().toISOString(),
+    });
+    seedDoc(`users/${USER}/stress_triggers/acute`, {
+      source: 'Meetings', severity: 'high', createdAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/recovery/routing-decision')
+      .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+    expect(res.body.selectedModule).toBe('guided_reset');
+    expect(res.body.selectedRoute).toBe('STABILISE');
+  });
+
+  it('degrades gracefully if the optional derived-summary read fails', async () => {
+    const restore = forceDocError(`users/${USER}/derived/recovery_debt`, 'get',
+      new Error('simulated optional trend read failure'));
+    try {
+      const response = await request(app).post('/api/recovery/routing-decision')
+        .set(auth(USER)).send({ explicitBandwidthReport: 'low_bandwidth' });
+      expect(response.status).toBe(200);
+      expect(response.body.selectedModule).toBeNull();
+      expect(response.body.routingOutcome).toBe('none_needed');
+    } finally {
+      restore();
+    }
   });
 
   it('an explicit request for a known module is respected even with no other signal', async () => {
@@ -218,5 +307,67 @@ describe('POST /api/recovery/routing-decision', () => {
     const { getDocRaw } = await import('./test/fake-firestore');
     const session = getDocRaw(`users/${USER}/recovery_routing/session_state`);
     expect(session?.recommendationsOffered).toBe(1);
+  });
+});
+
+// CTO final closeout - clarification budget: repeated needs_clarification
+// responses must be idempotent, and simultaneous clarification requests
+// must not unnecessarily exhaust the shared recommendation limit, without
+// changing the bandwidth-question experience itself.
+describe('POST /api/recovery/routing-decision - idempotent clarification budget', () => {
+  it('a repeated, still-unanswered clarification request reuses the same decision id and counts once', async () => {
+    const first = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(first.body.routingOutcome).toBe('needs_clarification');
+    expect(first.body.decisionId).toBeTruthy();
+
+    const second = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(second.body.routingOutcome).toBe('needs_clarification');
+    expect(second.body.decisionId).toBe(first.body.decisionId);
+
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+    const decisionsSnap = await (await import('./test/fake-firestore')).allPaths();
+    expect(decisionsSnap.filter((p) => p.startsWith(`users/${USER}/recovery_routing_decisions/`))).toHaveLength(1);
+  });
+
+  it('simultaneous clarification requests never exceed one counted offer', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({})),
+    );
+    for (const res of results) {
+      expect(res.body.routingOutcome).toBe('needs_clarification');
+    }
+    const ids = new Set(results.map((r) => r.body.decisionId));
+    expect(ids.size).toBe(1);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+  });
+
+  it('still asks a genuinely new clarification question once an answer resolves the prior one', async () => {
+    const first = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(first.body.routingOutcome).toBe('needs_clarification');
+    // Answering it resolves to none_needed (nothing else logged) - a real,
+    // distinct outcome, not the same open clarification any more.
+    const answered = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({ explicitBandwidthReport: 'reflective_bandwidth' });
+    expect(answered.body.routingOutcome).toBe('none_needed');
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.recommendationsOffered).toBe(1);
+  });
+
+  it('falls back to suppressed_by_budget rather than asking a clarifying question that leads nowhere', async () => {
+    seedDoc(`users/${USER}/recovery_routing/session_state`, {
+      day: new Date().toISOString().split('T')[0], recommendationsOffered: 3, recommendationsDeclined: 0,
+      interventionsStarted: 0, interventionsCompleted: 0, interventionsAbandoned: 0, updatedAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.body.routingOutcome).toBe('suppressed_by_budget');
+    expect(res.body.decisionId).toBeNull();
+  });
+
+  it('preserves the existing bandwidth-question response shape', async () => {
+    const res = await request(app).post('/api/recovery/routing-decision').set(auth(USER)).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.routingOutcome).toBe('needs_clarification');
+    expect(res.body.selectedRoute).toBe('NONE');
+    expect(res.body.selectedModule).toBeNull();
+    expect(res.body.sufficientBandwidthData).toBe(false);
+    expect(typeof res.body.decisionId === 'string' || res.body.decisionId === null).toBe(true);
   });
 });

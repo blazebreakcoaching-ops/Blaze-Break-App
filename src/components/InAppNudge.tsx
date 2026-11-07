@@ -4,6 +4,7 @@ import { Sparkles, X, ChevronRight } from "lucide-react";
 import { useAuth } from '../lib/auth';
 import { getDb } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
+import { isNudgeVisibleForAccount, nudgeHistoryKey, parseNudgeHistory, nudgeInteractionUpdate } from '../lib/nudge-visibility';
 import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
 
 // InAppNudge is always mounted from app start (it polls every 60s), not a
@@ -49,14 +50,45 @@ const NUDGE_CATEGORY_LABELS: Record<string, string> = {
   fuel_pattern_reminder: 'Open Fuel Log',
 };
 
-export const InAppNudge = () => {
+export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
   const { user } = useAuth();
+  // UI guidance and an active customer task take precedence over nudge cards.
+  // Check again after async eligibility reads to avoid opening a nudge
+  // halfway through an onboarding or help dialog.
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
   const [preferences, setPreferences] = useState<any>(null);
+  const [preferencesOwnerUid, setPreferencesOwnerUid] = useState<string | null>(null);
   const [currentNudge, setCurrentNudge] = useState<any>(null);
+  const [nudgeOwnerUid, setNudgeOwnerUid] = useState<string | null>(null);
+  const liveUidRef = useRef<string | null>(user?.uid ?? null);
+  liveUidRef.current = user?.uid ?? null;
   const [history, setHistory] = useState<any[]>([]);
   const [isDismissing, setIsDismissing] = useState(false);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const orgStatusCache = useRef<{ checked: boolean; organisationId: string | null; organisationName?: string; shareAnonymizedDataWithOrg?: boolean }>({ checked: false, organisationId: null });
   const lastDetailedCheckRef = useRef<number>(0);
+
+  // The nudge card is account-specific, even on a shared browser.
+  // Clear stale UI/preferences on identity changes; the UID checks below
+  // also guard async reads that finish after the previous user signs out.
+  useEffect(() => {
+    setCurrentNudge(null);
+    setNudgeOwnerUid(null);
+    setPreferences(null);
+    setPreferencesOwnerUid(null);
+    setIsDismissing(false);
+    if (dismissTimerRef.current !== null) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    lastDetailedCheckRef.current = 0;
+    orgStatusCache.current = { checked: false, organisationId: null };
+  }, [user?.uid]);
+
+  useEffect(() => () => {
+    if (dismissTimerRef.current !== null) clearTimeout(dismissTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -77,8 +109,9 @@ export const InAppNudge = () => {
     try {
       const { db, doc, getDoc } = await getFirestoreApi();
       const snap = await getDoc(doc(db, 'users', user.uid, 'preferences', 'notifications'));
-      if (snap.exists()) {
+      if (snap.exists() && liveUidRef.current === user.uid) {
         setPreferences(snap.data());
+        setPreferencesOwnerUid(user.uid);
       }
     } catch (e) {
       console.warn("Failed to load nudge preferences", e);
@@ -91,6 +124,9 @@ export const InAppNudge = () => {
       if (!orgStatusCache.current.checked) {
         const meRes = await secureApiFetch('/api/org/me');
         const me = await meRes.json();
+        // The account can change while this HTTP request is in flight.
+        // Never put another person's organisation details in this UID's cache.
+        if (liveUidRef.current !== user.uid) return null;
         orgStatusCache.current = {
           checked: true,
           organisationId: me.organisationId || null,
@@ -249,7 +285,7 @@ export const InAppNudge = () => {
   };
 
   const evaluateNudges = async () => {
-    if (!user || !preferences || !preferences.notificationsEnabled) return;
+    if (suspendedRef.current || !user || !preferences || preferencesOwnerUid !== user.uid || !preferences.notificationsEnabled) return;
     if (currentNudge) return; // already showing one
 
     const now = new Date();
@@ -277,8 +313,12 @@ export const InAppNudge = () => {
     }
 
     // Local frequency limits check (using simple local storage to avoid extra DB calls)
-    const storedHistory = localStorage.getItem("blaze_nudge_history") || "[]";
-    const localHistory = JSON.parse(storedHistory);
+    let localHistory: { shownAt: string }[] = [];
+    try {
+      localHistory = parseNudgeHistory(localStorage.getItem(nudgeHistoryKey(user.uid)));
+    } catch {
+      // Private browsing may block storage. Never block the entire app.
+    }
     const today = now.toDateString();
     
     const nudgesToday = localHistory.filter((n: any) => new Date(n.shownAt).toDateString() === today);
@@ -337,6 +377,9 @@ export const InAppNudge = () => {
       text = picked.message;
     }
 
+    // Reads can take time; never interrupt a guide or welcome that opened
+    // while we were fetching eligibility.
+    if (suspendedRef.current || liveUidRef.current !== user.uid) return;
     // Show it
     const nudgeData = {
       category: cat,
@@ -350,6 +393,7 @@ export const InAppNudge = () => {
       source: 'in_app_nova',
       status: 'shown' as const,
     };
+    setNudgeOwnerUid(user.uid);
     setCurrentNudge(nudgeData);
     
     // Log to backend
@@ -357,48 +401,55 @@ export const InAppNudge = () => {
       const { db, collection, addDoc } = await getFirestoreApi();
       const docRef = await addDoc(collection(db, 'users', user.uid, 'nudge_history'), nudgeData);
       const histItem = { id: docRef.id, ...nudgeData };
+      if (liveUidRef.current !== user.uid) return;
       setCurrentNudge(histItem);
       
       // update local 
       const nextLocal = [...localHistory, histItem];
-      localStorage.setItem("blaze_nudge_history", JSON.stringify(nextLocal));
+      try {
+        localStorage.setItem(nudgeHistoryKey(user.uid), JSON.stringify(nextLocal));
+      } catch {
+        // Missing storage affects local cooldown only, not app access.
+      }
     } catch (e) {
       console.warn("Nudge history save failed");
     }
   };
 
-  const dismiss = async (reason?: string) => {
-    if (!currentNudge || !user) return;
+  const dismiss = async (interaction: 'not_now' | 'action_taken') => {
+    if (!currentNudge || !user || nudgeOwnerUid !== user.uid) return;
+    const ownerUid = user.uid;
     setIsDismissing(true);
     
     if (currentNudge.id) {
       try {
         const { db, doc, updateDoc } = await getFirestoreApi();
-        // "acted_on" (not "action_taken") matches firestore.rules' status
-        // enum. Firestore's SDK also throws client-side on an explicit
-        // `undefined` field value, so dismissedAt/actionTakenAt/
-        // reasonCategory are only included when they actually apply,
-        // rather than always present with one side undefined - both bugs
-        // meant this write always failed, silently, before either field
-        // mismatch even reached the server.
-        await updateDoc(doc(db, 'users', user.uid, 'nudge_history', currentNudge.id), {
-          status: reason ? "dismissed" : "acted_on",
-          ...(reason ? { dismissedAt: new Date().toISOString(), reasonCategory: reason } : { actionTakenAt: new Date().toISOString() }),
-          updatedAt: new Date().toISOString()
-        });
+        // A click on the nudge's CTA means "acted_on"; clicking X means
+        // "dismissed". Neither outcome claims the recovery task is done.
+        await updateDoc(
+          doc(db, 'users', user.uid, 'nudge_history', currentNudge.id),
+          nudgeInteractionUpdate(interaction, new Date().toISOString()),
+        );
       } catch (e) {
         // ignore
       }
     }
-    setTimeout(() => {
+    // A delayed dismissal must not hide the next person's reminder after
+    // an account switch on the same browser.
+    if (liveUidRef.current !== ownerUid) return;
+    if (dismissTimerRef.current !== null) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => {
+      dismissTimerRef.current = null;
+      if (liveUidRef.current !== ownerUid) return;
       setCurrentNudge(null);
+      setNudgeOwnerUid(null);
       setIsDismissing(false);
     }, 300);
   };
 
   return (
     <AnimatePresence>
-      {currentNudge && !isDismissing && (
+      {isNudgeVisibleForAccount(user?.uid, nudgeOwnerUid, !!currentNudge, suspended, isDismissing) && (
         <motion.div
           initial={{ opacity: 0, y: 50, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}

@@ -119,6 +119,27 @@ export const toolsAreEnabled = (envValue: string | undefined): boolean => envVal
 // runaway Live-voice spend - is one env var, no redeploy.
 export const liveVoiceIsEnabled = (envValue: string | undefined): boolean => envValue !== 'false';
 
+// Phase 5L (directive §§1,2) — the opposite polarity from the two switches
+// above, on purpose. Phase 5K mounted NovaAgenticJourney (Invisible Load /
+// Calendar Protection / Task Deferral / Before Words, previously reachable
+// only via the dev-only preview harness across five prior phases) as the
+// production "Nova" tab for every user, and self-gated
+// offer_practical_assistance with no flag at all, reasoning that the
+// workflow was "already safe to show" because its own execution kill
+// switches stay off regardless. That reasoning is true for the specific
+// harm of a real external write, but it is not the same thing as this
+// surface having gone through this project's own release process - every
+// other previously-dev-only or newly-introduced Nova surface in this
+// codebase (guardianSupportInvitationEnabled, NHEI's own mode flags)
+// defaults OFF until a human explicitly turns it on, and this one should
+// have too. Fails CLOSED (defaults false) like
+// guardianSupportInvitationEnabled: unset, empty, or any value other than
+// the exact string 'true' keeps production on the existing, already-
+// approved plain NovaChat and keeps offer_practical_assistance self-
+// refusing, so a slow/failed config fetch or an unset env var can never
+// accidentally expose an unreleased surface.
+export const novaAgenticJourneyEnabled = (envValue: string | undefined): boolean => envValue === 'true';
+
 // Keeps a single, hallucinated-but-plausible-looking memory entry from
 // becoming an unbounded wall of text in someone's permanent record.
 export const MAX_MEMORY_CONTENT_LENGTH = 300;

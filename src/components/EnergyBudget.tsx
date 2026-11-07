@@ -297,7 +297,11 @@ export const EnergyBudgetTool = ({
   }
 
   return (
-    <div className="space-y-12 pb-24">
+    // id matches NHEI_MODULE_ANCHOR_ID['energy_delta'] in
+    // nhei-recovery-navigation.ts - a recommendation that sends someone
+    // here scrolls straight to this element rather than leaving them to
+    // find it among the Recover tab's several other stacked tools.
+    <div id="energy-delta-tool" className="space-y-12 pb-24">
       {error && (
         <div role="alert" className="bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm p-4 rounded-xl">{error}</div>
       )}

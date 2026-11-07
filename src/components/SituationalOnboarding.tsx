@@ -19,14 +19,17 @@ import { UserProfileData } from "../types";
 import { cn } from "../lib/utils";
 import { logAuditAction } from "../lib/audit-logger";
 import { useAuth } from "../lib/auth";
+import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 
 interface OnboardingProps {
-  onComplete: (profile: UserProfileData) => void;
+  onComplete: (profile: UserProfileData) => Promise<void> | void;
 }
 
 export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
   const { logOut, user } = useAuth();
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const [profile, setProfile] = useState<UserProfileData>({
     fullName: "",
@@ -36,6 +39,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     purpose: "",
     novaTone: "direct",
     primaryDrain: "",
+    letNovaLearn: false, // A missing answer is never permission to learn.
   } as any);
 
   const steps = [
@@ -180,11 +184,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   setProfile((p) => ({ ...p, letNovaLearn: next }));
                 }}
                 role="switch"
-                aria-checked={profile.letNovaLearn !== false}
+                aria-checked={hasExplicitNovaLearningConsent(profile.letNovaLearn)}
                 aria-label="Personalised learning: let Nova adjust its suggestions based on your check-ins"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
-                  profile.letNovaLearn !== false
+                  hasExplicitNovaLearningConsent(profile.letNovaLearn)
                     ? "bg-primary"
                     : "bg-surface dark:bg-surface",
                 )}
@@ -192,7 +196,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 <div
                   className={cn(
                     "w-4 h-4 rounded-full bg-surface absolute top-1 transition-transform shadow-sm",
-                    profile.letNovaLearn !== false ? "left-5" : "left-1",
+                    hasExplicitNovaLearningConsent(profile.letNovaLearn) ? "left-5" : "left-1",
                   )}
                 />
               </button>
@@ -260,24 +264,33 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     }
   };
 
-  const next = () => {
+  const next = async () => {
+    if (saving) return;
     if (step < steps.length - 1) {
       setStep(step + 1);
     } else {
       if (!profile.fullName.trim()) return;
-      onComplete(profile);
+      setSaving(true);
+      setSaveError(false);
+      try {
+        await onComplete(profile);
+      } catch {
+        // The user stays on this screen with their answers intact.
+        setSaveError(true);
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
   const CurrentIcon = steps[step].icon;
 
   return (
-    <div className="dark min-h-screen bg-background flex items-center justify-center p-6 sm:p-8 relative selection:bg-primary/20 selection:text-primary font-sans text-text-main">
+    <div className="ember-shell ember-sanctuary min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 relative selection:bg-primary/20 selection:text-primary font-sans text-text-main">
       {/* Background aesthetic */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
-        <div className="absolute bottom-10 left-1/4 w-[500px] h-[500px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25" />
+        <div className="absolute bottom-10 left-1/4 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-[160px] pointer-events-none" />
       </div>
 
       <div className="max-w-3xl w-full relative z-10 my-12">
@@ -289,7 +302,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -20 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full p-10 sm:p-20 flex flex-col items-center space-y-12 bg-surface border border-border rounded-xl shadow-lg relative overflow-hidden"
+            className="ember-feature w-full p-5 sm:p-10 lg:p-14 flex flex-col items-center space-y-7 sm:space-y-10 rounded-2xl relative overflow-hidden"
           >
             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
@@ -298,14 +311,14 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-primary/10 text-primary rounded-md border border-primary/25">
-                    Stage {step + 1} of {steps.length}
+                    Step {step + 1} of {steps.length}
                   </span>
                   <span className="text-xs font-bold text-text-muted">
-                    {Math.round(((step + 1) / steps.length) * 100)}% Synchronised
+                    One question at a time
                   </span>
                 </div>
                 <span className="text-xs font-mono font-bold text-text-muted">
-                  Setting Up Nova
+                  Your pace, your choice
                 </span>
               </div>
               
@@ -342,7 +355,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             </div>
 
             <div className="text-center flex flex-col items-center space-y-6 w-full">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-inner">
+              <div className="ember-nova-mark w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
                 <CurrentIcon className="w-10 h-10" />
               </div>
 
@@ -452,6 +465,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
               ) : null}
             </div>
 
+            {saveError && (
+              <p role="alert" className="w-full mt-5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
+                Your details couldn't be saved. Nothing has been lost from this form. Check your connection and try again.
+              </p>
+            )}
             <div className="w-full flex flex-col sm:flex-row items-center justify-between pt-8 border-t border-white/[0.05] gap-6">
               <div className="flex gap-2 w-full sm:w-auto justify-center">
                 {steps.map((_, i) => (
@@ -472,16 +490,16 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
               <button
                 onClick={next}
                 disabled={
-                  steps[step].id === "profile" && !profile.fullName.trim()
+                  saving || (steps[step].id === "profile" && !profile.fullName.trim())
                 }
                 className={cn(
                   "w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-lg",
-                  steps[step].id === "profile" && !profile.fullName.trim()
+                  (saving || (steps[step].id === "profile" && !profile.fullName.trim()))
                     ? "bg-background border border-white/[0.05] text-text-muted cursor-not-allowed"
                     : "bg-card text-foreground hover:bg-surface shadow-black/5 dark:shadow-white/10 hover:shadow-black/10 dark:hover:shadow-white/20",
                 )}
               >
-                {step === steps.length - 1 ? "Get started" : "Continue"}{" "}
+                {saving ? "Saving…" : step === steps.length - 1 ? "Get started" : "Continue"}{" "}
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, ArrowRight } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { CURRENT_CHANGELOG_VERSION, canScheduleWhatsNew, isWhatsNewAutoOpenSafe } from '../lib/whats-new-auto-open';
 
 // Bump this string and replace CHANGELOG_ITEMS whenever new features ship
 // that existing users wouldn't otherwise discover. Shows the current full
@@ -20,7 +21,6 @@ import { useFocusTrap } from '../lib/useFocusTrap';
 // default-off flag (nobody can actually use it yet, so announcing it is
 // just confusing) - e.g. Guardian Support Invitation ships flag-off and
 // is deliberately excluded here for that reason.
-const CHANGELOG_VERSION = 'questioning-style-2026-09';
 
 const CHANGELOG_ITEMS: { title: string; description: string }[] = [
   { title: 'Choose how Nova asks you things', description: 'Pick Nova\'s questioning style in Settings - Operator, Board Member, Mentor, or Pre-Mortem - to match how you like to think things through.' },
@@ -35,11 +35,13 @@ interface WhatsNewModalProps {
   // a still-loading default.
   lastSeenVersion: string | undefined;
   loaded: boolean;
+  // A first-time welcome or an active guide takes precedence.
+  paused?: boolean;
   onSeen: (version: string) => void;
 }
 
-// Only mounted by the caller when a user is signed in (App.tsx gates this
-// on `user`, unlike NovaFeedbackModal which is guest-only) - so this
+// Only mounted for registered accounts (App.tsx requires a non-anonymous
+// user, unlike NovaFeedbackModal which is guest-only) - so this
 // component doesn't need its own auth check, just the version-gated
 // trigger, mirroring NovaFeedbackModal.tsx's self-triggering shape with a
 // hardcoded version string instead of a rolling time window.
@@ -48,16 +50,62 @@ interface WhatsNewModalProps {
 // lastSeenChangelogVersion, via the caller's existing autosave) rather
 // than localStorage, so "seen" follows the person across devices instead
 // of resetting every time they sign in somewhere new.
-export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModalProps) => {
+export const WhatsNewModal = ({ lastSeenVersion, loaded, paused = false, onSeen }: WhatsNewModalProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const modalRef = useFocusTrap(isOpen);
+  // Once the visitor starts another task, do not restart a fresh
+  // three-second promo timer when that task finishes. Another visit may
+  // present the unacknowledged changelog, without interrupting this one.
+  const deferForThisVisitRef = useRef(false);
+
+  // A higher-priority dialog can open after this informational popup has
+  // appeared. Close it without acknowledging the changelog: the person
+  // can read it on a later quiet visit.
+  useEffect(() => {
+    if (!paused) return;
+    deferForThisVisitRef.current = true;
+    if (isOpen) setIsOpen(false);
+  }, [paused, isOpen]);
 
   useEffect(() => {
-    if (!loaded || lastSeenVersion === CHANGELOG_VERSION) return;
-    // Small delay so this never interrupts someone the moment the app loads.
-    const timer = setTimeout(() => setIsOpen(true), 3000);
-    return () => clearTimeout(timer);
-  }, [loaded, lastSeenVersion]);
+    if (!canScheduleWhatsNew(loaded, paused, deferForThisVisitRef.current, lastSeenVersion)) return;
+
+    // This is informational, not a security/consent prompt. Previously
+    // it could appear in the middle of typing or clicking because it
+    // opened unconditionally after 3s. That interrupted real users and
+    // caused the same race in two different browser-test journeys.
+    //
+    // Offer it ONLY on an uninterrupted, quiet first load. If the user
+    // starts interacting, leave their task alone for this page visit.
+    // It is not marked "seen", so the next quiet visit can still offer it.
+    let userInteracted = false;
+    const onInteraction = () => {
+      userInteracted = true;
+      deferForThisVisitRef.current = true;
+      clearTimeout(timer);
+    };
+    // Declared (and the listeners attached) before any code that could
+    // invoke onInteraction runs - setTimeout's callback and a real user
+    // interaction event both only fire asynchronously, after this
+    // synchronous block finishes, so `timer` is always initialised by
+    // the time onInteraction's closure over it is ever read.
+    const timer = setTimeout(() => {
+      if (!userInteracted && !deferForThisVisitRef.current && isWhatsNewAutoOpenSafe(document)) {
+        setIsOpen(true);
+      }
+    }, 3000);
+    const options: AddEventListenerOptions = { capture: true };
+    window.addEventListener('pointerdown', onInteraction, options);
+    window.addEventListener('keydown', onInteraction, options);
+    window.addEventListener('touchstart', onInteraction, options);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', onInteraction, options);
+      window.removeEventListener('keydown', onInteraction, options);
+      window.removeEventListener('touchstart', onInteraction, options);
+    };
+  }, [loaded, paused, lastSeenVersion]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -68,7 +116,7 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, onSeen }: WhatsNewModal
 
   const handleClose = () => {
     setIsOpen(false);
-    onSeen(CHANGELOG_VERSION);
+    onSeen(CURRENT_CHANGELOG_VERSION);
   };
 
   return (

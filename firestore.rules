@@ -18,8 +18,119 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // PRIORITY ZERO MFA FIX (2026-11-04): until now, every isOwner() rule
+    // below only checked request.auth.uid == uid - i.e. "do you hold a
+    // valid Firebase ID token for this account", never "has this specific
+    // sign-in session actually cleared its 2FA challenge". The MFA gate in
+    // authenticateFirebaseUser (server.ts) and the AccountAccessGate UI
+    // component both only protect the REST API and the React tree - the
+    // Firestore client SDK talks to Firestore directly and was never
+    // covered by either, so anyone holding a password-valid-but-not-yet-
+    // MFA-verified ID token for a 2FA-enabled account could read or write
+    // that account's private data straight from the browser/app, with the
+    // MFA screen never even rendering.
+    //
+    // mfaSessionSatisfied(uid) below closes this at the one place that
+    // actually matters: isOwner() itself, so it applies to all ~230
+    // existing isOwner()-gated rules in this file at once, with no risk of
+    // a collection being missed. It deliberately does NOT reuse the
+    // account-level `mfaEnabled` custom claim as ITS OWN proof of
+    // verification (that claim only says "this uid has 2FA turned on" -
+    // baked into every future token Firebase mints for this uid, so it
+    // can never distinguish a verified session from an attacker's own
+    // fresh, independently-obtained one, which is exactly the account-wide-
+    // claim trap this fix must not fall into). Instead it ties verification
+    // to request.auth.token.auth_time - the timestamp of the actual sign-in
+    // credential presentation that produced the CURRENT token, which stays
+    // fixed across token refreshes within one continuous session but
+    // changes on every fresh sign-in - against a server-written record of
+    // which auth_time(s) last cleared a real TOTP/recovery-code challenge
+    // for this uid (users/{uid}/security/mfa_session_state, written only by
+    // the Admin SDK in server.ts's /api/auth/mfa/totp/verify-at-signin and
+    // /enroll/confirm routes - see MFA_DOC below for why that whole
+    // sub-collection is already locked to `allow read, write: if false`,
+    // so this never needs - or gets - its own separate rule).
+    //
+    // 2026-11-04 INDEPENDENT REVIEW FOLLOW-UP - two further fixes folded in:
+    //
+    // 1. "IS MFA MANDATORY" must not depend on the mfaEnabled token claim
+    //    either. Custom claims are embedded in an ID token only at MINT
+    //    time - a token issued moments before this very enrollment, or one
+    //    that's simply still valid from before setCustomUserClaims ran (or
+    //    didn't run, since setMfaEnabledClaim treats its own failure as
+    //    best-effort/non-fatal - see that function's own comment), would
+    //    read `mfaEnabled` as absent/false for up to its remaining ~1h
+    //    lifetime regardless of the account's REAL, current enrollment
+    //    state. isMfaEnrolledAuthoritative(uid) reads the one place that
+    //    can never be stale this way - the actual enrollment record itself
+    //    - via get(), which always reflects the current document, with zero
+    //    propagation delay. (The mfaEnabled claim is kept only as a cheap,
+    //    non-authoritative hint for client-side UX, e.g. the native app's
+    //    "mfa_required" UI gate - never as a security decision anywhere in
+    //    this file or in server.ts from this point on.)
+    //
+    // 2. mfa_session_state used to store a SINGLE {verifiedAuthTime,
+    //    expiresAt} pair, so a second device completing its own real 2FA
+    //    challenge would silently OVERWRITE - and thereby revoke - a first
+    //    device's still-valid, still-within-its-12h-window verified
+    //    session, even though neither device did anything wrong. It now
+    //    stores verifiedSessions, a map keyed by each distinct auth_time
+    //    that has independently cleared a challenge, each with its own
+    //    expiry - so concurrent, legitimate multi-device sessions coexist
+    //    correctly, and a session that was never itself verified (a
+    //    different, newer auth_time) can never piggyback on another
+    //    session's entry.
+    //
+    // KNOWN, DELIBERATELY DISCLOSED RESIDUAL LIMITATION: auth_time has
+    // one-second resolution (it's the standard OIDC claim, not something
+    // this app controls), so two GENUINELY DIFFERENT sign-ins that happen
+    // to land in the exact same wall-clock second would be indistinguishable
+    // to this check - a coincidental collision would let one borrow the
+    // other's verified entry. Closing this completely would need a Firebase
+    // Identity Platform `beforeSignIn` blocking Cloud Function to mint a
+    // genuinely unique, non-account-wide per-sign-in claim at the identity
+    // provider level - new infrastructure requiring its own deployment and
+    // GCIP configuration, which is out of scope to deploy unilaterally here.
+    // This residual risk also requires the attacker to already hold valid
+    // primary credentials (password) for the account - 2FA's own first line
+    // of defence - and to win a sub-second timing race against a genuine
+    // concurrent sign-in, which is why it's accepted and documented rather
+    // than silently left unexamined. See
+    // mfa-firestore-session-gate.emulator.test.ts's own "same auth_time"
+    // test for a concrete demonstration of exactly this boundary.
+    function mfaSessionDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)/security/mfa_session_state);
+    }
+
+    function mfaEnrollmentDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)/security/mfa_totp);
+    }
+
+    function isMfaEnrolledAuthoritative(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid)/security/mfa_totp) &&
+        mfaEnrollmentDoc(uid).data.enabled == true;
+    }
+
+    function mfaSessionSatisfied(uid) {
+      // .get('auth_time', 0), not dot access: a REAL Firebase ID token
+      // always carries auth_time (it's a mandatory standard claim, never
+      // client-omittable on a validly-signed token), but a defensively
+      // absent value must still not crash rule evaluation the same way a
+      // genuinely missing mfaEnabled claim could have - see this file's
+      // own history for exactly that lesson with mfaEnabled above. 0 can
+      // never match a real verifiedSessions key (always a real epoch
+      // second), so this fails closed, not open, if it's ever absent.
+      let authTimeKey = string(request.auth.token.get('auth_time', 0));
+      return !isMfaEnrolledAuthoritative(uid) ||
+        (
+          exists(/databases/$(database)/documents/users/$(uid)/security/mfa_session_state) &&
+          (authTimeKey in mfaSessionDoc(uid).data.verifiedSessions) &&
+          mfaSessionDoc(uid).data.verifiedSessions[authTimeKey] > request.time
+        );
+    }
+
     function isOwner(uid) {
-      return isSignedIn() && request.auth.uid == uid;
+      return isSignedIn() && request.auth.uid == uid && mfaSessionSatisfied(uid);
     }
 
     function hasOnly(fields) {
@@ -64,17 +175,59 @@ service cloud.firestore {
       }
       
       // C. users/{uid}/preferences/notifications
+      //
+      // Phase 3C-2A: the key allowlist alone let ANY value through for every
+      // field - e.g. nudgeFrequency: 'anything-at-all' passed `hasOnly`
+      // because hasOnly only checks which KEYS are present, never their
+      // values. This is the exact "notification-preferences validation
+      // issue" that blocked the full rules suite: test-rules.cjs's own
+      // `assertFails(nudgePrefsRef.update({ nudgeFrequency: 'super_high' }))`
+      // was failing (the write was wrongly succeeding) because nothing here
+      // ever rejected it.
+      //
+      // The enum/type checks added below intentionally match the ACTUAL,
+      // currently-deployed client (NotificationSettingsView.tsx writes
+      // nudgeFrequency as 'low'|'medium'|'high' and quietHoursStart/End as
+      // 'HH:MM' strings) - not notification-router.ts's newer
+      // 'discreet'|'supportive'|'detailed'|'off' + numeric-hour shape, which
+      // no client anywhere in this codebase writes yet and which
+      // getEffectiveNotificationPreferences already defends against
+      // receiving anything else by defaulting unrecognised values. Enforcing
+      // the newer shape here would reject every write the real, live
+      // Settings screen makes today - exactly the kind of break this
+      // section's instructions warn against. This mismatch between the two
+      // shapes is a real, pre-existing product inconsistency, not something
+      // this phase's rules fix can safely resolve on its own judgement - see
+      // the Phase 3C-2A delivery report, section 8, for the documented
+      // dependency this surfaces rather than silently picks a side of.
+      // preferredNudgeWindow and privacyMode have no consumer anywhere in
+      // this codebase (grep-confirmed) - they are left allowed-but-untyped
+      // rather than given an invented enum this phase has no basis for.
       match /preferences/notifications {
         allow read: if isOwner(uid);
         allow write: if isOwner(uid) &&
             request.resource.data.keys().hasOnly([
-              'notificationsEnabled', 'allowedNudgeCategories', 'nudgeFrequency', 
-              'maxNudgesPerDay', 'maxNudgesPerWeek', 'quietHoursStart', 
-              'quietHoursEnd', 'timezone', 'pauseUntil', 'weekendNudgesEnabled', 
-              'preferredNudgeWindow', 'allowMemoryReviewNudges', 
-              'allowWeeklyReviewNudges', 'allowCheckInNudges', 
+              'notificationsEnabled', 'allowedNudgeCategories', 'nudgeFrequency',
+              'maxNudgesPerDay', 'maxNudgesPerWeek', 'quietHoursStart',
+              'quietHoursEnd', 'timezone', 'pauseUntil', 'weekendNudgesEnabled',
+              'preferredNudgeWindow', 'allowMemoryReviewNudges',
+              'allowWeeklyReviewNudges', 'allowCheckInNudges',
               'allowRecoveryActionNudges', 'privacyMode', 'updatedAt'
-            ]);
+            ])
+            && (!('notificationsEnabled' in request.resource.data) || request.resource.data.notificationsEnabled is bool)
+            && (!('nudgeFrequency' in request.resource.data) || request.resource.data.nudgeFrequency in ['low', 'medium', 'high'])
+            && (!('allowedNudgeCategories' in request.resource.data) || (request.resource.data.allowedNudgeCategories is list && request.resource.data.allowedNudgeCategories.size() <= 20))
+            && (!('maxNudgesPerDay' in request.resource.data) || (request.resource.data.maxNudgesPerDay is number && request.resource.data.maxNudgesPerDay >= 0))
+            && (!('maxNudgesPerWeek' in request.resource.data) || (request.resource.data.maxNudgesPerWeek is number && request.resource.data.maxNudgesPerWeek >= 0))
+            && (!('quietHoursStart' in request.resource.data) || request.resource.data.quietHoursStart is string)
+            && (!('quietHoursEnd' in request.resource.data) || request.resource.data.quietHoursEnd is string)
+            && (!('timezone' in request.resource.data) || request.resource.data.timezone is string)
+            && (!('pauseUntil' in request.resource.data) || request.resource.data.pauseUntil == null || request.resource.data.pauseUntil is string)
+            && (!('weekendNudgesEnabled' in request.resource.data) || request.resource.data.weekendNudgesEnabled is bool)
+            && (!('allowMemoryReviewNudges' in request.resource.data) || request.resource.data.allowMemoryReviewNudges is bool)
+            && (!('allowWeeklyReviewNudges' in request.resource.data) || request.resource.data.allowWeeklyReviewNudges is bool)
+            && (!('allowCheckInNudges' in request.resource.data) || request.resource.data.allowCheckInNudges is bool)
+            && (!('allowRecoveryActionNudges' in request.resource.data) || request.resource.data.allowRecoveryActionNudges is bool);
       }
 
       // C2. users/{uid}/preferences/fuel_reminders - Recovery Fuel Engine's
@@ -467,6 +620,60 @@ service cloud.firestore {
       match /integration_tokens/{serviceName} {
         allow read, write: if false;
       }
+      // oauth_pkce holds a short-lived PKCE code_verifier between /connect
+      // and /callback for a provider that requests it (Phase 5E, directive
+      // §2) - server-only for the same reason integration_tokens is:
+      // nothing here should ever be client-readable or client-writable.
+      match /oauth_pkce/{serviceName} {
+        allow read, write: if false;
+      }
+
+      // calendar_protection_proposals/calendar_protection_audit (Phase 5D/5E,
+      // directive §9 audit) - the Nova Take the Load / Calendar Protection
+      // proposal lifecycle and its append-only audit trail. Server-only for
+      // the same reason every other state-claiming, transaction-backed
+      // record in this app is: a client that could write its own proposal
+      // state directly could forge an "approved"/"confirmed" transition
+      // without ever actually being approved or executed, or tamper with
+      // its own audit history. Every real read of this data goes through
+      // the dedicated GET /api/nova/calendar-protection/history and
+      // /:proposalId/status routes (server.ts), never direct Firestore
+      // access - those routes return exactly the fields NovaTakeTheLoad.tsx
+      // needs (title/state/times/failureReason/retryCount/externalEventId),
+      // never anything beyond what the proposal itself already was.
+      match /calendar_protection_proposals/{proposalId} {
+        allow read, write: if false;
+      }
+      match /calendar_protection_audit/{entryId} {
+        allow read, write: if false;
+      }
+
+      // task_deferral_proposals/task_deferral_audit (Phase 5F Agentic
+      // Expansion, directive §2) - the Nova Take the Load / Task Deferral
+      // proposal lifecycle and its append-only audit trail. Server-only
+      // for exactly the same reason calendar_protection_proposals above
+      // is: a client that could write its own proposal state directly
+      // could forge an "approved"/"confirmed" transition, or skip the
+      // userControlsDeadline/userControlsOwnership clarification step
+      // entirely. Every real read goes through the dedicated
+      // GET /api/nova/task-deferral/history and /:proposalId routes
+      // (server.ts), never direct Firestore access.
+      match /task_deferral_proposals/{proposalId} {
+        allow read, write: if false;
+      }
+      match /task_deferral_audit/{entryId} {
+        allow read, write: if false;
+      }
+      // task_assistance_outcomes (Phase 5F Agentic Expansion, directive
+      // §7; Phase 5G, directive §8) - simple user-confirmed outcome
+      // feedback ("this helped" etc.) for a practical-assistance
+      // workflow. Server-only so a client cannot forge a feedback record
+      // under another workflow/item id; written only via
+      // POST /api/nova/task-deferral/:proposalId/outcome or
+      // POST /api/nova/calendar-protection/:proposalId/outcome.
+      match /task_assistance_outcomes/{recordId} {
+        allow read, write: if false;
+      }
 
       // security holds the opt-in TOTP 2FA record (AES-256-GCM encrypted
       // secret, hashed single-use recovery codes, failed-attempt/lockout
@@ -474,7 +681,13 @@ service cloud.firestore {
       // redacted "is MFA enabled" read goes through the dedicated
       // GET /api/auth/mfa/status endpoint, never direct Firestore access,
       // so the encrypted secret can never reach the client outside the
-      // one-time enrollment response.
+      // one-time enrollment response. Also holds mfa_session_state (the
+      // server-written "which auth_time(s) last cleared a real 2FA
+      // challenge" record mfaSessionSatisfied() above reads via
+      // get()/exists()) and is itself the doc isMfaEnrolledAuthoritative()
+      // reads for the live "enabled" flag - those calls read the raw
+      // document for rule evaluation and are not themselves subject to this
+      // `if false`, so no separate rule is needed or wanted here for either.
       match /security/{docId} {
         allow read, write: if false;
       }
@@ -994,8 +1207,19 @@ service cloud.firestore {
       match /nova_permissions/current {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
+        // allowNheiReflectionStorage/allowNheiLongitudinalTracking/
+        // allowNheiRoutingInsights: NHEI Phase 2's three independently
+        // enforceable consent purposes, added to this same document per
+        // "prefer existing nova_permissions... conventions" (NHEI Phase 2
+        // approval, section 3). All default to false (missing == false,
+        // enforced in application code by nhei-consent.ts's
+        // deriveNheiConsentState, which fails CLOSED - the opposite of
+        // this doc's other, default-on categories). Added to hasOnly
+        // only, deliberately NOT to hasAll, so every existing write path
+        // that has never heard of NHEI (onboarding, the memory-consent
+        // toggle, Settings) keeps working unchanged.
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'calendarSignalsExplicitConsentAt', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowNheiReflectionStorage', 'allowNheiLongitudinalTracking', 'allowNheiRoutingInsights', 'allowCalendarActions', 'allowCalendarActionsGrantedAt', 'allowCalendarActionsWithdrawnAt', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -1010,6 +1234,13 @@ service cloud.firestore {
             && request.resource.data.allowEnergyTrend is bool
             && request.resource.data.allowMoodTrend is bool
             && (!('allowCalendarSignals' in request.resource.data) || request.resource.data.allowCalendarSignals is bool)
+            // Historical allowCalendarSignals=true was sometimes an
+            // automatic default, not an explicit choice. New clients
+            // record a dated affirmative action; legacy docs without it
+            // cannot pass the app/server consent gate.
+            && (!('calendarSignalsExplicitConsentAt' in request.resource.data)
+                || request.resource.data.calendarSignalsExplicitConsentAt == null
+                || isStringWithMax(request.resource.data.calendarSignalsExplicitConsentAt, 40))
             && (!('allowFingerprint' in request.resource.data) || request.resource.data.allowFingerprint is bool)
             && (!('allowOnboardingProfile' in request.resource.data) || request.resource.data.allowOnboardingProfile is bool)
             && (!('allowRecoveryPlanProgress' in request.resource.data) || request.resource.data.allowRecoveryPlanProgress is bool)
@@ -1022,7 +1253,65 @@ service cloud.firestore {
             && (!('allowSomaticResets' in request.resource.data) || request.resource.data.allowSomaticResets is bool)
             && (!('allowRecoveryAlly' in request.resource.data) || request.resource.data.allowRecoveryAlly is bool)
             && request.resource.data.allowNovaMemory is bool
-            && request.resource.data.allowNovaUseSavedMemories is bool;
+            && request.resource.data.allowNovaUseSavedMemories is bool
+            && (!('allowNheiReflectionStorage' in request.resource.data) || request.resource.data.allowNheiReflectionStorage is bool)
+            && (!('allowNheiLongitudinalTracking' in request.resource.data) || request.resource.data.allowNheiLongitudinalTracking is bool)
+            && (!('allowNheiRoutingInsights' in request.resource.data) || request.resource.data.allowNheiRoutingInsights is bool)
+            // allowCalendarActions: Nova Calendar Protection's separate
+            // external-action permission (Phase 5D, directive §3) -
+            // distinct from allowCalendarSignals (read-only). Defaults to
+            // false in application code (nova-calendar-action-permission.ts
+            // fails closed on a missing field), never granted implicitly by
+            // any other flag here.
+            && (!('allowCalendarActions' in request.resource.data) || request.resource.data.allowCalendarActions is bool)
+            && (!('allowCalendarActionsGrantedAt' in request.resource.data) || request.resource.data.allowCalendarActionsGrantedAt is string)
+            && (!('allowCalendarActionsWithdrawnAt' in request.resource.data) || request.resource.data.allowCalendarActionsWithdrawnAt == null || request.resource.data.allowCalendarActionsWithdrawnAt is string);
+      }
+
+      // J2. platform_pilot_access/calendar_protection (Phase 5J, directive
+      // §4; Calendar Pilot readiness audit, Task 2) - Calendar Protection's
+      // admin-only pilot-eligibility gate (nova-calendar-pilot-
+      // eligibility.ts). Deliberately NOT like nova_permissions/current
+      // above: that document is the user's OWN self-service consent,
+      // readable and writable by its owner; this one is the PLATFORM's
+      // decision about which accounts are in a controlled rollout, and
+      // isOwner(uid) must never apply to it - the whole point of this gate
+      // (see that file's own header) is that no account can grant this to
+      // itself. Only server.ts's requireAdmin-gated
+      // POST/GET /api/admin/users/:uid/calendar-protection-pilot-
+      // eligibility routes ever touch this path, via the Admin SDK, which
+      // bypasses these rules entirely - so this block is explicit, not
+      // implicit, defence: even if some future change adds a careless
+      // generic subcollection rule elsewhere under users/{uid}, this
+      // path-specific "if false" still wins for exactly this document.
+      match /platform_pilot_access/{gateId} {
+        allow read, write: if false;
+      }
+
+      // K2. NHEI evidence and temporal-relation storage - server (Admin
+      // SDK) only. The persistence/consent service
+      // (nhei-persistence-service.ts) is the only code that ever reads or
+      // writes these paths, and it enforces consent itself before any
+      // Firestore call. Deliberately "if false" for every operation,
+      // including read, rather than "allow read: if isOwner(uid)" - this
+      // is what makes "do not allow clients to create trusted, verified
+      // or system-confirmed evidence merely by submitting those labels"
+      // (NHEI Phase 2 approval, section 6) hold at the data layer: there
+      // is no client write path to this collection at all, trusted
+      // sourceType or otherwise. No Phase 2 code calls these paths from
+      // anything but the server - nothing is wired to a route or UI yet.
+      match /nhei_evidence/{evidenceId} {
+        allow read, write: if false;
+
+        // Correction history - same server-only reasoning, nested so a
+        // delete of the parent evidence doc's corrections stays scoped
+        // to that one record.
+        match /corrections/{correctionId} {
+          allow read, write: if false;
+        }
+      }
+      match /nhei_temporal_relations/{relationId} {
+        allow read, write: if false;
       }
 
       // K. derived summaries
@@ -1919,7 +2208,7 @@ service cloud.firestore {
     // person themselves) - server-write-only so it's a genuine, tamper-
     // resistant record, not something the client could edit or fabricate.
     match /audit_logs/{logId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid && mfaSessionSatisfied(request.auth.uid);
       allow write: if false;
     }
 
@@ -1932,23 +2221,26 @@ service cloud.firestore {
     // the Firestore SDK - including a fabricated safetyLevel - bypassing
     // App Check, validation, and the server's point-award logic entirely.
     match /anxiety_reset_events/{eventId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid && mfaSessionSatisfied(request.auth.uid);
       allow write: if false;
     }
 
-    // Admin-specific collections
+    // Admin-specific collections. Being an administrator must not bypass
+    // step-up authentication on an account that has MFA enabled. Apply the
+    // same authoritative enrollment/session gate as customer-data reads;
+    // a token carrying the admin claim alone is not an MFA proof.
     match /admin_users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || request.auth.token.admin == true);
+      allow read: if isSignedIn() && (request.auth.uid == uid || request.auth.token.get('admin', false) == true) && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only mutations
     }
 
     match /admin_audit_logs/{logId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
     match /app_config/{configId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -1966,7 +2258,30 @@ service cloud.firestore {
     // boundary (narrower than general admin) is enforced server-side by
     // requireEvolutionAccess, not by this rule.
     match /platform_feature_registry/{featureId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
+      allow write: if false; // Server-only
+    }
+
+    // NHEI Phase 3B - Knowledge & Education Engine entries. Shared
+    // platform content (never personal/user data - there is no uid
+    // anywhere in this collection), same admin-read/server-write-only
+    // pattern as app_config/platform_feature_registry above. The real
+    // governance boundary (draft vs. approved, author cannot approve
+    // their own content, who may review at all) is enforced server-side by
+    // nhei-knowledge-service.ts / nhei-knowledge-governance.ts /
+    // requireNheiKnowledgeReviewer (server.ts), not by this rule - this
+    // rule only keeps the collection server-only. UPDATED - Phase 3
+    // Closure: the admin review/import routes added that phase read and
+    // write this collection exclusively through the Admin SDK (getDb()),
+    // which is not subject to these rules at all; no client ever reads or
+    // writes this collection directly, with or without the `admin` custom
+    // claim this rule checks for. request.auth.token.admin is also a
+    // DIFFERENT claim from the reviewer grant (nheiKnowledgeReviewer) -
+    // holding one implies nothing about holding the other, and this rule
+    // was never meant to express the review boundary, only to keep any
+    // direct client read/write off the table entirely.
+    match /nhei_knowledge_entries/{entryId} {
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -1975,7 +2290,7 @@ service cloud.firestore {
     // Owner only, narrower than general admin) is enforced server-side by
     // requirePlatformOwner, not by this rule.
     match /platform_protected_core/{invariantId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -1984,7 +2299,7 @@ service cloud.firestore {
     // access to create/list, tier-derived approval to decide, proposer-
     // or-owner to withdraw) is enforced server-side, not by this rule.
     match /platform_change_proposals/{proposalId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -1992,7 +2307,7 @@ service cloud.firestore {
     // write-only pattern. A coordination record, not an enforcement
     // mechanism - see rollout-plans.ts's module docstring.
     match /platform_rollout_plans/{rolloutId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 
@@ -2001,7 +2316,7 @@ service cloud.firestore {
     // write goes through server.ts's requireAdmin + logAdminAction, never
     // direct from a client.
     match /platform_incidents/{incidentId} {
-      allow read: if isSignedIn() && request.auth.token.admin == true;
+      allow read: if isSignedIn() && request.auth.token.admin == true && mfaSessionSatisfied(request.auth.uid);
       allow write: if false; // Server-only
     }
 

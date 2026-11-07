@@ -337,3 +337,624 @@
     scroll-behavior: auto !important;
   }
 }
+
+
+/* BLAZE BREAK EMBER / EXECUTIVE CALM
+ * Shared web theme primitives. A single palette feeds both the public
+ * Sunset Sanctuary and the signed-in Warm Atelier / Midnight Focus.
+ * Deliberately decorative only: no permissions, routing or data changes.
+ */
+@layer base {
+  :root {
+    --background: #fbf8f3;
+    --foreground: #231e1a;
+    --surface: #f3ede5;
+    --surface-elevated: #fffdfa;
+    --card: #fffdfa;
+    --card-foreground: #231e1a;
+    --muted-foreground: #5f554c;
+    --border: #e4d9cd;
+    --ember-copper: #ae4214;
+    --ember-gold: #9c621b;
+    --ember-halo: rgba(214, 120, 47, 0.15);
+    --ember-radiance: rgba(242, 168, 89, 0.14);
+    --ember-card-shadow: 0 12px 38px -24px rgba(60, 38, 20, 0.28);
+  }
+
+  .dark {
+    --background: #100f0e;
+    --foreground: #f8f0e5;
+    --surface: #181614;
+    --surface-elevated: #28211c;
+    --card: #201b18;
+    --card-foreground: #f8f0e5;
+    --muted-foreground: #c4b7a9;
+    --border: #41352e;
+    --ember-copper: #ffa46c;
+    --ember-gold: #f6ca85;
+    --ember-halo: rgba(236, 122, 49, 0.18);
+    --ember-radiance: rgba(237, 162, 79, 0.10);
+    --ember-card-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.65);
+  }
+}
+
+.ember-shell {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.ember-sanctuary {
+  background-image:
+    radial-gradient(ellipse 62% 38% at 50% 5%, var(--ember-radiance), transparent 83%),
+    radial-gradient(ellipse 48% 35% at 92% 65%, var(--ember-halo), transparent 90%);
+}
+
+.ember-workspace {
+  background-image: radial-gradient(ellipse 65% 45% at 85% 0%, var(--ember-radiance), transparent 80%);
+}
+
+.ember-nav {
+  background-color: var(--card);
+  border-color: var(--border);
+  box-shadow: var(--ember-card-shadow);
+}
+
+.ember-sanctuary .ember-nav {
+  background-color: color-mix(in srgb, var(--background) 90%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.ember-logo img {
+  filter: drop-shadow(0 0 12px var(--ember-halo));
+  transition: filter 200ms ease;
+}
+
+.ember-logo:hover img,
+.ember-logo:focus-within img {
+  filter: drop-shadow(0 0 20px var(--ember-radiance));
+}
+
+.ember-hero {
+  isolation: isolate;
+}
+
+.ember-title {
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+
+.ember-heading-glow {
+  background-image: linear-gradient(110deg, var(--ember-copper), var(--ember-gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.ember-kicker {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ember-copper);
+}
+
+.ember-orbit {
+  position: relative;
+  transition: box-shadow 200ms ease, transform 200ms ease, background-color 200ms ease;
+}
+
+.ember-orbit:hover,
+.ember-orbit:focus-visible {
+  box-shadow: 0 0 0 1px var(--ember-copper), 0 0 0 4px var(--ember-halo), 0 8px 24px -14px var(--ember-copper);
+}
+
+.ember-orbit:focus-visible {
+  outline: 2px solid var(--ember-copper);
+  outline-offset: 4px;
+}
+
+.ember-soft-action {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.ember-soft-action:hover {
+  background: var(--surface-elevated);
+  border-color: var(--ember-copper);
+}
+
+.ember-feature {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  box-shadow: var(--ember-card-shadow);
+}
+
+@media (hover: hover) {
+  .ember-feature:hover {
+    border-color: var(--ember-copper);
+    box-shadow: 0 16px 42px -23px var(--ember-halo), var(--ember-card-shadow);
+  }
+}
+
+.ember-pulse .card {
+  border-color: var(--border);
+  box-shadow: var(--ember-card-shadow);
+}
+
+.ember-midnight {
+  background-image: radial-gradient(ellipse 75% 50% at 50% 0%, var(--ember-radiance), transparent 78%);
+}
+
+.ember-nova-mark {
+  border: 1px solid var(--border);
+  box-shadow: 0 0 0 1px var(--ember-halo), 0 0 26px -8px var(--ember-copper);
+}
+
+@media (max-width: 639px) {
+  .ember-sanctuary .ember-nav {
+    gap: 0.75rem;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ember-feature,
+  .ember-nav,
+  .ember-nova-mark {
+    border-color: var(--foreground);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ember-logo img,
+  .ember-orbit {
+    transition: none;
+  }
+}
+
+
+
+/* EMBER 2026 — reference-layout refinement
+ * Light: Warm Atelier; dark: Sunset Sanctuary / Midnight Focus.
+ * Design-only selectors; user data and existing navigation are untouched.
+ */
+:root {
+  --ember-sunset-copper: #bc421a;
+  --ember-warm-cream: #fff6ea;
+  --ember-panel-ring: rgba(158, 79, 41, 0.17);
+}
+.dark {
+  --ember-sunset-copper: #f68c45;
+  --ember-warm-cream: #221713;
+  --ember-panel-ring: rgba(255, 176, 93, 0.24);
+}
+.ember-brandmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  line-height: 1;
+  isolation: isolate;
+}
+.ember-brandmark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 12px rgba(227, 104, 44, 0.12));
+}
+.ember-brandmark--dark img {
+  filter: drop-shadow(0 0 14px rgba(255, 150, 65, 0.18));
+}
+.ember-wordmark {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -.035em;
+}
+.ember-tagline {
+  color: var(--muted-foreground);
+  font-size: .7rem;
+  line-height: 1.3;
+  letter-spacing: .07em;
+}
+
+.ember-landing-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 630px;
+  align-items: center;
+  justify-content: flex-start;
+}
+.ember-landing-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: url("/brand/ember-sunset.svg") center 48% / cover no-repeat;
+  opacity: .35;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 40%);
+  mask-image: linear-gradient(to right, transparent 0%, black 40%);
+}
+.ember-landing-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, var(--background) 0%, color-mix(in srgb, var(--background) 96%, transparent) 30%, transparent 84%),
+    linear-gradient(0deg, var(--background) 0%, transparent 40%);
+  pointer-events: none;
+}
+.dark .ember-landing-hero::before { opacity: .94; }
+.dark .ember-landing-hero::after {
+  background:
+    linear-gradient(90deg, #100f0e 0%, rgba(16, 15, 14, .96) 28%, rgba(16, 15, 14, .62) 57%, rgba(16, 15, 14, .10) 100%),
+    linear-gradient(0deg, #100f0e 0%, transparent 38%);
+}
+
+/* Cinematic Ember welcome, based on the existing approved sunset palette.
+   No external imagery, autoplay, motion or third-party tracking is added. */
+.ember-landing-hero {
+  min-height: min(820px, 100svh);
+  background: radial-gradient(ellipse 60% 50% at 82% 46%, var(--ember-halo), transparent 88%);
+}
+.ember-landing-hero::before {
+  filter: saturate(.82) contrast(1.09);
+  transform: scale(1.035);
+  opacity: .57;
+}
+.ember-landing-hero::after {
+  background:
+    linear-gradient(90deg, var(--background) 0%, color-mix(in srgb, var(--background) 94%, transparent) 31%, color-mix(in srgb, var(--background) 45%, transparent) 73%, transparent 100%),
+    linear-gradient(0deg, var(--background) 0%, transparent 45%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 80%, transparent) 0%, transparent 32%);
+}
+.dark .ember-landing-hero::before { opacity: .82; }
+.dark .ember-landing-hero::after {
+  background:
+    linear-gradient(90deg, #100f0e 0%, rgba(16,15,14,.96) 23%, rgba(16,15,14,.78) 47%, rgba(16,15,14,.27) 76%, rgba(16,15,14,.17) 100%),
+    linear-gradient(0deg, #100f0e 0%, transparent 46%),
+    linear-gradient(180deg, rgba(16,15,14,.83) 0%, transparent 33%);
+}
+.ember-landing-orb {
+  position: absolute;
+  z-index: 0;
+  right: clamp(0px, 5vw, 70px);
+  top: 24%;
+  width: min(32vw, 400px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 40% 29%, rgba(255,244,211,.86) 0%, rgba(255,184,122,.36) 5%, rgba(255,145,71,.17) 23%, rgba(152,55,36,.10) 47%, transparent 70%);
+  box-shadow: 0 0 90px rgba(248,137,70,.10);
+}
+.ember-landing-orb::before,
+.ember-landing-orb::after {
+  content: '';
+  position: absolute;
+  border: 1px solid rgba(202,118,65,.19);
+  border-radius: 50%;
+}
+.ember-landing-orb::before { inset: 19%; box-shadow: 0 0 0 48px rgba(246,143,70,.018), inset 0 0 60px rgba(245,143,76,.09); }
+.ember-landing-orb::after { inset: 32%; box-shadow: 0 0 70px rgba(246,143,76,.18); }
+.ember-landing-orb span {
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1.5rem;
+  text-align: center;
+  font-size: .67rem;
+  text-transform: uppercase;
+  letter-spacing: .27em;
+  color: var(--muted-foreground);
+}
+@media (max-width: 767px) {
+  .ember-landing-hero { min-height: 710px; }
+  .ember-landing-hero::before { background-position: 66% center; }
+  .ember-landing-orb { width: 300px; right: -155px; top: 30%; opacity: .52; }
+  .ember-landing-orb span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ember-landing-hero::before,
+  .ember-landing-orb { transition: none !important; animation: none !important; }
+}
+
+.ember-hero-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 790px;
+  margin-inline: 0;
+}
+.ember-hero-title {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(2.7rem, 5.7vw, 5.8rem);
+  line-height: 1.09;
+  letter-spacing: -.048em;
+  text-wrap: balance;
+}
+.ember-hero-title em {
+  font-weight: 500;
+  color: var(--ember-sunset-copper);
+  font-style: italic;
+}
+.ember-hero-subtitle {
+  max-width: 40rem;
+  color: var(--muted-foreground);
+  line-height: 1.7;
+}
+.dark .ember-hero-subtitle { color: #e3cec2; }
+.ember-hero-actions button {
+  min-height: 3.25rem;
+}
+.ember-feature-band {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  border: 1px solid var(--ember-panel-ring);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: 0 18px 45px -35px rgba(22, 12, 8, .45);
+  backdrop-filter: blur(12px);
+}
+.ember-feature-band > div + div {
+  border-left: 1px solid var(--border);
+}
+.ember-feature-band strong {
+  display: block;
+  font-family: "Manrope", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: .85rem;
+}
+.ember-feature-band span {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: .69rem;
+  margin-top: .2rem;
+}
+.ember-feature-band svg { color: var(--ember-sunset-copper); }
+.ember-feature {
+  border-radius: 1.4rem;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.ember-feature h3 {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.3rem;
+  letter-spacing: -.02em;
+}
+.ember-feature p { font-size: .86rem; line-height: 1.7; }
+.ember-pulse-intro,
+.ember-reset-showcase {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  box-shadow: var(--ember-card-shadow);
+}
+.ember-pulse-intro::before,
+.ember-reset-showcase::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: url("/brand/ember-sunset.svg") center 57% / cover no-repeat;
+  opacity: .19;
+  -webkit-mask-image: linear-gradient(to right, transparent 15%, black 100%);
+  mask-image: linear-gradient(to right, transparent 15%, black 100%);
+}
+.dark .ember-pulse-intro::before,
+.dark .ember-reset-showcase::before { opacity: .58; }
+.ember-pulse-intro::after,
+.ember-reset-showcase::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, var(--card) 0%, color-mix(in srgb, var(--card) 74%, transparent) 45%, transparent 100%);
+}
+.ember-pulse-intro h2,
+.ember-reset-showcase h3 {
+  font-family: "Fraunces", Georgia, serif;
+  letter-spacing: -.04em;
+}
+.ember-nova-room {
+  border-radius: 1.45rem;
+  box-shadow: var(--ember-card-shadow);
+}
+.ember-nova-room .ember-nova-mark {
+  border-radius: 50%;
+  border: 1px solid var(--ember-sunset-copper);
+  background: radial-gradient(circle at 50% 50%, var(--card) 39%, var(--ember-halo) 100%);
+  box-shadow: 0 0 0 5px var(--ember-halo), 0 0 24px rgba(236, 122, 49, .25);
+}
+.ember-nova-room [role="log"] {
+  background-image: radial-gradient(ellipse 75% 40% at 50% 0%, var(--ember-radiance), transparent);
+}
+.ember-nova-room [role="log"] > div { max-width: 100%; }
+.ember-reset-showcase .tag {
+  background: color-mix(in srgb, var(--surface) 83%, transparent);
+}
+.ember-nav {
+  box-shadow: var(--ember-card-shadow);
+}
+.ember-nav .ember-brandmark { flex-shrink: 0; }
+.ember-sanctuary .ember-nav {
+  border-bottom: 1px solid var(--border);
+}
+@media (max-width: 767px) {
+  .ember-landing-hero {
+    min-height: 0;
+    padding-top: 9rem;
+    padding-bottom: 3rem;
+  }
+  .ember-landing-hero::before {
+    opacity: .18;
+    background-position: 62% center;
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 95%);
+    mask-image: linear-gradient(to bottom, black 0%, transparent 95%);
+  }
+  .dark .ember-landing-hero::before { opacity: .46; }
+  .ember-landing-hero::after {
+    background: linear-gradient(0deg, var(--background) 0%, color-mix(in srgb, var(--background) 76%, transparent) 68%, transparent 100%);
+  }
+  .dark .ember-landing-hero::after {
+    background: linear-gradient(0deg, var(--background) 0%, rgba(16,15,14,.72) 72%, rgba(16,15,14,.48) 100%);
+  }
+  .ember-feature-band { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .ember-feature-band > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--border); }
+  .ember-feature-band > div:nth-child(4) { border-top: 1px solid var(--border); }
+  .ember-nova-room [role="log"] { padding: 1rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ember-feature { transition: none; }
+}
+
+
+/* Ember Orbit: trace only during deliberate hover/focus, never continuous. */
+.ember-orbit { isolation: isolate; }
+.ember-orbit::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  padding: 2px;
+  background: conic-gradient(from 0deg, transparent 0deg, var(--ember-copper) 65deg, var(--ember-gold) 90deg, transparent 135deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.ember-orbit:hover::before,
+.ember-orbit:focus-visible::before {
+  opacity: 1;
+  animation: ember-border-trace 2.8s linear infinite;
+}
+@keyframes ember-border-trace {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ember-orbit:hover::before,
+  .ember-orbit:focus-visible::before { animation: none; }
+}
+
+
+
+/* Nova mobile composer clearance — Report 35 structural fix.
+ * Reports 33/34 reserved a static rem constant above the chat panel to
+ * approximate "everything else on screen" - it was wrong at Pixel 7 (20rem),
+ * corrected once (30rem), and still wrong at narrower/shorter viewports,
+ * because no fixed constant can track variable content (wrapped header
+ * text, the demo-account banner) across every screen size.
+ *
+ * This replaces the constant with a real bounded-parent flex chain:
+ * - App.tsx measures, with getBoundingClientRect() (not guessed), the
+ *   fixed mobile nav's real rendered height and the Nova shell's own real
+ *   top offset (the page's own top padding, which varies by breakpoint -
+ *   a plain `100dvh - navHeight` calc ignores this and overflows the
+ *   shell past the nav by exactly that padding amount, which is what an
+ *   earlier draft of this fix did). It publishes the result - real
+ *   viewport height minus that top offset minus the nav height - as
+ *   --ember-nova-shell-height, recomputed via ResizeObserver on the nav
+ *   and on window/visualViewport resize (keyboard, rotation, breakpoint).
+ * - .ember-nova-shell (App.tsx's Nova-tab content wrapper) gets a
+ *   DEFINITE block-size from that measured variable - not a min-height.
+ *   A flex column's flex-grow only has "remaining space" to distribute to
+ *   its children when the container's own main size is definite; a
+ *   min-height-only container sizes to its content instead and flex-grow
+ *   has nothing to redistribute, which is what made an earlier draft of
+ *   this fix size to content height again instead of bounding it.
+ * - Every element between that bounded wrapper and the chat panel
+ *   (AnimatePresence's motion.div, .ember-nova-tab) is a flex column that
+ *   passes its remaining space straight down via flex:1 1 0; min-height:0,
+ *   so variable content above (header, account banner) takes exactly the
+ *   space it naturally needs (protected by flex items' default automatic
+ *   minimum size, so it's never clipped) and the chat panel - the one
+ *   link in the chain with min-height:0 overriding that default - absorbs
+ *   whatever's left, shrinking and scrolling internally rather than
+ *   pushing the composer below the fold.
+ * - .ember-nova-room itself drops h-full (which had no bounded ancestor
+ *   to resolve against) for flex:1 1 auto so it fills that remaining
+ *   space and its own [role="log"] scrolls internally, exactly as its
+ *   existing flex-col/overflow-y-auto classes already intended.
+ * Desktop layout and other NovaChat mounts are untouched: .ember-nova-shell
+ * is only applied when the Nova tab is active, and every rule here is
+ * scoped under max-width: 767px.
+ */
+@media (max-width: 767px) {
+  .ember-nova-shell {
+    display: flex;
+    flex-direction: column;
+    /* Fallback (pre-JS-measurement paint only): dvh minus the fixed nav's
+     * typical height. Overwritten within one frame by the real measured
+     * --ember-nova-shell-height once the effect above runs. */
+    block-size: calc(100dvh - var(--mobile-bottom-nav-height, 5rem));
+    block-size: var(--ember-nova-shell-height, calc(100dvh - var(--mobile-bottom-nav-height, 5rem)));
+    /* On the narrowest/shortest real screens, the header alone (wrapped
+     * onto more lines) plus the demo-account banner can legitimately
+     * exceed the space left above the nav, even with the message log
+     * shrunk to nothing. Rather than let the composer overflow the
+     * shell's bottom edge and land behind the fixed nav (unreachable),
+     * let the shell itself scroll: the composer stays reachable by
+     * scrolling past the header, and it can never render behind the nav
+     * because the shell's own box - not the page - is what's bounded. */
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .ember-nova-shell > .ember-tab-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
+    min-block-size: 0;
+  }
+
+  .ember-nova-shell .ember-nova-tab {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
+    min-block-size: 0;
+  }
+
+  .ember-nova-shell .ember-nova-room {
+    block-size: auto;
+    flex: 1 1 auto;
+    min-block-size: 0;
+    /* The room's own composer row refuses to shrink (flex-shrink: 0,
+     * below), so on the most cramped screens the room's content can
+     * need more space than the outer flex chain has left to give it.
+     * NovaChat.tsx's root div normally clips with overflow-hidden (for
+     * its rounded corners); kept as-is, that would make any such
+     * shortfall invisible - the composer silently disappears instead of
+     * just needing a scroll. Letting the room's own overflow be visible
+     * here means a shortfall spills into .ember-nova-shell's own
+     * overflow-y: auto (above) instead, which scrolls - so the composer
+     * stays reachable rather than disappearing. Only relevant when
+     * content is already too tall for the room's flex allocation; the
+     * rounded-corner clipping this overrides isn't visible at that
+     * point anyway (the content has overflowed past the rounded box).
+     */
+    overflow: visible;
+  }
+
+  .ember-nova-shell .ember-nova-room [role="log"] {
+    min-block-size: 0;
+    overscroll-behavior-y: contain;
+  }
+
+  .ember-nova-shell .ember-nova-room > .border-t {
+    flex-shrink: 0;
+  }
+}
+
+@supports (height: 100svh) {
+  @media (max-width: 767px) {
+    .ember-nova-shell {
+      block-size: calc(100svh - var(--mobile-bottom-nav-height, 5rem));
+      block-size: var(--ember-nova-shell-height, calc(100svh - var(--mobile-bottom-nav-height, 5rem)));
+    }
+  }
+}

@@ -4,7 +4,7 @@ import { Loader2, CheckCircle2, AlertTriangle, Lock } from 'lucide-react';
 import { verifyPasswordResetCode, confirmPasswordReset, applyActionCode } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
-import { secureApiFetch } from '../lib/secure-api';
+import { publicPasswordApiFetch } from '../lib/secure-api';
 
 // Handles the link Firebase generates for password reset / email
 // verification - rendered as a top-level alternative to <App /> from
@@ -82,7 +82,7 @@ export const AuthActionPage = () => {
       setStage('resetDone');
       // Best-effort security notice - never blocks the person from seeing
       // their reset succeeded even if this fails.
-      secureApiFetch('/api/auth/password-reset/confirm-notify', { method: 'POST', data: { email: resetEmail } }).catch(() => {});
+      publicPasswordApiFetch('/api/auth/password-reset/confirm-notify', { email: resetEmail }).catch(() => {});
     } catch (e: any) {
       setErrorMessage(
         e?.code === 'auth/expired-action-code'

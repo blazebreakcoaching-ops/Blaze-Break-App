@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWithPopup, linkWithCredential, signInWithCredential, signInWithEmailAndPassword, createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, OAuthProvider, FacebookAuthProvider, getAdditionalUserInfo, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, authPersistenceReady, getDb } from './firebase';
-import { secureApiFetch } from './secure-api';
-import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken } from './mfa-session';
+import { secureApiFetch, publicPasswordApiFetch } from './secure-api';
+import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken, MFA_SESSION_REQUIRED_EVENT } from './mfa-session';
+import { mayCommitAuthCallback } from './auth-callback-ownership';
 import { AuthRole } from '../types';
 
 interface AuthContextType {
@@ -26,12 +27,26 @@ interface AuthContextType {
   // verified it this session - App.tsx renders MfaChallenge instead of the
   // app while this is true. Always false for anonymous sessions.
   mfaPending: boolean;
+  mfaStatusError: boolean;
+  retryMfaStatus: () => Promise<void>;
   // isNewUser reflects whether this operation just created the account
   // (including the anonymous-session-upgrade case, which Firebase also
   // reports as isNewUser: true) - used by LandingPage.tsx to decide
   // whether to offer the optional post-signup 2FA step, since that step
   // should only ever appear right after a genuine signup, never on a
   // returning sign-in.
+  // Ensures a signed-in Firebase session exists before entering the app
+  // as a guest, without ever auto-triggering one just from landing on the
+  // marketing page. Needed because logOut()'s explicitSignOutRef
+  // deliberately skips the automatic anonymous re-sign-in that would
+  // otherwise follow an explicit sign-out (so the person actually lands
+  // on a genuinely signed-out state, not a confusing instant new guest
+  // session) - which otherwise left "See a live demo" entering the app
+  // with no Firebase session at all for the rest of that tab's life,
+  // silently degrading every feature that reads auth.currentUser
+  // (including the Agentic Journey flag, which never got a user to
+  // fetch its config for). A no-op when already signed in.
+  continueAsGuest: () => Promise<void>;
   signIn: () => Promise<{ isNewUser: boolean }>;
   signInWithCalendar: () => Promise<string | null>;
   signInWithMicrosoft: () => Promise<{ isNewUser: boolean }>;
@@ -52,6 +67,9 @@ const AuthContext = createContext<AuthContextType>({
   emailVerified: false,
   refreshEmailVerified: async () => {},
   mfaPending: false,
+  mfaStatusError: false,
+  retryMfaStatus: async () => {},
+  continueAsGuest: async () => {},
   signIn: async () => ({ isNewUser: false }),
   signInWithCalendar: async () => null,
   signInWithMicrosoft: async () => ({ isNewUser: false }),
@@ -89,6 +107,23 @@ export const useAuth = () => useContext(AuthContext);
 // one extra click for the common case (only ever using one account) and
 // prevents a genuinely confusing "I can't switch accounts" bug for
 // anyone who uses more than one.
+// See the AuthContextType field's own comment for why this exists: after
+// an explicit sign-out, nothing else in the app re-establishes a Firebase
+// session, so "See a live demo" must do it itself before entering the
+// app. Idempotent - a returning guest or an already-signed-in person must
+// never be silently swapped for a fresh anonymous identity.
+export async function continueAsGuest(authInstance: FirebaseAuth): Promise<void> {
+  if (authInstance.currentUser) return;
+  // Only a deliberate demo click creates a guest account. Surface failures.
+  await signInAnonymously(authInstance);
+}
+
+// Returning customers sign in directly; never try to link their credentials
+// to the auto-created anonymous demo identity first.
+export async function signInExistingEmail(authInstance: FirebaseAuth, email: string, password: string) {
+  return signInWithEmailAndPassword(authInstance, email, password);
+}
+
 export async function signInWithGoogle(authInstance: FirebaseAuth) {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -110,7 +145,23 @@ export async function signInWithGoogle(authInstance: FirebaseAuth) {
 
 export async function signInWithGoogleCalendar(authInstance: FirebaseAuth) {
   const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+  // Phase 5J, directive §3 - audited every real consumer of this
+  // client-held token (calendar-signals.ts, gmail-signals.ts,
+  // boundary-autopilot.ts, and the inline calls in MicroRecovery.tsx/
+  // RecoveryFuelEngine.tsx): every one of them only ever calls
+  // calendars/primary/events (list or by id), never a calendar-list or
+  // calendar-settings endpoint. `calendar.events` already grants read
+  // access to events on its own (Google documents it as "View and edit
+  // events" - view is included), so the separate `calendar.readonly`
+  // scope this used to also request was genuine redundancy, not a
+  // distinct capability anything here relies on - removed.
+  // `calendar.events` itself CANNOT be narrowed away the way the
+  // directive's own phrasing anticipated: declineCalendarEvent
+  // (boundary-autopilot.ts) is a real, live, already-shipped write -
+  // Boundary Autopilot's "decline this meeting for real" action PATCHes
+  // the event's attendee response using exactly this scope. Removing it
+  // would break that existing feature, not just tighten a hypothetical
+  // one. See NOVA_PHASE5J_PILOT_SAFETY_REPORT.md for the full audit.
   provider.addScope('https://www.googleapis.com/auth/calendar.events');
   provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -127,6 +178,41 @@ export async function signInWithGoogleCalendar(authInstance: FirebaseAuth) {
       }
     }
     throw e;
+  }
+}
+
+// Phase 5J "Calendar Pilot: Final Readiness" audit, Task 1 - closes a
+// confirmed consent defect found in IntegrationsDashboard.tsx: its
+// "Disconnect Google Workspace" confirmation told the user "This also
+// revokes the cached access token," but nothing ever called Google to
+// revoke anything - the app only cleared its own in-memory copy of the
+// token and signed the user out. The real OAuth grant between the
+// user's Google account and this app (including the calendar.events
+// write scope Boundary Autopilot's declineCalendarEvent depends on)
+// stayed active at Google's side regardless, visible and still usable
+// until the user went to myaccount.google.com and removed it by hand -
+// the opposite of what the app's own copy promised.
+//
+// This performs the real revocation Google's OAuth2 spec defines for
+// exactly this purpose (https://oauth2.googleapis.com/revoke) - a
+// standard token-teardown call, not an authentication operation, so it
+// does not conflict with this phase's "no live OAuth authentication"
+// restriction. It is deliberately best-effort: a token that is already
+// expired or was never valid will make this call fail, and the caller
+// (IntegrationsDashboard's performGoogleDisconnect) must still proceed
+// with clearing local state and signing out either way, since the
+// user's own intent to disconnect must not be blocked by a revoke call
+// against a token Google no longer even recognises.
+export async function revokeGoogleCalendarAccess(accessToken: string): Promise<boolean> {
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `token=${encodeURIComponent(accessToken)}`,
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -182,6 +268,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [mfaPending, setMfaPending] = useState(false);
+  const [mfaStatusError, setMfaStatusError] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   // Set right before signOut() and consumed the next time onAuthStateChanged
   // fires with no user. Without this, an explicit sign-out was indistinguishable
@@ -189,10 +276,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // anonymous account - discarding the real one - and the app treated that
   // empty account as someone who'd never onboarded, running onboarding again.
   const explicitSignOutRef = React.useRef(false);
+  const settledAuthUidRef = React.useRef<string | null>(null);
+
+  // A server-expired MFA session must take the active user back to the
+  // security challenge immediately, not leave protected screens mounted
+  // until they reload. This does not change Firebase Auth or Firestore rules.
+  useEffect(() => {
+    const onMfaRequired = () => {
+      if (auth.currentUser && !auth.currentUser.isAnonymous) {
+        setMfaStatusError(false);
+        setMfaPending(true);
+      }
+    };
+    window.addEventListener(MFA_SESSION_REQUIRED_EVENT, onMfaRequired);
+    return () => window.removeEventListener(MFA_SESSION_REQUIRED_EVENT, onMfaRequired);
+  }, []);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     let cancelled = false;
+    let latestAuthEvent = 0;
 
     // Persistence must be settled before the listener attaches - otherwise
     // a fast-firing initial callback can run against whatever the SDK's
@@ -201,7 +304,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     authPersistenceReady.then(() => {
       if (cancelled) return;
       unsubscribe = onAuthStateChanged(auth, async (userRecord) => {
+      const requestNumber = ++latestAuthEvent;
+      const stillCurrent = () => mayCommitAuthCallback(
+        requestNumber, latestAuthEvent,
+        userRecord?.uid ?? null, auth.currentUser?.uid ?? null, cancelled,
+      );
+      if (!stillCurrent()) return;
+      // Fail closed while loading roles and MFA. Never display the previous
+      // account's React state under Firebase's newly selected identity.
+      if (settledAuthUidRef.current !== (userRecord?.uid ?? null)) {
+        setUser(null);
+        setAppRole('individual');
+        setEmailVerified(false);
+        setAccessToken(null);
+      }
+      setLoading(true);
+      if (userRecord && !userRecord.isAnonymous) setMfaPending(true);
       if (userRecord) {
+        (window as any).__ACTIVE_USER_UID__ = userRecord.uid;
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
         try {
@@ -209,6 +329,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { doc, getDoc, setDoc } = await import('firebase/firestore');
           const userDocRef = doc(db, 'users', userRecord.uid);
           const userDoc = await getDoc(userDocRef);
+          if (!stillCurrent()) return;
 
           if (!userDoc.exists()) {
              await setDoc(userDocRef, {
@@ -216,12 +337,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
              });
+             if (!stillCurrent()) return;
           }
 
           // Fetch protected role from entitlements
           const entitlementsRef = doc(db, 'users', userRecord.uid, 'entitlements', 'status');
           const entitlementsDoc = await getDoc(entitlementsRef);
-          
+          if (!stillCurrent()) return;
+
           let role: AuthRole = 'individual';
           if (entitlementsDoc.exists()) {
             role = entitlementsDoc.data().role || 'individual';
@@ -230,6 +353,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Check custom claims for role
           try {
             const tokenResult = await userRecord.getIdTokenResult();
+            if (!stillCurrent()) return;
             const claims = tokenResult.claims;
             if (claims.admin || claims.platform_admin || claims.platformOwner || userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
               (userRecord as any).isAdmin = true;
@@ -243,8 +367,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.warn("Could not read custom claims from ID token — defaulting to standard role.", e);
           }
 
+          if (!stillCurrent()) return;
           setAppRole(role);
         } catch (e) {
+          if (!stillCurrent()) return;
           console.error("Authorised Access Framework mapping failed:", e);
           setAppRole('individual');
         }
@@ -253,6 +379,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // is a real account. Cached per-tab-session in sessionStorage so a
         // page refresh doesn't re-challenge someone who already verified
         // moments ago; a genuinely new browser session always re-checks.
+        if (!stillCurrent()) return;
         if (!userRecord.isAnonymous) {
           // A stored token (not just a boolean flag) - it's the exact
           // thing the server checks, so "do we already have a live one"
@@ -260,55 +387,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const alreadyVerifiedThisSession = !!getMfaSessionToken(userRecord.uid);
 
           if (alreadyVerifiedThisSession) {
+            setMfaStatusError(false);
             setMfaPending(false);
           } else {
             try {
               const res = await secureApiFetch('/api/auth/mfa/status');
               const data = await res.json();
-              setMfaPending(data.enabled === true);
-            } catch (e) {
-              // Fail OPEN, not closed - a transient network error checking
-              // 2FA status must never lock someone out of their own
-              // account. The mirror image of this app's established
-              // "never remove safety to save availability" principle:
-              // never ADD a blocking gate on top of a mere connectivity
-              // hiccup either.
-              console.warn("Could not check two-factor status — continuing without the extra sign-in step this session.", e);
-              setMfaPending(false);
+              if (!stillCurrent()) return;
+              if (typeof data?.enabled !== 'boolean') throw new Error('Invalid security status');
+              setMfaStatusError(false);
+              setMfaPending(data.enabled);
+            } catch {
+              if (!stillCurrent()) return;
+              // A failed status check is UNKNOWN, not "MFA disabled".
+              // Show a retryable secure gate rather than permitting app
+              // access with an unverified MFA state.
+              setMfaStatusError(true);
+              setMfaPending(true);
             }
           }
         } else {
+          setMfaStatusError(false);
           setMfaPending(false);
         }
 
       } else {
+        (window as any).__ACTIVE_USER_UID__ = null;
         (window as any).__ACTIVE_USER_EMAIL__ = null;
+        setMfaStatusError(false);
+        setMfaPending(false);
         setAppRole('individual');
 
-        if (explicitSignOutRef.current) {
-          // They just deliberately signed out - land them on a clean,
-          // properly-signed-out state instead of silently re-authenticating
-          // them as a new anonymous stranger who'd look like they need
-          // onboarding again.
-          explicitSignOutRef.current = false;
-        } else {
-          // Nobody signed in at all yet (not even anonymously) - this fires
-          // once, right after the app first loads for a brand-new visitor.
-          // Signing in anonymously here means every feature that reads
-          // auth.currentUser gets a real, Firestore-backed identity from the
-          // first moment, instead of a local-only/"demo" fallback.
-          try {
-            await signInAnonymously(auth);
-            // Don't set user/loading below for this invocation - that would
-            // briefly flash a logged-out state. onAuthStateChanged fires again
-            // momentarily with the real anonymous userRecord, and that
-            // invocation sets user/loading correctly instead.
-            return;
-          } catch (e) {
-            console.error("Anonymous sign-in failed - features requiring a signed-in user will be unavailable until the user signs in manually.", e);
-          }
-        }
+        // A new visitor stays signed out until they choose an action.
+        explicitSignOutRef.current = false;
       }
+      if (!stillCurrent()) return;
+      settledAuthUidRef.current = userRecord?.uid ?? null;
       setUser(userRecord);
       setEmailVerified(userRecord?.emailVerified ?? false);
       if (!userRecord) {
@@ -320,6 +434,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       cancelled = true;
+      ++latestAuthEvent;
       if (unsubscribe) unsubscribe();
     };
   }, []);
@@ -385,27 +500,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithEmail = async (email: string, password: string) => {
-    try {
-      if (auth.currentUser?.isAnonymous) {
-        const credential = EmailAuthProvider.credential(email, password);
-        await linkWithCredential(auth.currentUser, credential);
-        return;
-      }
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (e: any) {
-      if (e?.code === 'auth/email-already-in-use' || e?.code === 'auth/credential-already-in-use') {
-        // This email already belongs to someone else's real, pre-existing
-        // account, so linking the anonymous session to it can't work -
-        // sign straight into that real account with the same email/
-        // password already in hand instead. This abandons the anonymous
-        // session's data, same as signIn()'s Google fallback above, since
-        // the collision has already proven this was never really the
-        // anonymous session's identity to keep.
-        await signInWithEmailAndPassword(auth, email, password);
-        return;
-      }
-      throw e;
-    }
+    await signInExistingEmail(auth, email, password);
   };
 
   // Deliberately NOT Firebase's own sendPasswordResetEmail() - the reset
@@ -414,7 +509,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // The server generates the actual reset link and does the sending;
   // this always resolves (never reveals whether the email has an account).
   const sendPasswordReset = async (email: string) => {
-    await secureApiFetch('/api/auth/password-reset/request', { method: 'POST', data: { email } });
+    await publicPasswordApiFetch('/api/auth/password-reset/request', { email });
   };
 
   // Called from MfaChallenge.tsx once someone enters a correct code or
@@ -422,15 +517,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // (POST /api/auth/mfa/totp/verify-at-signin, which also enforces the
   // lockout) - this just records the result for this session and clears
   // the gate.
+  const retryMfaStatus = async () => {
+    try {
+      const res = await secureApiFetch('/api/auth/mfa/status');
+      const data = await res.json();
+      if (typeof data?.enabled !== 'boolean') throw new Error('Invalid security status');
+      setMfaStatusError(false);
+      setMfaPending(data.enabled);
+    } catch {
+      setMfaStatusError(true);
+      setMfaPending(true);
+      throw new Error('Security status is unavailable. Check your connection and retry.');
+    }
+  };
+
   const verifyMfaAtSignIn = async (codeOrRecoveryCode: string, isRecoveryCode = false) => {
     const res = await secureApiFetch('/api/auth/mfa/totp/verify-at-signin', {
       method: 'POST',
       data: isRecoveryCode ? { recoveryCode: codeOrRecoveryCode } : { code: codeOrRecoveryCode },
     });
     const data = await res.json();
-    if (auth.currentUser && data.mfaSessionToken) {
-      setMfaSessionToken(auth.currentUser.uid, data.mfaSessionToken);
+    if (!auth.currentUser || typeof data?.mfaSessionToken !== 'string' || !data.mfaSessionToken) {
+      throw new Error('Verification did not return a valid session. Please try again.');
     }
+    setMfaSessionToken(auth.currentUser.uid, data.mfaSessionToken);
+    if (getMfaSessionToken(auth.currentUser.uid) !== data.mfaSessionToken) {
+      throw new Error('Could not save this verified session. Enable session storage and try again.');
+    }
+    setMfaStatusError(false);
     setMfaPending(false);
   };
 
@@ -450,8 +564,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (user) {
       clearMfaSessionToken(user.uid);
     }
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch (e) {
+      explicitSignOutRef.current = false;
+      throw e;
+    }
     setAccessToken(null);
+    setMfaStatusError(false);
     setMfaPending(false);
   };
   
@@ -464,7 +584,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, appRole, loading, accessToken, emailVerified, refreshEmailVerified, mfaPending, signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
+    <AuthContext.Provider value={{ user, appRole, loading, accessToken, emailVerified, refreshEmailVerified, mfaPending, mfaStatusError, retryMfaStatus, continueAsGuest: () => continueAsGuest(auth), signIn, signInWithCalendar, signInWithMicrosoft: handleMicrosoftSignIn, signInWithFacebook: handleFacebookSignIn, signUpWithEmail, signInWithEmail, sendPasswordReset, verifyMfaAtSignIn, logOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

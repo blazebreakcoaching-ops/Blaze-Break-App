@@ -1,19 +1,13 @@
 import React, { useState } from 'react';
-import {
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
-} from 'react-native';
+import { TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
+import { Text, TextInput } from '../src/lib/native-ui';
+import { useNativeTheme } from '../src/lib/native-theme';
+import type { NativeThemeColors } from '../src/lib/native-theme-palette';
 import { router } from 'expo-router';
 import { useAuth } from '../src/lib/auth-context';
 
 export default function SignUpScreen() {
+  const styles = useThemedStyles();
   const { signUpWithEmail } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,7 +66,7 @@ export default function SignUpScreen() {
         />
         {formError && <Text style={styles.error}>{formError}</Text>}
         <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create account</Text>}
+          {submitting ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>Create account</Text>}
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.replace('/sign-in')}>
           <Text style={styles.link}>Already have an account? Sign in</Text>
@@ -82,27 +76,32 @@ export default function SignUpScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#fff' },
-  container: { flexGrow: 1, padding: 24, justifyContent: 'center', backgroundColor: '#fff' },
+const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
+  flex: { flex: 1, backgroundColor: colors.card },
+  container: { flexGrow: 1, padding: 24, justifyContent: 'center', backgroundColor: colors.background },
   title: { fontSize: 24, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  subtitle: { fontSize: 14, color: colors.muted, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   input: {
     borderWidth: 1,
-    borderColor: '#e2e2e2',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
     fontSize: 16,
   },
   button: {
-    backgroundColor: '#ea580c',
+    backgroundColor: colors.accent,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
   },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  link: { textAlign: 'center', marginTop: 16, color: '#ea580c', fontWeight: '600' },
-  error: { color: '#dc2626', fontSize: 13, marginBottom: 12, textAlign: 'center' },
+  buttonText: { color: colors.onAccent, fontWeight: '700', fontSize: 16 },
+  link: { textAlign: 'center', marginTop: 16, color: colors.accent, fontWeight: '600' },
+  error: { color: colors.danger, fontSize: 13, marginBottom: 12, textAlign: 'center' },
 });
+
+function useThemedStyles() {
+  const { colors } = useNativeTheme();
+  return React.useMemo(() => ({ ...createThemedStyles(colors), colors }), [colors]);
+}

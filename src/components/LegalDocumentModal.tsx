@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { X, Loader2 } from 'lucide-react';
-import { publicApiFetch, SecureApiError } from '../lib/secure-api';
+import { publicApiFetch } from '../lib/secure-api';
+import { readableLegalDocumentError } from '../lib/readable-legal-error';
 import { useFocusTrap } from '../lib/useFocusTrap';
 
 // Legal document type ids, kept as a local, duplicated string union rather
@@ -54,11 +55,9 @@ export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumen
         // sign-in, an App Check failure, a genuine server error) made it
         // impossible to tell them apart without opening DevTools, which
         // wasn't a reasonable ask of a non-technical user reporting a bug.
-        console.error('[LegalDocumentModal] Failed to load document:', docType, e);
-        if (!cancelled) {
-          const detail = e instanceof SecureApiError ? e.message : (e instanceof Error ? e.message : String(e));
-          setError(`Could not load this document right now. (${detail})`);
-        }
+        // Keep private URLs, API provider errors and tokens out of both
+        // the visitor's modal and the browser console.
+        if (!cancelled) setError(readableLegalDocumentError(e));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -93,7 +92,7 @@ export const LegalDocumentModal = ({ docType, onClose }: { docType: LegalDocumen
               <Loader2 className="w-6 h-6 text-text-muted animate-spin" />
             </div>
           ) : error ? (
-            <p className="text-sm text-destructive">{error}</p>
+            <p role="alert" className="text-sm text-destructive">{error}</p>
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none text-text-main [&_h1]:font-display [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-3 [&_h2]:font-display [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-6 [&_h2]:mb-2 [&_p]:text-sm [&_p]:leading-relaxed [&_p]:text-text-main">
               <ReactMarkdown>{doc?.content || ''}</ReactMarkdown>

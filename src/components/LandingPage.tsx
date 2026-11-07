@@ -1,10 +1,14 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, ShieldCheck, BatteryLow, MessageSquareText, LogIn, ArrowLeft, Loader2, Mail, Lock, Sun, Moon, Briefcase, TrendingUp, Users, Wand2, Copy, Check } from 'lucide-react';
+import { ArrowRight, LogIn, ArrowLeft, Loader2, Mail, Lock, Wand2, Copy, Check } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { BlazeBrandLogo } from './BlazeBrandLogo';
+import { AppearanceMenu } from './AppearanceMenu';
+import type { AppearanceMode } from '../lib/appearance-theme';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { secureApiFetch } from '../lib/secure-api';
 import { checkPasswordStrength, generateStrongPassword, PASSWORD_REQUIREMENT_TEXT, PASSWORD_MIN_LENGTH } from '../lib/password-strength';
+import { readableSignInError, readablePasswordResetError } from '../lib/readable-signin-error';
 import type { LegalDocumentType } from './LegalDocumentModal';
 
 // Lazy - this pulls in the `qrcode` library, which has no reason to load
@@ -24,7 +28,7 @@ interface LandingPageProps {
   // on "landing" until they click something, precisely so nobody who
   // just wants to read the Terms/Privacy or look around gets swept into
   // either onboarding or this demo without asking.
-  onViewDemo: () => void;
+  onViewDemo: () => Promise<void>;
   onOpenTrustCentre: () => void;
   // Optional because App.tsx's dark mode state already defaults every
   // visitor to their system preference before this component ever
@@ -34,8 +38,8 @@ interface LandingPageProps {
   // Undefined props degrade gracefully: the toggle button simply doesn't
   // render rather than throwing, so this stays optional at the type
   // level even though App.tsx always passes both in practice.
-  darkMode?: boolean;
-  setDarkMode?: (d: boolean) => void;
+  themeMode?: AppearanceMode;
+  setThemeMode?: (mode: AppearanceMode) => void;
   // True when App.tsx routed here specifically to open the sign-up modal
   // (e.g. a demo session's "Sign up free" banner). Every visitor already
   // has a live anonymous session by the time this component mounts, so
@@ -52,7 +56,7 @@ interface LandingPageProps {
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
-export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, setDarkMode, initialAuthModalOpen, onInitialAuthModalOpened }: LandingPageProps) => {
+export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, themeMode, setThemeMode, initialAuthModalOpen, onInitialAuthModalOpened }: LandingPageProps) => {
   const { user, signIn, signInWithMicrosoft, signInWithFacebook, signUpWithEmail, signInWithEmail, sendPasswordReset } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const authDialogRef = useFocusTrap(showAuthModal);
@@ -74,7 +78,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
   // modal - `authMode` picks which form is showing. Reset to a clean slate
   // every time the modal opens, so a previous attempt's typed password or
   // error message never lingers into the next visit.
-  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+  const [authMode, setAuthMode] = useState<AuthMode>('signup');
 
   useEffect(() => {
     if (initialAuthModalOpen) {
@@ -93,6 +97,10 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
+  const [marketingConsentNotice, setMarketingConsentNotice] = useState<string | null>(null);
+  const [authErrorSource, setAuthErrorSource] = useState<'social' | 'email'>('email');
   const [emailAuthSubmitting, setEmailAuthSubmitting] = useState(false);
   const [resetLinkSent, setResetLinkSent] = useState(false);
   // True once "Generate a strong password" has been used this signup
@@ -118,8 +126,24 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
   // the modal opens - it never carries over between visits.
   const [legalAgreed, setLegalAgreed] = useState(false);
 
+  // Phase 5N (directive §3) - a real-app Playwright test clicking the real
+  // "Sign up free" banner caught this: on the component's very first
+  // render, showAuthModal is false (its default) - true regardless of
+  // whether this mount is also about to open straight into signup mode via
+  // the initialAuthModalOpen effect above. Both effects fire in the SAME
+  // commit, each closed over that same initial, stale `showAuthModal ===
+  // false`, so this one unconditionally ran its "reset to signin" on every
+  // single mount, including immediately after the other effect had just
+  // set authMode to 'signup' - silently downgrading a real user's signup
+  // intent to a sign-in form with no visible error. prevShowAuthModalRef
+  // makes this fire only on an ACTUAL open-to-closed transition (the real
+  // "they just closed the modal" moment this reset exists for), never on
+  // mount, where there is nothing to reset yet.
+  const prevShowAuthModalRef = useRef(showAuthModal);
   useEffect(() => {
-    if (showAuthModal) return;
+    const wasOpen = prevShowAuthModalRef.current;
+    prevShowAuthModalRef.current = showAuthModal;
+    if (showAuthModal || !wasOpen) return;
     setAuthMode('signin');
     setEmail('');
     setPassword('');
@@ -131,6 +155,8 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
     setShowPostSignupMfaStep(false);
     setMfaJustEnabled(false);
     setLegalAgreed(false);
+    setMarketingOptIn(false);
+    setMarketingConsentNotice(null);
   }, [showAuthModal]);
 
   // The shared "finish onboarding" action, reached either by skipping the
@@ -166,10 +192,34 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
   };
 
   const handleStartRequest = () => {
-    if (user) {
+    if (user && !user.isAnonymous) {
       onStart();
     } else {
+      setAuthMode('signup');
+      setAuthError(null);
       setShowAuthModal(true);
+    }
+  };
+
+  const handleDemoRequest = async () => {
+    setDemoError(null);
+    try {
+      await onViewDemo();
+    } catch (error) {
+      setDemoError(readableSignInError(error));
+    }
+  };
+
+  const saveMarketingChoice = async () => {
+    if (!marketingOptIn) return;
+    try {
+      const res = await secureApiFetch('/api/marketing/preferences', {
+        method: 'POST', data: { optedIn: true, source: 'signup' },
+      });
+      if (!res.ok) throw new Error('Consent not saved');
+      setMarketingConsentNotice('Optional email updates preference saved. You can change it in Settings.');
+    } catch {
+      setMarketingConsentNotice('Your account is ready, but email updates were not enabled. You can retry in Settings.');
     }
   };
 
@@ -185,16 +235,19 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
   const handleGoogleSignIn = async () => {
     try {
+      setAuthError(null);
+      setAuthErrorSource('social');
       setSigningInProvider('google');
       const { isNewUser } = await signIn();
       if (isNewUser) {
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
       }
     } catch (e) {
-      console.error("Sign up failed:", e);
+      setAuthError(readableSignInError(e));
     } finally {
       setSigningInProvider(null);
     }
@@ -202,16 +255,19 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
   const handleMicrosoftSignIn = async () => {
     try {
+      setAuthError(null);
+      setAuthErrorSource('social');
       setSigningInProvider('microsoft');
       const { isNewUser } = await signInWithMicrosoft();
       if (isNewUser) {
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
       }
     } catch (e) {
-      console.error("Sign up failed:", e);
+      setAuthError(readableSignInError(e));
     } finally {
       setSigningInProvider(null);
     }
@@ -219,16 +275,19 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
   const handleFacebookSignIn = async () => {
     try {
+      setAuthError(null);
+      setAuthErrorSource('social');
       setSigningInProvider('facebook');
       const { isNewUser } = await signInWithFacebook();
       if (isNewUser) {
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         finishOnboarding();
       }
     } catch (e) {
-      console.error("Sign up failed:", e);
+      setAuthError(readableSignInError(e));
     } finally {
       setSigningInProvider(null);
     }
@@ -236,6 +295,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
   const handleEmailAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthErrorSource('email');
     setAuthError(null);
     if (authMode === 'signup' && password !== confirmPassword) {
       setAuthError("Those passwords don't match.");
@@ -262,13 +322,14 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
         // needed, unlike the social providers) - always offer the
         // optional 2FA step here, same as after a fresh social signup.
         recordLegalAcceptance();
+        await saveMarketingChoice();
         setShowPostSignupMfaStep(true);
       } else {
         await signInWithEmail(email, password);
         finishOnboarding();
       }
     } catch (err: any) {
-      setAuthError(err?.message || 'Something went wrong. Please try again.');
+      setAuthError(readableSignInError(err));
     } finally {
       setEmailAuthSubmitting(false);
     }
@@ -282,189 +343,92 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       await sendPasswordReset(email);
       setResetLinkSent(true);
     } catch (err: any) {
-      setAuthError(err?.message || 'Something went wrong. Please try again.');
+      setAuthError(readablePasswordResetError(err));
     } finally {
       setEmailAuthSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main">
-      {/* Premium Glow Aura Backdrops */}
-      <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-10 right-1/4 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-[160px] pointer-events-none" />
-      {/* iOS Safari/Chrome (both WebKit) need -webkit-mask-image explicitly -
-          without it, WebKit ignores the mask entirely and this faint grid
-          pattern renders as a solid dark block over the hero heading
-          instead of fading out. Set via inline style rather than another
-          Tailwind arbitrary-property class so both the standard and
-          -webkit- prefixed properties are guaranteed to land, regardless
-          of what the build pipeline does or doesn't autoprefix. */}
-      <div
-        className="absolute inset-0 bg-[linear-gradient(to_right,#161f30_1px,transparent_1px),linear-gradient(to_bottom,#161f30_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-25"
-        style={{
-          maskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, #000 70%, transparent 100%)',
-        }}
-      />
-
+    <div className="ember-shell ember-sanctuary min-h-screen bg-background selection:bg-primary/20 selection:text-[#9a3412] dark:selection:text-primary relative overflow-hidden text-text-main">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 px-8 py-6 flex justify-between items-center backdrop-blur-xl bg-background/70 border-b border-white/[0.04]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 flex items-center justify-center shadow-xl shadow-primary/20">
-            <img src="/brand/flame-mark-light.png" alt="" className="w-10 h-10 dark:hidden" />
-            <img src="/brand/flame-mark-dark.png" alt="" className="w-10 h-10 hidden dark:block" />
-          </div>
-          <div className="flex flex-col">
-            <h1 className="font-serif font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Recovery Companion</span>
+      <nav aria-label="Primary navigation" className="ember-nav fixed top-0 w-full z-50 px-3 sm:px-8 py-3 sm:py-5 flex justify-between items-center border-b">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <BlazeBrandLogo className="w-12 h-12 sm:w-14 sm:h-14" />
+          <div className="hidden sm:flex flex-col">
+            <span className="ember-wordmark text-base sm:text-xl text-text-main">Blaze Break</span>
+            <span className="ember-tagline hidden sm:block mt-1">Rethink · Reflect · Rejuvenate</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          {setDarkMode && (
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-2.5 rounded-full bg-surface dark:bg-card border border-border hover:border-primary/50 text-text-muted hover:text-primary transition-all"
-              title="Toggle theme"
-              aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
-            >
-              {darkMode ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
-            </button>
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          {setThemeMode && (
+            <AppearanceMenu mode={themeMode ?? 'system'} onChange={setThemeMode} compact />
           )}
           <button
-            onClick={onOpenTrustCentre}
-            className="text-xs sm:text-xs uppercase tracking-widest font-bold text-text-muted hover:text-text-main transition-colors hidden sm:flex items-center gap-2"
+            onClick={() => {
+              // Anonymous bootstrap sessions must not be mistaken for real
+              // signed-in accounts. Sign in opens the existing auth modal.
+              if (user && !user.isAnonymous) {
+                onStart();
+              } else {
+                setAuthMode('signin');
+                setShowAuthModal(true);
+              }
+            }}
+            className="text-sm text-text-main underline underline-offset-4 px-3 py-3"
           >
-            <ShieldCheck className="w-4 h-4" /> Trust Centre
-          </button>
-          <button
-            onClick={handleStartRequest}
-            className="btn-primary text-xs sm:text-xs uppercase tracking-widest px-6 sm:px-8 py-3 rounded-xl flex items-center gap-2"
-          >
-            {user ? 'Enter Suite' : 'Access Account'}
+            {user && !user.isAnonymous ? 'Continue' : 'Sign in'}
           </button>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="pt-44 pb-20 px-6 max-w-7xl mx-auto flex flex-col items-center text-center relative z-10">
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-          className="space-y-8"
-        >
-          <span className="inline-block px-4 py-1.5 bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary rounded-full text-xs uppercase tracking-[0.2em] font-black">
-            A Recovery Method for High Performers
-          </span>
-          <h2 className="text-5xl md:text-8xl font-light tracking-tight text-text-main leading-[1.05] max-w-5xl mx-auto">
-            Scale ambition <br />
-            without <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent italic font-serif font-medium">self-destruction.</span>
-          </h2>
-          <p className="max-w-2xl mx-auto text-base sm:text-lg text-text-muted font-light leading-relaxed">
-            Stop optimising your exhaustion. Blaze Break maps your personal burnout fingerprint - from a self-assessment, not a biometric scan - to rebuild real recovery into your hyper-scale workload.
+      {/* One decision first: begin a check-in. The existing demo and auth
+          paths stay available without competing with the primary action. */}
+      <section
+        aria-labelledby="blaze-first-step-title"
+        className="ember-hero ember-landing-hero px-5 sm:px-10 lg:px-16 max-w-7xl mx-auto relative z-10 flex items-center"
+      >
+        <div className="ember-landing-orb" aria-hidden="true">
+          <span>Nova Blaze</span>
+        </div>
+        <div className="ember-hero-content text-left space-y-6 pt-32 pb-20 sm:pt-36 sm:pb-24">
+          <p className="text-xs font-semibold tracking-[0.18em] uppercase text-primary">
+            A quieter way forward
           </p>
-          <div className="pt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <h1 id="blaze-first-step-title" className="ember-title ember-hero-title text-text-main max-w-4xl">
+            High performance <br className="hidden sm:block" />
+            without the <em>burnout.</em>
+          </h1>
+          <p className="ember-hero-subtitle max-w-lg text-base sm:text-lg">
+            You don't have to figure everything out today. Start with a short check-in,
+            then decide what would help.
+          </p>
+          <div className="ember-hero-actions pt-3 flex flex-col items-start gap-4">
             <button
               onClick={handleStartRequest}
-              className="px-10 py-5 bg-white text-text-main hover:bg-surface dark:bg-card rounded-xl font-bold uppercase tracking-[0.2em] text-xs transition-all shadow-lg flex items-center gap-4 group"
+              className="btn-primary ember-orbit w-full sm:w-auto justify-center px-8 sm:px-10 py-4 sm:py-5 rounded-xl font-semibold text-base flex items-center gap-3 group"
             >
-              Get Burnout Fingerprint
+              Create my free account
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
+            <p className="text-sm text-text-muted">
+              One question at a time. At your own pace.
+            </p>
             <button
-              onClick={onViewDemo}
-              className="px-10 py-5 bg-transparent border border-border text-text-main hover:border-primary/50 hover:text-primary rounded-xl font-bold uppercase tracking-[0.2em] text-xs transition-all flex items-center gap-4 group"
+              onClick={() => { void handleDemoRequest(); }}
+              className="text-sm font-medium text-text-main underline underline-offset-4 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             >
-              See a live demo
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              Prefer to look around first? View a demo
             </button>
-          </div>
-        </motion.div>
-      </section>
-
-      {/* Value Prop Grid */}
-      <section className="py-16 px-6 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
-        <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl hover:border-accent/20 transition-all duration-500 space-y-4 shadow-lg">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-            <BatteryLow className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-bold text-text-main tracking-wide">Dynamic Energy Credits</h3>
-          <p className="text-text-muted text-xs leading-relaxed">
-            Time management is a delusion; energy capacity is everything. Map your schedule to a custom cognitive credit budget that helps you get ahead of midday crashes, not just react to them.
-          </p>
-        </div>
-        <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl hover:border-accent/20 transition-all duration-500 space-y-4 shadow-lg">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-            <MessageSquareText className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-bold text-text-main tracking-wide">Nova Recovery Coach</h3>
-          <p className="text-text-muted text-xs leading-relaxed">
-            An analytical, slightly provocative AI coach designed for high performers. Nova identifies your over-responsibility loops and helps you simulate difficult boundary negotiations real-time.
-          </p>
-        </div>
-        <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl hover:border-accent/20 transition-all duration-500 space-y-4 shadow-lg">
-          <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-bold text-text-main tracking-wide">One-Tap Guardian Support</h3>
-          <p className="text-text-muted text-xs leading-relaxed">
-            A pre-set escalation network for high-stakes moments. Add trusted contacts once, then reach them in one tap when you need real support — no automatic monitoring, no biometric tracking, just a fast, private way to ask for help.
-          </p>
-        </div>
-      </section>
-
-      {/* Who it's for - names the audience explicitly rather than leaving
-          "high performers" as the only signal, so a specific reader sees
-          themselves described rather than a generic pitch. */}
-      <section className="py-16 px-6 max-w-7xl mx-auto relative z-10">
-        <div className="text-center max-w-2xl mx-auto mb-12 space-y-4">
-          <span className="inline-block px-4 py-1.5 bg-accent/10 border border-accent/20 text-[#9a3412] dark:text-accent rounded-full text-xs uppercase tracking-[0.2em] font-black">
-            Who this is built for
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-light tracking-tight text-text-main">
-            For people who can't just <span className="italic font-serif">"switch off."</span>
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl space-y-4 shadow-lg">
-            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-bold text-text-main tracking-wide">Founders &amp; Operators</h3>
-            <p className="text-text-muted text-xs leading-relaxed">
-              Building something from nothing, on a clock that never really stops. You've normalised exhaustion because stopping feels like losing ground you can't get back.
-            </p>
-          </div>
-          <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl space-y-4 shadow-lg">
-            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-              <Briefcase className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-bold text-text-main tracking-wide">Senior Leaders &amp; Executives</h3>
-            <p className="text-text-muted text-xs leading-relaxed">
-              Carrying decisions other people never see, in a role where "I'm running on empty" isn't really something you get to say out loud.
-            </p>
-          </div>
-          <div className="bg-surface/60 border border-white/[0.04] p-8 rounded-2xl space-y-4 shadow-lg">
-            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-[#9a3412] dark:text-accent">
-              <Users className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-bold text-text-main tracking-wide">High-Stakes Professionals</h3>
-            <p className="text-text-muted text-xs leading-relaxed">
-              Consultants, clinicians, partners, anyone whose output is tied directly to hours they don't actually have left to give.
-            </p>
+            {demoError && <p role="alert" className="text-xs text-destructive">{demoError}</p>}
           </div>
         </div>
-        <p className="text-center text-text-muted text-sm max-w-xl mx-auto mt-12 leading-relaxed">
-          If your job has ever made someone say <span className="italic">"must be nice"</span> about a burnout you couldn't talk about - this was built with you specifically in mind, not as a generic wellness app repurposed for anyone.
-        </p>
       </section>
 
       {/* Footer */}
-      <footer className="py-16 border-t border-white/[0.03] mt-20 text-center opacity-70">
+      <footer className="py-8 border-t border-border text-center opacity-70">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <img src="/brand/flame-mark-light.png" alt="" className="w-8 h-8 dark:hidden" />
-          <img src="/brand/flame-mark-dark.png" alt="" className="w-8 h-8 hidden dark:block" />
+          <BlazeBrandLogo className="w-8 h-8" decorative />
           <p className="font-bold text-sm tracking-tight text-text-main">Blaze Break</p>
         </div>
         <p className="text-[11px] uppercase tracking-[0.3em] font-black text-text-muted">
@@ -485,7 +449,15 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
       {/* Sleek Authentication Modal Overlay */}
       <AnimatePresence>
         {showAuthModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          // z-[100], not z-50: App.tsx's persistent "Need support now?"
+          // crisis button on this same landing flow is also z-50 and is
+          // declared later in the DOM (outside/after this component), so
+          // equal z-index let it paint on top of this modal, overlapping
+          // its content on narrow viewports. z-[100] matches the z-index
+          // every other modal in this codebase already uses (ConfirmDialog,
+          // CrisisSupport's own modal, NovaFeedbackModal, SettingsModal,
+          // etc.) specifically to stay above that button.
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             {/* Backdrop */}
             <motion.div 
               initial={{ opacity: 0 }}
@@ -506,7 +478,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
               aria-modal="true"
               aria-labelledby="auth-modal-title"
               tabIndex={-1}
-              className="bg-surface border border-border rounded-xl p-8 max-w-md w-full shadow-lg relative z-10 flex flex-col space-y-6"
+              className="bg-surface border border-border rounded-xl p-5 sm:p-8 max-w-md w-full max-h-[calc(100dvh-2rem)] min-h-0 overflow-y-auto overscroll-contain shadow-lg relative z-10 flex flex-col space-y-6"
             >
               <button 
                 onClick={() => setShowAuthModal(false)}
@@ -517,11 +489,10 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
 
               <div className="text-left pt-4">
                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
-                  <img src="/brand/flame-mark-light.png" alt="" className="w-6 h-6 dark:hidden" />
-                  <img src="/brand/flame-mark-dark.png" alt="" className="w-6 h-6 hidden dark:block" />
+                  <BlazeBrandLogo className="w-6 h-6" decorative />
                 </div>
                 <h3 id="auth-modal-title" className="text-2xl font-bold text-text-main tracking-tight">
-                  {showPostSignupMfaStep ? 'Secure your account' : authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your account' : 'Access Account'}
+                  {showPostSignupMfaStep ? 'Secure your account' : authMode === 'forgot' ? 'Reset your password' : authMode === 'signup' ? 'Create your free account' : 'Sign in'}
                 </h3>
                 {showPostSignupMfaStep ? (
                   <p className="text-text-muted text-sm mt-1 leading-relaxed">
@@ -529,13 +500,14 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                   </p>
                 ) : authMode !== 'forgot' && (
                   <p className="text-text-muted text-sm mt-1 leading-relaxed">
-                    Register or login. Blaze Break is in controlled early access. Features may evolve. Data tools are for coaching support, not medical diagnosis. Optional Nova AI is a recovery coach, not a therapist.
+                    {authMode === 'signup' ? 'Create your free account to save your progress.' : 'Welcome back. Sign in to continue where you left off.'}
                   </p>
                 )}
               </div>
 
               {showPostSignupMfaStep ? (
                 <div className="space-y-4 pt-2">
+                  {marketingConsentNotice && <p role="status" className="text-xs text-text-muted">{marketingConsentNotice}</p>}
                   <Suspense fallback={null}>
                     <SecuritySettingsView onEnabled={() => setMfaJustEnabled(true)} />
                   </Suspense>
@@ -544,7 +516,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                       <button
                         type="button"
                         onClick={finishOnboarding}
-                        className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15"
+                        className="w-full flex items-center justify-center gap-3 bg-primary text-primary-foreground font-bold text-xs uppercase tracking-widest py-4 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15"
                       >
                         Continue to Blaze Break
                       </button>
@@ -567,7 +539,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                     </p>
                     <button
                       type="button"
-                      onClick={() => setAuthMode('signin')}
+                      onClick={() => { setResetLinkSent(false); setAuthMode('signin'); }}
                       className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors py-2"
                     >
                       <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
@@ -628,7 +600,7 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                       className="mt-0.5 w-4 h-4 shrink-0 accent-primary cursor-pointer"
                     />
                     <span className="text-xs text-text-muted leading-normal">
-                      I agree to the Blaze Break{' '}
+                      {authMode === 'signup' ? 'To create an account, I agree to the Blaze Break' : 'For social sign-in, I agree to the Blaze Break'}{' '}
                       <button type="button" onClick={(e) => { e.preventDefault(); setLegalDocOpen('TERMS'); }} className="underline hover:text-text-main transition-colors">
                         Terms &amp; Conditions
                       </button>
@@ -640,6 +612,24 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                     </span>
                   </label>
 
+                  {authMode === 'signup' && (
+                    <label className="flex items-start gap-3 p-3 rounded-xl border border-border bg-surface cursor-pointer">
+                      <input type="checkbox" checked={marketingOptIn}
+                        onChange={(e) => setMarketingOptIn(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 shrink-0 accent-primary" />
+                      <span className="text-xs text-text-muted leading-relaxed">
+                        Email me optional Blaze Break news, practical tips and offers.
+                        I can unsubscribe anytime. Not required to use the app.
+                      </span>
+                    </label>
+                  )}
+                  {/* Keep provider failures visible; previously a failed OAuth
+                      popup silently returned to the same screen. */}
+                  {authError && authErrorSource === 'social' && (
+                    <p role="alert" aria-live="assertive" className="text-xs text-destructive leading-relaxed">
+                      {authError}
+                    </p>
+                  )}
                   <div className="space-y-3 pt-2">
                     <button
                       onClick={handleGoogleSignIn}
@@ -753,20 +743,21 @@ export const LandingPage = ({ onStart, onViewDemo, onOpenTrustCentre, darkMode, 
                       <div className="text-right -mt-1">
                         <button
                           type="button"
-                          onClick={() => { setAuthError(null); setAuthMode('forgot'); }}
+                          onClick={() => { setAuthError(null); setResetLinkSent(false); setAuthMode('forgot'); }}
                           className="text-xs font-bold text-text-muted hover:text-text-main transition-colors"
                         >
                           Forgot password?
                         </button>
                       </div>
                     )}
-                    {authError && (
-                      <p role="alert" className="text-xs text-destructive leading-relaxed">{authError}</p>
+
+                    {authError && authErrorSource === 'email' && (
+                      <p role="alert" aria-live="assertive" className="text-xs text-destructive leading-relaxed">{authError}</p>
                     )}
                     <button
                       type="submit"
-                      disabled={emailAuthSubmitting || !legalAgreed}
-                      className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15 disabled:opacity-50"
+                      disabled={emailAuthSubmitting || (authMode === 'signup' && !legalAgreed)}
+                      className="w-full flex items-center justify-center gap-3 bg-primary text-primary-foreground font-bold text-xs uppercase tracking-widest py-4.5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary/15 disabled:opacity-50"
                     >
                       {emailAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                       <span role="status" aria-live="polite">

@@ -104,6 +104,14 @@ export const NON_PERSONAL_USERID_COLLECTIONS: string[] = [
   'organisations',
 ];
 
+// Top-level documents keyed by the user's UID, not by a userId FIELD.
+// The generic subcollection walker and the stray-field scanner both miss
+// these. admin_users/{uid} contains email/display name + current admin
+// role metadata: it is not an immutable audit trail and must be included
+// in personal-data export and removed during account erasure, subject to
+// the last-platform-owner safety check.
+export const USER_KEYED_TOP_LEVEL_COLLECTIONS = ['admin_users'] as const;
+
 export const collectionsForExport = (): string[] =>
   STRAY_USER_COLLECTIONS.filter((c) => c.exportOnRequest).map((c) => c.name);
 

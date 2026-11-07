@@ -23,6 +23,7 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   boundary_architect: 'Boundary Architect',
   digital_boundary_shield: 'Digital Boundary Shield',
   recovery_fuel: 'Recovery Fuel',
+  energy_delta: 'Energy & Capacity', // NHEI Phase 4B: see MODULE_ROUTE_MAP's own comment in recovery-signal-candidates.ts
   my_patterns: 'My Patterns',
   weekly_review: 'Weekly Review',
   action_engine: 'Action Engine',
@@ -46,6 +47,7 @@ export const MODULE_TARGET_TAB: Record<string, string> = {
   boundary_architect: 'communicate',
   digital_boundary_shield: 'communicate',
   recovery_fuel: 'fuel',
+  energy_delta: 'recover', // EnergyBudgetTool is mounted under the 'recover' tab in App.tsx
   my_patterns: 'reflect',
   weekly_review: 'reflect',
   action_engine: 'reflect',

@@ -1,11 +1,44 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from 'firebase/app-check';
 import firebaseConfig from '../../firebase-applet-config.json';
 import type { Firestore } from 'firebase/firestore';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Phase 5M (directive §1/§2) - the minimum infrastructure identified for a
+// real-application Playwright harness: an explicit, dev-only opt-in to
+// route this real client bundle's Auth/Firestore calls at local emulators
+// instead of the real `firebase-applet-config.json` project, so a browser
+// test exercising the REAL App.tsx (anonymous sign-in, Firestore reads/
+// writes, everything) never touches a live external service. Gated on a
+// Vite env var only this harness's own webServer ever sets - a normal
+// `npm run dev` or a real production build leaves it unset, so this can
+// never affect a real developer's data or a real user. Auth emulator
+// connection must happen before any Auth SDK call, so it runs here
+// synchronously, immediately after getAuth(app) - the Firestore equivalent
+// lives in getDb() below, right after getFirestore() is first called.
+const USE_FIREBASE_EMULATOR = typeof window !== 'undefined' && (import.meta as any).env?.VITE_USE_FIREBASE_EMULATOR === 'true';
+if (USE_FIREBASE_EMULATOR) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+}
+
+// Firestore has two separate initialization call sites (this file's own
+// getDb() below, and src/lib/firestore.ts's synchronous `db` for already
+// lazy()-loaded components - see that file's own comment for why) that
+// both resolve to the SAME underlying Firestore singleton (getFirestore()
+// caches by app+databaseId), but connectFirestoreEmulator() itself throws
+// if called more than once against that singleton. This guard lets both
+// call sites call it unconditionally and safely - only the first call
+// actually connects the emulator, whichever call site runs first.
+let _firestoreEmulatorConnected = false;
+export async function connectFirestoreEmulatorIfNeeded(firestoreDb: Firestore): Promise<void> {
+  if (!USE_FIREBASE_EMULATOR || _firestoreEmulatorConnected) return;
+  _firestoreEmulatorConnected = true;
+  const { connectFirestoreEmulator } = await import('firebase/firestore');
+  connectFirestoreEmulator(firestoreDb, '127.0.0.1', 8080);
+}
 
 // getAuth(app) alone relies on Firebase's implicit default (IndexedDB-backed
 // local persistence) with no visible fallback - if IndexedDB is unavailable
@@ -49,8 +82,9 @@ let _dbPromise: Promise<Firestore> | null = null;
 export async function getDb(): Promise<Firestore> {
   if (_db) return _db;
   if (!_dbPromise) {
-    _dbPromise = import('firebase/firestore').then(({ getFirestore }) => {
+    _dbPromise = import('firebase/firestore').then(async ({ getFirestore }) => {
       _db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+      await connectFirestoreEmulatorIfNeeded(_db);
       return _db;
     });
   }

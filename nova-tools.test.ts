@@ -8,6 +8,7 @@ import {
   validateMemoryWrite,
   validateFeatureSuggestion,
   toolsAreEnabled,
+  novaAgenticJourneyEnabled,
   MAX_MEMORY_CONTENT_LENGTH,
   NovaMemoryDoc,
   NovaPermissions,
@@ -248,6 +249,20 @@ describe('toolsAreEnabled: the kill switch for Nova tool use, independent of pro
     expect(toolsAreEnabled('0')).toBe(true);
     expect(toolsAreEnabled('no')).toBe(true);
     expect(toolsAreEnabled('disabled')).toBe(true);
+  });
+});
+
+describe('novaAgenticJourneyEnabled: fail-closed release gate for the Phase 5K production journey mount', () => {
+  it('defaults OFF, the opposite polarity from toolsAreEnabled/liveVoiceIsEnabled - this is a previously-unreleased surface', () => {
+    expect(novaAgenticJourneyEnabled(undefined)).toBe(false);
+    expect(novaAgenticJourneyEnabled('')).toBe(false);
+    expect(novaAgenticJourneyEnabled('yes')).toBe(false);
+    expect(novaAgenticJourneyEnabled('1')).toBe(false);
+    expect(novaAgenticJourneyEnabled('True')).toBe(false);
+  });
+
+  it('is enabled only by the exact string "true"', () => {
+    expect(novaAgenticJourneyEnabled('true')).toBe(true);
   });
 });
 

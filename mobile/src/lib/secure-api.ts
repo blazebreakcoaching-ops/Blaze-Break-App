@@ -3,12 +3,14 @@
 // adapted for two things web didn't need: an absolute API_BASE_URL
 // (native fetch has no same-origin relative path to fall back to) and a
 // native App Check token source (see app-check.ts) instead of web's
-// reCAPTCHA Enterprise one. MFA-session-token handling is dropped
-// entirely - MFA is out of scope for Phase 1, and no mobile account can
-// have it enabled yet, so there's nothing to attach.
+// reCAPTCHA Enterprise one. MFA-session-token handling is NOT available
+// in native yet. Existing website users CAN have MFA enabled; the native
+// AuthProvider now blocks those users before any app-owned Firestore read.
+// This is not itself a replacement for a server-enforced data boundary.
 import { auth } from './firebase';
 import { getAppCheckToken } from './app-check';
 import { API_BASE_URL } from './config';
+import { buildNativeApiUrl } from './api-url';
 
 export class SecureApiError extends Error {
   public status: number;
@@ -27,6 +29,16 @@ interface SecureApiOptions extends RequestInit {
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
+  // Validate the absolute destination BEFORE reading any auth credentials.
+  // Previously path.startsWith('http') trusted arbitrary URLs and attached
+  // bearer/App Check tokens to them. This code now permits only /api/ paths
+  // on the configured HTTPS (or local-emulator HTTP) origin.
+  let url: string;
+  try {
+    url = buildNativeApiUrl(API_BASE_URL, path);
+  } catch {
+    throw new SecureApiError('The Blaze Break API is not configured for this build. Please use a verified build.', 0);
+  }
   const user = auth.currentUser;
 
   if (!user) {
@@ -54,9 +66,11 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     (rest as RequestInit).body = JSON.stringify(data);
   }
 
-  const fetchOptions: RequestInit = { ...rest, headers };
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-
+  // Never follow a server redirect while carrying a bearer/App Check
+  // header. Even though standard fetch strips some cross-origin headers,
+  // native fetch implementations vary; redirects must be handled separately
+  // without automatically forwarding authenticated requests.
+  const fetchOptions: RequestInit = { ...rest, headers, redirect: 'error' };
   let response: Response;
   try {
     response = await fetch(url, fetchOptions);
