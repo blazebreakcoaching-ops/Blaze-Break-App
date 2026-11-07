@@ -56,3 +56,13 @@ export function novaStorageKey(baseKey: string, identityOverride?: string): stri
 export function novaStorageKeyPrefix(baseKey: string): string {
   return `${baseKey}::`;
 }
+
+/** The selected account's key must never be written with an array that
+ * still belongs to the previous account. A pending auth UID is not an owner. */
+export function canPersistNovaChatState(
+  loadedForUid: string,
+  selectedUid: string,
+  activeAuthUid: string | null,
+): boolean {
+  return !!activeAuthUid && loadedForUid === selectedUid && selectedUid === activeAuthUid;
+}
