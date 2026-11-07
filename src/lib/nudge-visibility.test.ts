@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isNudgeVisibleForAccount, nudgeHistoryKey, parseNudgeHistory } from './nudge-visibility';
+import { isNudgeVisibleForAccount, nudgeHistoryKey, parseNudgeHistory, nudgeInteractionUpdate } from './nudge-visibility';
 
 describe('account-scoped Nova reminder rendering', () => {
   it('shows an owned nudge when the right user is active and the page is quiet', () => {
@@ -40,6 +40,23 @@ describe('account-scoped Nova reminder rendering', () => {
     const parsed = parseNudgeHistory(JSON.stringify(records));
     expect(parsed).toHaveLength(100);
     expect(parsed[0]).toEqual(records[50]);
+  });
+
+  it('records a CTA click as acted_on, without claiming task completion', () => {
+    expect(nudgeInteractionUpdate('action_taken', '2026-11-07T09:00:00Z')).toEqual({
+      status: 'acted_on',
+      actionTakenAt: '2026-11-07T09:00:00Z',
+      updatedAt: '2026-11-07T09:00:00Z',
+    });
+  });
+
+  it('records closing a reminder as dismissed with a reason', () => {
+    expect(nudgeInteractionUpdate('not_now', '2026-11-07T10:00:00Z')).toEqual({
+      status: 'dismissed',
+      dismissedAt: '2026-11-07T10:00:00Z',
+      reasonCategory: 'not_now',
+      updatedAt: '2026-11-07T10:00:00Z',
+    });
   });
 
   it('suppresses reminders during onboarding, guided help or dismissal', () => {
