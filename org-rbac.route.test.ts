@@ -282,6 +282,53 @@ describe('RBAC matrix on role-management routes', () => {
   });
 });
 
+describe('role mutation cannot manufacture organisation membership', () => {
+  it('rejects role changes for a self-UID missing from the company roster', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['other_member'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
+      .set(auth('owner_1')).send({ role: 'admin' });
+    expect(res.status).toBe(400);
+  });
+
+  it('cannot reactivate a UID that is not on the organisation roster', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/members/outsider/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(400);
+    expect(getDocRaw(`organisations/${ORG}/members/outsider`)).toBeUndefined();
+  });
+
+  it('cannot reactivate an existing active or malformed membership', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'active');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('active');
+  });
+
+  it('refuses to revive staff whose profile now points to another company', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    seedDoc('users/target', { organisationId: OTHER_ORG });
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('suspended');
+  });
+
+  it('allows reactivation of a genuinely suspended staff member', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    seedDoc('users/target', { organisationId: ORG });
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('active');
+  });
+});
+
 describe('legacy admin grant/revoke routes', () => {
   it('POST /api/org/:orgId/members/:memberUid/make-admin: an admin can grant admin to a plain member', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
