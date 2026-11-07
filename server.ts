@@ -10245,58 +10245,60 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
       }
     }
 
-    if (initialAdminUid) {
-      const existingAdminProfile = await db.collection("users").doc(initialAdminUid).get();
-      const currentOrg = existingAdminProfile.exists ? existingAdminProfile.data()?.organisationId : null;
+    const orgRef = db.collection("organisations").doc(orgId);
+    const ownerProfileRef = initialAdminUid ? db.collection("users").doc(initialAdminUid) : null;
+    const ownerMemberRef = initialAdminUid ? orgRef.collection("members").doc(initialAdminUid) : null;
+
+    // All company and first-owner writes are one atomic unit. A concurrent
+    // request to assign the same user to another org must retry against
+    // their profile instead of leaving conflicting role/membership records.
+    const provisioning = await db.runTransaction(async (tx) => {
+      const existingOrgDoc = await tx.get(orgRef);
+      const ownerProfile = ownerProfileRef ? await tx.get(ownerProfileRef) : null;
+      const currentOrg = ownerProfile?.exists ? ownerProfile.data()?.organisationId : null;
       if (currentOrg && currentOrg !== orgId) {
-        return res.status(400).json({
-          error: 'That account already belongs to another company. Use a verified, audited transfer process instead.',
-        });
+        return { status: 409, error: 'That account already belongs to another company. Use a verified, audited transfer process instead.' };
       }
-    }
+      // Do not let a normal edit silently promote another user to owner.
+      // Ownership handover needs its own audited, last-owner-safe workflow.
+      if (existingOrgDoc.exists && initialAdminUid) {
+        return { status: 409, error: 'Company ownership cannot be changed through Edit Company. Use the owner-transfer workflow.' };
+      }
 
-    const existingOrgDoc = await db.collection("organisations").doc(orgId).get();
-    // Join code is generated once, on first creation, and kept stable across
-    // updates - regenerating it on every edit would silently invalidate any
-    // invite links already sent out to employees.
-    const joinCode = existingOrgDoc.exists && existingOrgDoc.data()?.joinCode
-      ? existingOrgDoc.data()!.joinCode
-      : createOrgJoinCode();
-
-    const updatePayload: any = {
-      name: parsedName.data,
-      privacyThreshold: threshold,
-      joinCode,
-      updatedAt: FieldValue.serverTimestamp(),
-    };
-    if (!existingOrgDoc.exists) {
-      updatePayload.createdAt = FieldValue.serverTimestamp();
-      updatePayload.memberUids = initialAdminUid ? [initialAdminUid] : [];
-      updatePayload.adminUids = initialAdminUid ? [initialAdminUid] : [];
-    } else if (initialAdminUid) {
-      updatePayload.adminUids = FieldValue.arrayUnion(initialAdminUid);
-      updatePayload.memberUids = FieldValue.arrayUnion(initialAdminUid);
-    }
-
-    await db.collection("organisations").doc(orgId).set(updatePayload, { merge: true });
-
-    if (initialAdminUid) {
-      await db.collection("users").doc(initialAdminUid).set({
-        organisationId: orgId,
+      const joinCode = existingOrgDoc.exists && existingOrgDoc.data()?.joinCode
+        ? existingOrgDoc.data()!.joinCode
+        : createOrgJoinCode();
+      const updatePayload: Record<string, any> = {
+        name: parsedName.data,
+        privacyThreshold: threshold,
+        joinCode,
         updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-      // The initial admin's granular Enterprise role - owner, since they're
-      // the org's first real member and the legacy adminUids fallback would
-      // resolve them to 'owner' anyway. Written explicitly rather than left
-      // to the fallback so this org has a real members/ record from day one.
-      await db.collection("organisations").doc(orgId).collection("members").doc(initialAdminUid).set({
-        role: 'owner',
-        status: 'active',
-        email: initialAdminEmail,
-        joinedAt: FieldValue.serverTimestamp(),
-        invitedBy: (req as any).user?.uid || 'system',
-      }, { merge: true });
+      };
+      if (!existingOrgDoc.exists) {
+        updatePayload.createdAt = FieldValue.serverTimestamp();
+        updatePayload.memberUids = initialAdminUid ? [initialAdminUid] : [];
+        updatePayload.adminUids = initialAdminUid ? [initialAdminUid] : [];
+      }
+      tx.set(orgRef, updatePayload, { merge: true });
+      if (ownerProfileRef && ownerMemberRef && initialAdminUid) {
+        tx.set(ownerProfileRef, {
+          organisationId: orgId,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.set(ownerMemberRef, {
+          role: 'owner',
+          status: 'active',
+          email: initialAdminEmail,
+          joinedAt: FieldValue.serverTimestamp(),
+          invitedBy: (req as any).user?.uid || 'system',
+        }, { merge: true });
+      }
+      return { status: 200, joinCode };
+    });
+    if (provisioning.status !== 200) {
+      return res.status(provisioning.status).json({ error: provisioning.error });
     }
+    const joinCode = provisioning.joinCode;
 
     await logAdminAction(req, "manage_organisation", "", orgId, { name, privacyThreshold });
     res.json({ success: true, joinCode });
