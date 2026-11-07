@@ -36,6 +36,14 @@ describe('per-account audit isolation and history contract', () => {
     expect(route).toContain('data.outcome === "succeeded"');
   });
 
+  it('signals audit persistence failures for successful account mutations', () => {
+    expect(server).toContain('return true;\n  } catch (err: any) {');
+    expect(server).toContain('logger.error("Failed to write admin audit log"');
+    expect(server).toContain('res.json({ success: true, auditRecorded })');
+    expect(ui).toContain("auditResult?.auditRecorded === false");
+    expect(ui).toContain('The account change succeeded, but the audit event was NOT saved.');
+  });
+
   it('declares the required Firestore composite index', () => {
     expect(indexes.indexes).toContainEqual({
       collectionGroup: 'admin_audit_logs',
