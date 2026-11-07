@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, forceTransactionError, getDocRaw } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -182,5 +182,34 @@ describe('defensive catch blocks', () => {
     expect(errorSpy).toHaveBeenCalled();
     restore();
     errorSpy.mockRestore();
+  });
+});
+
+
+describe('workplace policy changes have atomic audit evidence', () => {
+  it('does not publish a policy when its audit transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const restore = forceTransactionError(new Error('simulated transaction failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/workplace-policies`)
+        .set(auth('owner_1')).send({ type: 'no_evening_meetings', label: 'No evenings' });
+      expect(res.status).toBe(500);
+      const policies = await request(app).get(`/api/org/${ORG}/workplace-policies`).set(auth('owner_1'));
+      expect(policies.body.policies).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it('does not delete a policy if audited deletion fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedDoc(`organisations/${ORG}/workplace_policies/one`, {
+      type: 'no_evening_meetings', label: 'No evenings',
+    });
+    const restore = forceTransactionError(new Error('simulated transaction failure'));
+    try {
+      const res = await request(app).delete(`/api/org/${ORG}/workplace-policies/one`)
+        .set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/workplace_policies/one`)).toBeDefined();
+    } finally { restore(); }
   });
 });
