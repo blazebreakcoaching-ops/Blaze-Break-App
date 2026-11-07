@@ -33,6 +33,19 @@ describe('Nova Guide illustrated walkthrough', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('remembers the same step when Escape closes the optional guide', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const view = render(<NovaGuide isOpen startPage="welcome" accountId="escape-user" onClose={onClose} onNavigate={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem('blaze-nova-guide-progress-v1:escape-user')).toBe('1');
+
+    view.rerender(<NovaGuide isOpen startPage="welcome" accountId="escape-user" onClose={vi.fn()} onNavigate={vi.fn()} />);
+    expect(screen.getByText('Step 2 of 5')).toBeInTheDocument();
+  });
+
   it('skips without navigating, and remembers a resumable step for this account', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
