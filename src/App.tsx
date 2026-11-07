@@ -120,7 +120,7 @@ const AssuranceCentre = lazy(() => import("./components/AssuranceCentre.tsx").th
 import { AuthStatusTracker } from "./lib/sync.tsx";
 import { AccountStatusBanner } from "./components/AccountStatusBanner.tsx";
 import { EmailVerificationBanner } from "./components/EmailVerificationBanner.tsx";
-import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted } from "./lib/nova-brain";
+import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalendarSignalConsentGranted, setNovaLearningAllowedForUid } from "./lib/nova-brain";
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
@@ -128,6 +128,7 @@ import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigat
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
 import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
 import { shouldPausePassivePrompts } from "./lib/quiet-first-visit";
+import { writeAccountProfile, clearAccountProfile } from "./lib/account-profile-storage";
 import { mayApplyAccountLoad, parsePulseHistory, pulseHistoryKey, pulseAlertKey, lastCheckInKey, type PulseHistoryEntry } from "./lib/pulse-account-storage";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
 import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
@@ -1735,6 +1736,7 @@ export default function App() {
 
       let loadedStats = defaults;
       let loadedFingerprint: BurnoutFingerprint | null = null;
+      let persistedProfileVerified = false;
       if (user) {
         try {
           const db = await getDb();
@@ -1742,6 +1744,7 @@ export default function App() {
           const snap = await getDoc(doc(db, "users", user.uid, "user_stats", "core"));
           if (snap.exists()) {
             const data = snap.data();
+            persistedProfileVerified = !!data.profile?.fullName;
             loadedStats = { ...defaults, ...data } as UserStats;
             if (data.fingerprint) {
               loadedFingerprint = data.fingerprint as BurnoutFingerprint;
@@ -1752,6 +1755,16 @@ export default function App() {
         }
       }
       if (!mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) return;
+      if (user) {
+        if (persistedProfileVerified) {
+          writeAccountProfile(user.uid, loadedStats.profile);
+        } else {
+          clearAccountProfile(user.uid);
+        }
+        // A missing/failed Firestore profile read cannot opt Nova into
+        // learning. Only a verified account profile may restore consent.
+        setNovaLearningAllowedForUid(user.uid, persistedProfileVerified && loadedStats.profile?.letNovaLearn !== false);
+      }
       setStats(loadedStats);
       setStatsOwnerUid(requestUid);
       statsLoadedRef.current = true;
@@ -2381,7 +2394,8 @@ export default function App() {
             // First-time users already receive the dedicated welcome.
             // Do not queue an extra "What's New" announcement for them.
             setStats((prev) => ({ ...prev, profile, lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION }));
-            localStorage.setItem("blaze_profile", JSON.stringify(profile));
+            writeAccountProfile(user?.uid, profile);
+            if (user) setNovaLearningAllowedForUid(user.uid, profile.letNovaLearn !== false);
             setFlow("app");
             setActiveTab("home");
             setPostOnboardingProfile(profile);
@@ -3364,14 +3378,11 @@ export default function App() {
               onClose={() => setShowSettings(false)}
               onSave={(profile) => {
                 setStats((prev) => ({ ...prev, profile }));
-                // Keeps blaze_profile in sync outside onboarding too - it's
-                // the only source nova-brain.ts's isNovaLearningAllowed() (and
-                // NovaChat.tsx's situational-context reads) can check
-                // synchronously, so a Settings change to "Behavioural
-                // Learning" needs to land here immediately, not just in
-                // Firestore on the next debounced save.
-                localStorage.setItem("blaze_profile", JSON.stringify(profile));
+                // Update only this account's local presentation/consent;
+                // the old global "blaze_profile" would leak to the next user.
+                writeAccountProfile(user?.uid, profile);
                 if (user) {
+                  setNovaLearningAllowedForUid(user.uid, profile.letNovaLearn !== false);
                   setNovaMemoryConsent(user.uid, profile.letNovaLearn !== false);
                 }
               }}
