@@ -313,7 +313,10 @@ describe('POST /api/admin/users/:uid/role (app-level AuthRole)', () => {
   it('stores the role on the entitlements doc and sets the claim', async () => {
     const res = await request(app).post('/api/admin/users/target_uid/role').set(auth(OWNER)).send({ role: 'manager' });
     expect(res.status).toBe(200);
-    expect(h.setCustomUserClaims).toHaveBeenCalledWith('target_uid', { role: 'manager' });
+    expect(h.setCustomUserClaims).toHaveBeenCalledWith('target_uid', expect.objectContaining({
+      role: 'manager', admin: false, platform_admin: false, platformOwner: false, roleExpiresAt: null,
+    }));
+    expect(h.revokeRefreshTokens).toHaveBeenCalledWith('target_uid');
     const stored = getDocRaw('users/target_uid/entitlements/status');
     expect(stored?.role).toBe('manager');
   });
