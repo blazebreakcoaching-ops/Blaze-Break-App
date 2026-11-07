@@ -10858,6 +10858,23 @@ const logOrgAuditAction = async (
   }
 };
 
+// Security-sensitive membership writes and their audit events succeed
+// or fail together. A transaction prevents an unlogged role change.
+const writeOrgMembershipAuditInTransaction = (
+  tx: any, db: any, req: any, orgId: string, action: string, memberUid: string,
+  before: Record<string, unknown>, after: Record<string, unknown>,
+) => {
+  const actor = req.user;
+  const auditRef = db.collection("organisations").doc(orgId).collection("audit_logs").doc();
+  tx.set(auditRef, {
+    actorUid: actor?.uid || "system",
+    actorEmail: actor?.email || "system",
+    orgId, action, targetResourceType: "member", targetResourceId: memberUid,
+    before, after, createdAt: FieldValue.serverTimestamp(),
+    ipAddress: req.ip || "", userAgent: req.headers?.["user-agent"] || "",
+  });
+};
+
 // Privacy Change Receipts (Work Design Pulse PR2): a plain-language,
 // employee-readable record of changes that affect what an organisation can
 // see or who can see it - distinct from logOrgAuditAction's admin-only audit
@@ -13533,21 +13550,24 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
     }
     const db = getDb();
     const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
-    const beforeDoc = await memberRef.get();
-    const beforeRole = beforeDoc.exists ? beforeDoc.data()?.role : null;
-    // Demoting away from 'owner' must never leave the org with zero owners.
-    // Resolved via getOrgMemberRole (not the raw beforeRole above) because a
-    // legacy owner who only exists in org.adminUids - with no granular
-    // members/{uid} doc yet - has beforeRole===null even though they
-    // currently resolve to 'owner'; checking the raw field alone would skip
-    // this guard entirely for every org that predates the granular role
-    // system and silently allow its actual last owner to be demoted.
-    const effectiveBeforeRole = await getOrgMemberRole(db, orgId, org, memberUid);
-    if (effectiveBeforeRole === 'owner' && nextRole !== 'owner') {
-      await assertNotLastOrgOwner(db, orgId, org, memberUid);
-    }
-    await memberRef.set({ role: nextRole }, { merge: true });
-    await logOrgAuditAction(req, orgId, "change_member_role", "member", memberUid, { role: beforeRole }, { role: nextRole });
+    const orgRef = db.collection("organisations").doc(orgId);
+    await db.runTransaction(async (tx) => {
+      const [orgSnap, memberSnap] = await Promise.all([tx.get(orgRef), tx.get(memberRef)]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
+        throw new Error("Forbidden: Membership no longer active.");
+      }
+      const beforeRole = memberSnap.exists ? memberSnap.data()?.role : null;
+      const effectiveBeforeRole = memberSnap.exists
+        ? (memberSnap.data()?.status !== undefined && memberSnap.data()?.status !== 'active'
+            ? null : (isOrgRole(beforeRole) ? beforeRole : null))
+        : ((orgSnap.data()?.adminUids || []).includes(memberUid) ? 'owner' : 'member');
+      if (effectiveBeforeRole === 'owner' && nextRole !== 'owner') {
+        await assertNotLastOrgOwner(db, orgId, orgSnap.data()!, memberUid, tx);
+      }
+      tx.set(memberRef, { role: nextRole }, { merge: true });
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "change_member_role", memberUid,
+        { role: effectiveBeforeRole }, { role: nextRole });
+    });
     res.json({ success: true, role: nextRole });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13571,10 +13591,21 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
       return res.status(400).json({ error: 'That person is not a member of this organisation.' });
     }
     const db = getDb();
-    await assertNotLastOrgOwner(db, orgId, org, memberUid);
     const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
-    await memberRef.set({ status: 'suspended' }, { merge: true });
-    await logOrgAuditAction(req, orgId, "suspend_member", "member", memberUid, { status: 'active' }, { status: 'suspended' });
+    const orgRef = db.collection("organisations").doc(orgId);
+    await db.runTransaction(async (tx) => {
+      const [orgSnap, memberSnap] = await Promise.all([tx.get(orgRef), tx.get(memberRef)]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
+        throw new Error("Forbidden: Membership no longer active.");
+      }
+      if (memberSnap.exists && memberSnap.data()?.status !== undefined && memberSnap.data()?.status !== 'active') {
+        throw new Error("Operation Rejected: Member is not active.");
+      }
+      await assertNotLastOrgOwner(db, orgId, orgSnap.data()!, memberUid, tx);
+      tx.set(memberRef, { status: 'suspended' }, { merge: true });
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "suspend_member", memberUid,
+        { status: 'active' }, { status: 'suspended' });
+    });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13607,8 +13638,15 @@ app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authen
     if (profile.exists && profile.data()?.organisationId && profile.data()?.organisationId !== orgId) {
       return res.status(409).json({ error: 'This account belongs to another organisation.' });
     }
-    await memberRef.update({ status: 'active' });
-    await logOrgAuditAction(req, orgId, "reactivate_member", "member", memberUid, { status: 'suspended' }, { status: 'active' });
+    await db.runTransaction(async (tx) => {
+      const current = await tx.get(memberRef);
+      if (!current.exists || current.data()?.status !== 'suspended' || !isOrgRole(current.data()?.role)) {
+        throw new Error("Operation Rejected: Membership status changed.");
+      }
+      tx.update(memberRef, { status: 'active' });
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "reactivate_member", memberUid,
+        { status: 'suspended' }, { status: 'active' });
+    });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
