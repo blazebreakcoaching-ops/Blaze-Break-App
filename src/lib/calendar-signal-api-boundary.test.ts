@@ -16,9 +16,13 @@ describe('Calendar signals cannot bypass consent via direct backend requests', (
     expect(post).not.toContain('await signalRef.set(');
   });
 
-  it('does not return persisted signal data after the person withdraws permission', () => {
+  it('reads Calendar consent and the aggregate in one Firestore transaction', () => {
+    expect(get).toContain('db.runTransaction(');
+    expect(get).toContain('tx.get(consentRef)');
     expect(get).toContain('hasExplicitCalendarSignalConsent(consent.data())');
+    expect(get).toContain('tx.get(signalRef)');
     expect(get).toContain('return res.json({ state: null })');
+    expect(get).not.toContain('.doc("calendar").get()');
   });
 
   it('blocks legacy default-true accounts from organisation calendar coverage', () => {
