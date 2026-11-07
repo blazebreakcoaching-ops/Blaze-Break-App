@@ -41,20 +41,16 @@ if (expected !== head) {
   console.error('BLOCKED: checkout SHA differs from EXPECTED_RELEASE_SHA.');
   process.exit(2);
 }
-// Do not certify a candidate if a future edit silently re-enables automatic
-// GitHub Actions deploys. This check inspects only the top-level YAML trigger
-// block, not nested keys elsewhere in the workflow. No workflow is executed.
+// Fail closed if a future change enables automatic production deployment.
+// This is a static check only: it never runs GitHub Actions.
 const deployWorkflow = readFileSync(join(root, '.github/workflows/deploy.yml'), 'utf8');
-const triggerMatch = deployWorkflow.match(/^on:\\s*\
-([\\s\\S]*?)(?=^[^\\s#][^\
-]*:|\\s*$)/m);
-const triggers = triggerMatch?.[1].split('\
-')
-  .filter(line => /^ {2}[a-zA-Z_][\\w-]*:/.test(line))
+const workflowTriggers = deployWorkflow.match(/^on:\s*\n([\s\S]*?)(?=^env:|^jobs:)/m)?.[1];
+const triggerKeys = workflowTriggers?.split('\n')
+  .filter(line => /^ {2}[a-zA-Z_][\w-]*:/.test(line))
   .map(line => line.trim().split(':', 1)[0]);
-if (!triggers || triggers.length !== 1 || triggers[0] !== 'workflow_dispatch' ||
-    !/^[ ]{8}default: true\\s*$/m.test(triggerMatch[1])) {
-  console.error('BLOCKED: deployment workflow must be manual-only with auth_only default true.');
+if (!triggerKeys || triggerKeys.length !== 1 || triggerKeys[0] !== 'workflow_dispatch' ||
+    !/^[ ]{8}default: true\s*$/m.test(workflowTriggers)) {
+  console.error('BLOCKED: deploy workflow must be manual-only, auth_only default true.');
   process.exit(2);
 }
 
