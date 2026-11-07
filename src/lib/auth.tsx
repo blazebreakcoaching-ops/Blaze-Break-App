@@ -321,6 +321,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       if (userRecord && !userRecord.isAnonymous) setMfaPending(true);
       if (userRecord) {
+        (window as any).__ACTIVE_USER_UID__ = userRecord.uid;
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
         try {
@@ -411,6 +412,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
       } else {
+        (window as any).__ACTIVE_USER_UID__ = null;
         (window as any).__ACTIVE_USER_EMAIL__ = null;
         setMfaStatusError(false);
         setMfaPending(false);
