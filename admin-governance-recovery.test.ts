@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 // Static contracts only: emulator, Auth SDK and browser tests are still needed.
 const server = readFileSync('server.ts', 'utf8');
 const ui = readFileSync('src/components/AdminDashboard.tsx', 'utf8');
-const audit = server.slice(server.indexOf('// Idempotent operational audit events.'), server.indexOf('// Account security:'));
+const audit = server.slice(server.indexOf('// Opportunistic repair runs'), server.indexOf('// Account security:'));
 const summary = server.slice(server.indexOf('app.get("/api/admin/summary"'), server.indexOf('app.get("/api/admin/users"',server.indexOf('app.get("/api/admin/summary"')));
 const paths = [
   ['app.post("/api/admin/admin-users"', 'app.post("/api/admin/admin-users/:uid/role"'],
