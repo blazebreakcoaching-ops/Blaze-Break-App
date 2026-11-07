@@ -8206,8 +8206,11 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
       anxietyResets: false,
     };
     try {
-      const usersSnap = await db.collection("users").limit(100).get();
-      totalUsersCount = usersSnap.size;
+      // A count aggregation measures ALL Firestore user profiles, not the
+      // former arbitrary first 100. Auth-only accounts are NOT counted.
+      // This number must be labelled "Firestore profiles" in the UI.
+      const countSnap = await db.collection("users").count().get();
+      totalUsersCount = countSnap.data().count;
       dataAvailability.users = true;
     } catch (e) {
       // Unknown is not 0, and never a fabricated minimum of 1.
@@ -8313,7 +8316,8 @@ app.get("/api/admin/summary", verifyAppCheck, authenticateFirebaseUser, async (r
       // All counts below are sampled/read-limited where documented;
       // dataAvailability makes partial Firestore outages explicit.
       dataAvailability,
-      usersCountCapped: totalUsersCount !== null && totalUsersCount >= 100,
+      usersCountCapped: false,
+      usersCountSource: "firestore_profiles",
       totalUsers: totalUsersCount,
       burnoutDiagnosticCompletions: diagnosticCompletions,
       safetyEvents: safetyEscalations,
@@ -8776,6 +8780,9 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     const { role } = parsed.data;
 
     await mergeCustomClaims(targetUid, { role });
+    // verifyIdToken(token, true) rejects older ID tokens after revocation.
+    // Never let an existing session keep the previous, more powerful role.
+    await getAuth().revokeRefreshTokens(targetUid);
 
     const db = getDb();
     await db.collection("users").doc(targetUid).collection("entitlements").doc("status").set({
@@ -9206,6 +9213,7 @@ app.post("/api/admin/admin-users", verifyAppCheck, authenticateFirebaseUser, asy
       // stale roleExpiresAt silently survive a later "permanent" grant.
       roleExpiresAt: expiresAt,
     });
+    await getAuth().revokeRefreshTokens(targetUid);
 
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).set({
@@ -9249,6 +9257,7 @@ app.post("/api/admin/admin-users/:uid/role", verifyAppCheck, authenticateFirebas
       platformOwner: role === 'platform_owner',
       roleExpiresAt: expiresAt,
     });
+    await getAuth().revokeRefreshTokens(targetUid);
 
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).update({
@@ -9281,6 +9290,7 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
     // object - setCustomUserClaims(uid, null) used to wipe everything,
     // including unrelated claims like mfaEnabled.
     await removeCustomClaimKeys(targetUid, ['admin', 'role', 'platformOwner', 'roleExpiresAt']);
+    await getAuth().revokeRefreshTokens(targetUid);
 
     const db = getDb();
     await db.collection("admin_users").doc(targetUid).delete();
