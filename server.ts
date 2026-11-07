@@ -12588,7 +12588,6 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
     // count-then-create below runs inside a transaction (not a plain
     // read-then-add) so two concurrent requests can't both read a count
     // just under the ceiling and both create, pushing the org over budget.
-    const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
     const interventionsRef = db.collection("organisations").doc(orgId).collection("work_design_interventions");
 
     // Pressure Transfer Detector (Work Design Pulse PR6): captured now, at
