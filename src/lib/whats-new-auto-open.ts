@@ -1,3 +1,8 @@
+// Newly onboarded users already receive a dedicated welcome. Mark this
+// release announcement as seen for that new account instead of showing
+// the same features in a second, competing popup.
+export const CURRENT_CHANGELOG_VERSION = 'questioning-style-2026-09';
+
 /**
  * Informational changelog announcements must not interrupt an action,
  * another dialog, or keyboard input. Used together with the first-visit
