@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ShieldCheck, Search, Loader2, RefreshCw,
   UserPlus, Key, Activity, Heart, ShieldAlert, Check,
@@ -17,6 +17,8 @@ import { DEVICE_CHANNELS } from '../../desktop-deployment';
 interface AdminUser {
   uid: string;
   email: string | null;
+  displayName?: string | null;
+  organisationId?: string | null;
   // Firebase Auth's own record - true automatically for social sign-ins
   // (Google/Microsoft/Facebook already vouch for the address), only true
   // for an email/password account once the person has clicked the link
@@ -196,12 +198,51 @@ const BILLING_SOURCE_LABELS: Record<string, string> = {
   google: 'Google Play',
 };
 
+// A calm, task-based admin navigation: five work areas instead of fifteen
+// equal-weight tabs. Detailed tools appear only within their work area.
+const ADMIN_SECTIONS = [
+  { label: 'Overview', tabs: ['overview'] },
+  { label: 'People & Companies', tabs: ['users', 'orgs', 'entitlements', 'admins'] },
+  { label: 'Operations', tabs: ['communications', 'feedback', 'incidents', 'nheiKnowledge'] },
+  { label: 'Security & Release', tabs: ['privacy', 'audit', 'health', 'controls', 'release'] },
+  { label: 'Insights', tabs: ['somatic'] },
+] as const;
+
+const ADMIN_TABS = [
+  { id: 'overview', label: 'Overview', icon: ShieldCheck },
+  { id: 'users', label: 'People Directory', icon: Users },
+  { id: 'orgs', label: 'Companies', icon: Building2 },
+  { id: 'entitlements', label: 'Plans & Access', icon: CreditCard },
+  { id: 'admins', label: 'Platform Administrators', icon: ShieldAlert },
+  { id: 'communications', label: 'Communications', icon: MessageSquare },
+  { id: 'feedback', label: 'Feedback', icon: MessageSquare },
+  { id: 'incidents', label: 'Incidents', icon: AlertTriangle },
+  { id: 'nheiKnowledge', label: 'Knowledge Review', icon: FileText },
+  { id: 'privacy', label: 'Privacy', icon: Lock },
+  { id: 'audit', label: 'Audit Trail', icon: Activity },
+  { id: 'health', label: 'System Health', icon: Server },
+  { id: 'controls', label: 'Platform Controls', icon: Settings2 },
+  { id: 'release', label: 'Release Centre', icon: Rocket },
+  { id: 'somatic', label: 'Recovery Statistics', icon: Heart },
+] as const;
+type AdminTabId = (typeof ADMIN_TABS)[number]['id'];
+
+const formatAdminDateTime = (input: string | null | undefined): string => {
+  if (!input) return 'Not recorded';
+  const date = new Date(input);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'Invalid date';
+};
+
 export const AdminDashboard = () => {
   const { appRole, user: authUser } = useAuth();
 
   const isAdmin = isPlatformAdminRole(appRole);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'entitlements' | 'admins' | 'orgs' | 'communications' | 'privacy' | 'audit' | 'health' | 'controls' | 'release' | 'incidents' | 'somatic' | 'feedback' | 'nheiKnowledge'>('overview');
+  const [activeTab, setActiveTab] = useState<AdminTabId>('overview');
+  const activeSection = ADMIN_SECTIONS.find((section) => section.tabs.some((tab) => tab === activeTab)) || ADMIN_SECTIONS[0];
+  const [accountCategory, setAccountCategory] = useState<'all' | 'registered' | 'demo' | 'orphan'>('all');
   // Which account's Access Timeline is expanded in the Plans &
   // Entitlements tab - at most one open at a time, same pattern as other
   // single-item expand/collapse state in this file.
@@ -1330,13 +1371,25 @@ export const AdminDashboard = () => {
     }
   };
 
+  // Put identifiable accounts first so a large number of temporary demo
+  // sessions cannot bury actual staff and customer accounts in the list.
   const filteredUsers = users.filter(u =>
     ((u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.uid.includes(searchQuery)) &&
+    (u.displayName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (u.organisationId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.uid.toLowerCase().includes(searchQuery.toLowerCase())) &&
+    (accountCategory === 'all' ||
+      (accountCategory === 'registered' && !u.isAnonymous && u.accessStatus !== 'unknown') ||
+      (accountCategory === 'demo' && !!u.isAnonymous) ||
+      (accountCategory === 'orphan' && u.accessStatus === 'unknown')) &&
     (verifiedFilter === 'all' || (verifiedFilter === 'verified') === u.emailVerified) &&
     (roleFilter === 'all' || (u.role || 'user') === roleFilter) &&
     (planFilter === 'all' || (u.plan || 'free') === planFilter)
-  );
+  ).sort((a, b) => {
+    const rank = (u: AdminUser) => u.accessStatus === 'unknown' ? 2 : u.isAnonymous ? 1 : 0;
+    return rank(a) - rank(b) ||
+      (Date.parse(b.lastSignIn || '') || 0) - (Date.parse(a.lastSignIn || '') || 0);
+  });
 
   const filteredAuditLogs = auditLogs.filter((log) =>
     auditCategoryFilter === 'all' || (AUDIT_CATEGORIES[auditCategoryFilter] as readonly string[]).includes(log.action)
@@ -1658,43 +1711,48 @@ export const AdminDashboard = () => {
       </div>
       )}
 
-      {/* Tabs Menu */}
-      <div className="flex border-b border-white/5 pb-px overflow-x-auto gap-4">
-        {[
-          { id: 'overview', label: 'Overview', icon: ShieldCheck },
-          { id: 'users', label: 'User Roles & claims', icon: Key },
-          { id: 'entitlements', label: 'Plans & Entitlements', icon: CreditCard },
-          { id: 'admins', label: 'Promote Platform Admins', icon: ShieldAlert },
-          { id: 'orgs', label: 'Organisations', icon: Building2 },
-          { id: 'communications', label: 'Communications', icon: MessageSquare },
-          { id: 'privacy', label: 'Privacy Operations', icon: Lock },
-          { id: 'audit', label: 'Auditor Event Log', icon: Activity },
-          { id: 'health', label: 'System Health', icon: Server },
-          { id: 'controls', label: 'Platform Controls', icon: Settings2 },
-          { id: 'release', label: 'Release Centre', icon: Rocket },
-          { id: 'incidents', label: 'Incidents', icon: AlertTriangle },
-          { id: 'nheiKnowledge', label: 'NHEI Knowledge Review', icon: FileText },
-          { id: 'somatic', label: 'Somatic De-escalation Stats', icon: Heart },
-          { id: 'feedback', label: 'Feedback & Testimonials', icon: MessageSquare }
-        ].map((tab) => {
-          const IconComponent = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`flex items-center gap-2.5 pb-4 px-1 text-sm font-bold tracking-tight border-b-2 transition-all shrink-0 cursor-pointer ${
-                activeTab === tab.id 
-                  ? 'border-primary text-text-main' 
-                  : 'border-transparent text-text-muted hover:text-text-main'
-              }`}
-            >
-              <IconComponent className="w-4 h-4" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Grouped admin navigation — show the next layer only when needed. */}
+      <nav aria-label="Platform admin work areas" className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {ADMIN_SECTIONS.map((section) => {
+            const selected = activeSection.label === section.label;
+            return (
+              <button
+                key={section.label}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setActiveTab(section.tabs[0] as AdminTabId)}
+                className={`px-3.5 py-2.5 rounded-xl text-sm font-bold transition-colors ${
+                  selected ? 'bg-primary text-primary-foreground' : 'bg-surface border border-border text-text-muted hover:text-text-main'
+                }`}
+              >
+                {section.label}
+              </button>
+            );
+          })}
+        </div>
+        {activeSection.tabs.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-2 border-b border-border" aria-label={`${activeSection.label} tools`}>
+            {ADMIN_TABS.filter(tab => activeSection.tabs.some(id => id === tab.id)).map(tab => {
+              const IconComponent = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+                    activeTab === tab.id
+                      ? 'bg-primary/10 text-primary' : 'text-text-muted hover:text-text-main hover:bg-surface'
+                  }`}
+                >
+                  <IconComponent className="w-4 h-4" />{tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </nav>
 
       {/* Main Content Area */}
       <div className="min-h-[400px]">
