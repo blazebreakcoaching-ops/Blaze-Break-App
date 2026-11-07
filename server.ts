@@ -14853,9 +14853,23 @@ app.post("/api/org/:orgId/sso/enforce", verifyAppCheck, authenticateFirebaseUser
         });
       }
     }
-    const before = { enforceSso: configDoc.data()?.enforceSso === true };
-    await getSsoConfigDoc(db, orgId).update({ enforceSso: enabled, updatedAt: new Date().toISOString() });
-    await logOrgAuditAction(req, orgId, enabled ? "enable_sso_enforcement" : "disable_sso_enforcement", "sso_config", orgId, before, { enforceSso: enabled });
+    const configRef = getSsoConfigDoc(db, orgId);
+    const outcome = await db.runTransaction(async (tx) => {
+      const current = await tx.get(configRef);
+      if (!current.exists) return { status: 400 };
+      const before = { enforceSso: current.data()?.enforceSso === true };
+      if (before.enforceSso === enabled) return { status: 200 };
+      tx.update(configRef, { enforceSso: enabled, updatedAt: new Date().toISOString() });
+      tx.set(db.collection("organisations").doc(orgId).collection("audit_logs").doc(), {
+        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        orgId, action: enabled ? 'enable_sso_enforcement' : 'disable_sso_enforcement',
+        targetResourceType: 'sso_config', targetResourceId: orgId,
+        before, after: { enforceSso: enabled }, createdAt: FieldValue.serverTimestamp(),
+        ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
+      });
+      return { status: 200 };
+    });
+    if (outcome.status !== 200) return res.status(400).json({ error: 'SSO configuration no longer exists.' });
     res.json({ success: true, enforceSso: enabled });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
