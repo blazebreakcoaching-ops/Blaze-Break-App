@@ -42,6 +42,7 @@ describe('Nova Guide illustrated walkthrough', () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(window.localStorage.getItem('blaze-nova-guide-progress-v1:escape-user')).toBe('1');
 
+    view.rerender(<NovaGuide isOpen={false} startPage="welcome" accountId="escape-user" onClose={vi.fn()} onNavigate={vi.fn()} />);
     view.rerender(<NovaGuide isOpen startPage="welcome" accountId="escape-user" onClose={vi.fn()} onNavigate={vi.fn()} />);
     expect(screen.getByText('Step 2 of 5')).toBeInTheDocument();
   });
