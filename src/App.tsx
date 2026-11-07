@@ -129,6 +129,7 @@ import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigat
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
 import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
 import { shouldPausePassivePrompts } from "./lib/quiet-first-visit";
+import { statsForSafeWrite } from "./lib/user-stats-persistence";
 import { writeAccountProfile, clearAccountProfile } from "./lib/account-profile-storage";
 import { mayApplyAccountLoad, parsePulseHistory, pulseHistoryKey, pulseAlertKey, lastCheckInKey, type PulseHistoryEntry } from "./lib/pulse-account-storage";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
@@ -1972,7 +1973,8 @@ export default function App() {
         // not this generic merge write, which is why it was unvalidated
         // (firestore.rules could only check "is a list", never a single
         // contact's shape) in the first place.
-        const { supportCircle: _supportCircle, ...statsToPersist } = stats;
+        const statsToPersist = statsForSafeWrite(stats);
+        if (auth.currentUser?.uid !== user.uid) return;
         await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
           ...statsToPersist,
           updatedAt: new Date().toISOString(),
