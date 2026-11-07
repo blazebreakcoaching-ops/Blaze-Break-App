@@ -37,7 +37,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceCollectionError, forceTransactionError } from './test/fake-firestore';
 
 const USER = 'user_owner';
 const OTHER = 'user_other';
@@ -463,6 +463,51 @@ describe('POST /api/user/delete-account — erasure (GDPR Art. 17)', () => {
     const org = getDocRaw('organisations/org_1');
     expect(org?.memberUids).toEqual([OTHER]);   // USER removed
     expect(org?.adminUids).toEqual([]);         // USER removed
+  });
+
+
+  it('clears HR viewer, manager, team and device metadata during account deletion', async () => {
+    seedFullUser();
+    seedDoc('organisations/org_1', {
+      memberUids: [USER, OTHER], adminUids: [USER],
+      hrViewerUids: [USER], memberTeams: { [USER]: 'Support' },
+      teamManagers: { [USER]: ['Support'] },
+    });
+    seedDoc('organisations/org_1/members/user_owner', { role: 'owner', status: 'active' });
+    seedDoc('organisations/org_1/devices/device_one', {
+      ownerUid: USER, status: 'active', deviceName: 'Old computer',
+    });
+    seedDoc('organisations/org_1/devices/device_other', {
+      ownerUid: OTHER, status: 'active', deviceName: 'Other computer',
+    });
+    const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+    expect(res.status).toBe(200);
+    const org = getDocRaw('organisations/org_1');
+    expect(org?.memberUids).not.toContain(USER);
+    expect(org?.adminUids).not.toContain(USER);
+    expect(org?.hrViewerUids).not.toContain(USER);
+    expect(org?.memberTeams?.[USER]).toBeUndefined();
+    expect(org?.teamManagers?.[USER]).toBeUndefined();
+    expect(getDocRaw('organisations/org_1/members/user_owner')).toBeUndefined();
+    expect(getDocRaw('organisations/org_1/devices/device_one')).toBeUndefined();
+    expect(getDocRaw('organisations/org_1/devices/device_other')).toBeDefined();
+    expect(getDocRaw('users/user_owner')).toBeUndefined();
+  });
+
+  it('retains the account and Auth identity when company cleanup fails', async () => {
+    seedFullUser();
+    const restore = forceTransactionError(new Error('simulated company cleanup outage'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await request(app).post('/api/user/delete-account').set(auth(USER));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`users/${USER}`)).toBeDefined();
+      expect(getDocRaw('organisations/org_1')?.memberUids).toContain(USER);
+      expect(h.deleteUser).not.toHaveBeenCalled();
+    } finally {
+      restore();
+      errorSpy.mockRestore();
+    }
   });
 
   it('deletes the Firebase Auth account and reports it', async () => {
