@@ -14482,13 +14482,13 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     const db = getDb();
     const orgRef = db.collection("organisations").doc(orgId);
     const pendingRef = orgRef.collection("pending_invites");
-    const tokensByEmail = new Map(cleaned.map(email => {
+    const tokensByEmail = new Map<string, { token: string; tokenHash: string; tokenExpiresAt: string }>(cleaned.map(email => {
       const token = `BBI.${orgId}.${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
       return [email, {
         token,
         tokenHash: crypto.createHash('sha256').update(token.toUpperCase()).digest('hex'),
         tokenExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      }];
+      }] as const;
     }));
 
     // Reserve invitation seats BEFORE sending any email. Every invitation
