@@ -345,4 +345,39 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
       }
     }
   });
+
+  test('Nova Guide coach marks remain optional and do not send an AI message', async ({ page }) => {
+    await gotoAppAsAnonymousUser(page);
+    await openNovaTab(page);
+    let chatRequests = 0;
+    await page.route('**/api/nova/chat', async route => {
+      chatRequests += 1;
+      await route.fulfill({ status: 500, json: { error: 'Unexpected guide chat request' } });
+    });
+
+    await clickRobustlyPastWhatsNew(page, page.getByRole('button', { name: 'Show me how' }));
+    const guide = page.getByRole('dialog', { name: /help is always nearby/i });
+    await expect(guide).toBeVisible();
+    await expect(page.getByTestId('nova-guide-highlight')).toBeVisible();
+    await guide.getByRole('button', { name: /next/i }).click();
+    await expect(page.getByRole('dialog', { name: /tell nova what you need/i })).toBeVisible();
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.getByRole('dialog', { name: /tell nova what you need/i })).toHaveCount(0);
+    expect(chatRequests).toBe(0);
+  });
+
+  test('the voluntary Nova Guide invitation leads to a real Today coach mark', async ({ page }) => {
+    await gotoAppAsAnonymousUser(page);
+    const invite = page.getByRole('button', { name: 'Show me around' });
+    await expect(invite).toBeVisible();
+    await clickRobustlyPastWhatsNew(page, invite);
+    await expect(page.getByRole('dialog', { name: /one small step at a time/i })).toBeVisible();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByRole('button', { name: 'Show me on this page' }).click();
+    await expect(page.getByRole('dialog', { name: /start where you are/i })).toBeVisible();
+    await expect(page.getByTestId('nova-guide-highlight')).toBeVisible();
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.getByRole('dialog', { name: /start where you are/i })).toHaveCount(0);
+  });
+
 });
