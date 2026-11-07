@@ -29,11 +29,12 @@ const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
-function seedOrg(orgId: string, opts: { adminUids?: string[]; memberUids?: string[] } = {}) {
+function seedOrg(orgId: string, opts: { adminUids?: string[]; memberUids?: string[]; hrViewerUids?: string[] } = {}) {
   seedDoc(`organisations/${orgId}`, {
     name: 'Test Org',
     adminUids: opts.adminUids || [],
     memberUids: opts.memberUids || [],
+    ...(opts.hrViewerUids ? { hrViewerUids: opts.hrViewerUids } : {}),
   });
 }
 

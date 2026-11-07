@@ -2422,7 +2422,7 @@ export default function App() {
   // Firestore confirms the current account's actual saved state. Otherwise
   // failed reads could restart onboarding or overwrite real customer data.
   if (user?.uid && (
-      statsLoadError && (flow === "app" || flow === "onboarding" || (!user.isAnonymous && flow === "landing")) ||
+      statsLoadError && (flow === "app" || flow === "onboarding") ||
       statsOwnerUid !== user.uid && (flow === "app" || flow === "onboarding")
     )) {
     return <AccountDataLoadGate error={statsLoadError} onRetry={() => setStatsLoadRetry(n => n + 1)} />;

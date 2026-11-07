@@ -37,5 +37,5 @@ export function patchAccountProfile(uid: string | null | undefined, patch: Parti
 
 export function clearAccountProfile(uid: string | null | undefined): void {
   if (!uid) return;
-  try { localStorage.removeItem(accountProfileStorageKey(uid)); } catch {}
+  try { localStorage.removeItem(accountProfileStorageKey(uid)); } catch { /* storage unavailable (private mode/quota): nothing to clear */ }
 }

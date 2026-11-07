@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError, forceTransactionError, getDocRaw, fakeDb } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, forceTransactionError, fakeDb } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });

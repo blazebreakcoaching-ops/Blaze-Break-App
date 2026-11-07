@@ -118,6 +118,18 @@ function matchesWhere(data: DocData, [field, op, value]: WhereClause): boolean {
   }
 }
 
+
+// Mirrors the real Admin SDK's validateSetOptions: anything other than
+// undefined or a plain object throws "Input is not an object". Without
+// this, a misplaced argument (e.g. tx.set(ref, data, 'admin')) passed
+// every route test but failed on every real production request.
+function assertValidSetOptions(options: unknown): void {
+  if (options === undefined) return;
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+    throw new Error('fake-firestore: Value for argument "options" is not a valid set() options argument. Input is not an object.');
+  }
+}
+
 class FakeStore {
   // Flat map of full document path -> data. A path has an even number of
   // segments (collection/doc/collection/doc...).
@@ -183,7 +195,12 @@ class CollectionRef {
   count() {
     const unbounded = this.clone();
     unbounded.limitN = null;
-    return { get: async () => ({ data: () => ({ count: (await unbounded.get()).size }) }) };
+    return {
+      get: async () => {
+        const count = (await unbounded.get()).size;
+        return { data: () => ({ count }) };
+      },
+    };
   }
 
   private clone() {
@@ -283,6 +300,7 @@ class DocRef {
   }
 
   async set(data: DocData, options?: { merge?: boolean }) {
+    assertValidSetOptions(options);
     const existing = options?.merge ? this.store.docs.get(this.path) : undefined;
     this.store.docs.set(this.path, resolveWrites(data, existing));
   }
@@ -336,6 +354,7 @@ class FakeTransaction {
   }
 
   set(ref: DocRef, data: DocData, options?: { merge?: boolean }) {
+    assertValidSetOptions(options);
     const existing = options?.merge ? this.store.docs.get(ref.path) : undefined;
     this.store.docs.set(ref.path, resolveWrites(data, existing));
     return this;

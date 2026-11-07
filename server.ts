@@ -28,6 +28,7 @@ import { CommunityConfig } from './community-config';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import type { DocumentReference } from 'firebase-admin/firestore';
 import { getAppCheck } from 'firebase-admin/app-check';
 import cors from 'cors';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -11042,7 +11043,7 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
     if (!allowedAttempt) {
       return res.status(429).json({ error: 'Too many company joining attempts. Try again later.' });
     }
-    let orgRef;
+    let orgRef: DocumentReference;
     if (inviteMatch) {
       const candidateId = inviteMatch[1].toLowerCase();
       // Older organisation ids can contain underscores, even though new
@@ -11696,12 +11697,12 @@ app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser
       tx.set(orgRef.collection('cost_input_history').doc(), {
         annualSicknessDays, avgDailyCostPerEmployee, headcount,
         enteredAt: new Date().toISOString(),
-      }, 'admin');
+      });
       return { result: null, audit: {
         action: 'update_cost_inputs', resourceType: 'organisation', resourceId: orgId,
         before: current.data()?.costInputs || null, after: costInputs,
       } };
-    });
+    }, 'admin');
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -12408,7 +12409,7 @@ app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser,
       }
       const beforeUids: string[] = current.hrViewerUids || [];
       tx.update(orgRef, { hrViewerUids: uids });
-      const actor = req.user;
+      const actor = (req as any).user;
       tx.set(orgRef.collection("audit_logs").doc(), {
         actorUid: actor?.uid || "system", actorEmail: actor?.email || "system",
         orgId, action: "update_hr_viewers",
@@ -13393,12 +13394,12 @@ app.post("/api/org/:orgId/what-works-here/:signalKey/promote", verifyAppCheck, a
         promotedBy: user.uid,
         promotedByEmail: user.email || null,
         promotedAt: new Date().toISOString(),
-      }, 'admin');
+      });
       return { result: null, audit: {
         action: 'promote_local_operating_principle', resourceType: 'local_operating_principle',
         resourceId: signalKey, before: null, after: { signalKey },
       } };
-    });
+    }, 'admin');
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13635,7 +13636,7 @@ app.get("/api/org/:orgId/executive-work-design/export", verifyAppCheck, authenti
     // the product. Do not send its payload unless its governance/audit
     // evidence was durably written. This is deliberately NOT best-effort.
     await db.collection('organisations').doc(orgId).collection('audit_logs').add({
-      actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+      actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
       orgId, action: 'export_executive_summary', targetResourceType: 'organisation',
       targetResourceId: orgId, before: null,
       after: {
@@ -14435,7 +14436,7 @@ app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser
       const before = getEffectiveDataPolicy(current.data()?.dataPolicy);
       tx.update(orgRef, { dataPolicy: after });
       tx.set(orgRef.collection("audit_logs").doc(), {
-        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
         orgId, action: 'update_data_policy', targetResourceType: 'data_policy', targetResourceId: orgId,
         before: { ...before }, after: { ...after }, createdAt: FieldValue.serverTimestamp(),
         ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
@@ -14791,7 +14792,7 @@ app.post("/api/org/:orgId/devices/:deviceId/revoke", verifyAppCheck, authenticat
       tx.update(ref, { status: 'revoked', revokedAt: new Date().toISOString() });
       const auditRef = db.collection("organisations").doc(orgId).collection("audit_logs").doc();
       tx.set(auditRef, {
-        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
         orgId, action: 'revoke_device', targetResourceType: 'device', targetResourceId: deviceId,
         before: { status: doc.data()?.status || null }, after: { status: 'revoked' },
         createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
@@ -14978,7 +14979,7 @@ app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, as
       };
       tx.update(orgRef, { billing: next });
       tx.set(orgRef.collection("audit_logs").doc(), {
-        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
         orgId, action: 'update_billing', targetResourceType: 'billing', targetResourceId: orgId,
         before: { ...before }, after: { ...next }, createdAt: FieldValue.serverTimestamp(),
         ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
@@ -15005,7 +15006,7 @@ app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, as
 // proxy, both real infrastructure decisions outside this backend
 // foundation's authority. This is schema, encryption, and RBAC only.
 
-const getSsoConfigDoc = (db: any, orgId: string) =>
+const getSsoConfigDoc = (db: any, orgId: string): DocumentReference =>
   db.collection("organisations").doc(orgId).collection("sso_config").doc("config");
 
 app.get("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
@@ -15118,7 +15119,7 @@ app.post("/api/org/:orgId/sso/enforce", verifyAppCheck, authenticateFirebaseUser
       if (before.enforceSso === enabled) return { status: 200 };
       tx.update(configRef, { enforceSso: enabled, updatedAt: new Date().toISOString() });
       tx.set(db.collection("organisations").doc(orgId).collection("audit_logs").doc(), {
-        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
         orgId, action: enabled ? 'enable_sso_enforcement' : 'disable_sso_enforcement',
         targetResourceType: 'sso_config', targetResourceId: orgId,
         before, after: { enforceSso: enabled }, createdAt: FieldValue.serverTimestamp(),
@@ -15374,7 +15375,7 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
       if (!current.exists) throw new Error("Organisation not found.");
       tx.update(orgRef, { joinCode: newCode, updatedAt: FieldValue.serverTimestamp() });
       tx.set(orgRef.collection("audit_logs").doc(), {
-        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
         orgId, action: 'rotate_join_code', targetResourceType: 'organisation', targetResourceId: orgId,
         before: { sharedCodeValid: true }, after: { oldSharedCodeInvalidated: true },
         createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
@@ -15438,7 +15439,7 @@ app.post("/api/org/:orgId/settings", verifyAppCheck, authenticateFirebaseUser, a
       }
       tx.update(orgRef, update);
       tx.set(orgRef.collection('audit_logs').doc(), {
-        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
         orgId, action: 'update_org_settings', targetResourceType: 'organisation', targetResourceId: orgId,
         before: previous, after, createdAt: FieldValue.serverTimestamp(),
         ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
@@ -15532,7 +15533,7 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, org
           tokenExpiresAt: credentials.tokenExpiresAt,
         }, { merge: true });
         tx.set(orgRef.collection("audit_logs").doc(), {
-          actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+          actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
           orgId, action: pendingEmails.has(email) ? 'resend_invitation' : 'create_invitation',
           targetResourceType: 'invitation', targetResourceId: email,
           before: { pending: pendingEmails.has(email) },
@@ -15634,7 +15635,7 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
       if (!existing.exists) return { status: 404 };
       tx.delete(inviteRef);
       tx.set(db.collection("organisations").doc(orgId).collection("audit_logs").doc(), {
-        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        actorUid: (req as any).user?.uid || 'system', actorEmail: (req as any).user?.email || 'system',
         orgId, action: 'cancel_invitation', targetResourceType: 'invitation',
         targetResourceId: normalizedEmail, before: { pending: true },
         after: { pending: false, sharedJoinCodeStillValid: true },

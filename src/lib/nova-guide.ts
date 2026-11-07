@@ -54,7 +54,7 @@ export const NOVA_GUIDE_STEPS: readonly NovaGuideStep[] = [
   {
     id: 'plan',
     title: 'Make progress your way',
-    message: 'Your Recovery Plan brings together small actions after your check-in. If it is locked, it shows what to do first.'
+    message: 'Your Recovery Plan brings together small actions after your check-in. If it is locked, it shows what to do first.',
     why: "Pick what fits today. You don't need to do everything at once.",
     icon: 'plan',
     tab: 'plan',
