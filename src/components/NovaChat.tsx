@@ -734,7 +734,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
   };
 
-  const getDynamicContext = async () => {
+  const getDynamicContext = async (uid: string) => {
     let contextStr = "";
 
     contextStr += buildSituationalContext();
@@ -746,8 +746,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     // place memory content enters the prompt, for both text and voice.
 
     try {
-      if (auth.currentUser) {
-        const snap = await getDoc(doc(db, "users", auth.currentUser.uid, "workload_reality_check", "state"));
+      if (auth.currentUser?.uid === uid) {
+        const snap = await getDoc(doc(db, "users", uid, "workload_reality_check", "state"));
         const workload = snap.exists() ? snap.data().answers : null;
         if (workload) {
           const answeredKeys = Object.keys(workload).filter(
@@ -772,8 +772,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
 
     try {
-      if (auth.currentUser) {
-        const recoverySnap = await getDoc(doc(db, "users", auth.currentUser.uid, "micro_recovery", "latest"));
+      if (auth.currentUser?.uid === uid) {
+        const recoverySnap = await getDoc(doc(db, "users", uid, "micro_recovery", "latest"));
         if (recoverySnap.exists()) {
           const recovery = recoverySnap.data();
           contextStr += `\nLatest Completed Micro-Recovery Session:\n`;
@@ -791,7 +791,14 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
 
   const handleSend = async (overrideInput?: string) => {
     const messageText = overrideInput || input;
-    if (!messageText.trim() || loading) return;
+    const requestUid = currentUid;
+    const requestEpoch = identityEpochRef.current;
+    const stillCurrentRequest = () =>
+      auth.currentUser?.uid === requestUid &&
+      observedUidRef.current === requestUid &&
+      identityEpochRef.current === requestEpoch;
+    if (!messageText.trim() || loading ||
+        !canPersistNovaChatState(messagesOwnerUid, currentUid, auth.currentUser?.uid ?? null)) return;
 
     const userMsg: Message = { role: "user", parts: [{ text: messageText }] };
     setMessages((prev) => [...prev, userMsg]);
@@ -799,7 +806,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     setLoading(true);
 
     try {
-      const dynamicContext = await getDynamicContext();
+      const dynamicContext = await getDynamicContext(requestUid);
+      if (!stillCurrentRequest()) return;
       let toneModifier = "";
       if (fingerprint?.profile === "High-Functioning Exhausted") {
         toneModifier =
@@ -857,6 +865,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
       });
 
       const data = await response.json();
+      if (!stillCurrentRequest()) return;
 
       if (data.error) throw new Error(data.error);
 
@@ -913,6 +922,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         speakText(data.text, newMessages.length - 1);
       }
     } catch (error: any) {
+      if (!stillCurrentRequest()) return;
       console.error("Chat Error:", error);
       const errorMessage: Message = {
         role: "model",
@@ -926,7 +936,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
-      setLoading(false);
+      if (stillCurrentRequest()) setLoading(false);
     }
   };
 
