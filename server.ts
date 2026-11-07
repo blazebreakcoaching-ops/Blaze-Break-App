@@ -14804,6 +14804,7 @@ app.post("/api/org/:orgId/search", verifyAppCheck, authenticateFirebaseUser, asy
 const orgCodeRotationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 5,
+  message: { error: 'Too many company code changes. Try again later.' },
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: (req: any) => String(req.user?.uid || ipKeyGenerator(req.ip || '127.0.0.1')),
@@ -14811,6 +14812,7 @@ const orgCodeRotationLimiter = rateLimit({
 const orgInviteSendLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 5,
+  message: { error: 'Too many invitation batches. Try again later.' },
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: (req: any) => String(req.user?.uid || ipKeyGenerator(req.ip || '127.0.0.1')),
