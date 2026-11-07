@@ -14798,7 +14798,24 @@ app.post("/api/org/:orgId/search", verifyAppCheck, authenticateFirebaseUser, asy
   }
 });
 
-app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+// Limit repeated company-code rotations and email batches to reduce
+// accidental flooding and compromised-admin abuse. These in-process
+// limits are defence in depth, not distributed multi-instance quotas.
+const orgCodeRotationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req: any) => String(req.user?.uid || ipKeyGenerator(req.ip || '127.0.0.1')),
+});
+const orgInviteSendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req: any) => String(req.user?.uid || ipKeyGenerator(req.ip || '127.0.0.1')),
+});
+app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFirebaseUser, orgCodeRotationLimiter, async (req, res) => {
   try {
     const { orgId } = req.params;
     await requireOrgAdmin(req, orgId);
@@ -14886,7 +14903,7 @@ const isSafeOrgInviteEmail = (value: string): boolean =>
 // a convenience layer on top of the join code, not a replacement for it -
 // join-by-code still works even if an invite email never arrives.
 
-app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, orgInviteSendLimiter, async (req, res) => {
   try {
     const { orgId } = req.params;
     const { org } = await requireOrgAdmin(req, orgId);
