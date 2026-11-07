@@ -805,3 +805,48 @@ describe('durable organisation membership audit events', () => {
     ]));
   });
 });
+
+describe('protected role revocations require an existing owner', () => {
+  it('blocks an ordinary admin from demoting a second owner', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'owner_2'], memberUids: ['owner_1', 'owner_2', 'admin_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'owner_2', 'owner');
+    seedMember(ORG, 'admin_1', 'admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_2/role`)
+      .set(auth('admin_1')).send({ role: 'member' });
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_2`)?.role).toBe('owner');
+  });
+
+  it('blocks security admins from downgrading another security admin', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'security_1', 'security_2'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'security_1', 'security_admin');
+    seedMember(ORG, 'security_2', 'security_admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/security_2/role`)
+      .set(auth('security_1')).send({ role: 'viewer' });
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/security_2`)?.role).toBe('security_admin');
+  });
+
+  it('blocks a normal admin from downgrading a security administrator', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'admin_1', 'security_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'admin_1', 'admin');
+    seedMember(ORG, 'security_1', 'security_admin');
+    const res = await request(app).post(`/api/org/${ORG}/members/security_1/role`)
+      .set(auth('admin_1')).send({ role: 'member' });
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}/members/security_1`)?.role).toBe('security_admin');
+  });
+
+  it('allows an owner to demote a second owner without losing the last active owner', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'owner_2'], memberUids: ['owner_1', 'owner_2'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'owner_2', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_2/role`)
+      .set(auth('owner_1')).send({ role: 'member' });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_2`)?.role).toBe('member');
+  });
+});
