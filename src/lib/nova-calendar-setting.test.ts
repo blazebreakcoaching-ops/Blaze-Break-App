@@ -42,6 +42,7 @@ describe('Calendar aggregation needs a separate affirmative choice', () => {
       'users/account-A/nova_permissions/current',
       expect.objectContaining({
         allowCalendarSignals: true,
+        calendarSignalsExplicitConsentAt: expect.any(String),
         allowNovaMemory: false, allowNovaUseSavedMemories: false,
         allowCheckins: true,
       }),
@@ -54,7 +55,7 @@ describe('Calendar aggregation needs a separate affirmative choice', () => {
     await saveCalendarSignalConsent('account-A', false);
     expect(mocks.update).toHaveBeenCalledWith(
       'users/account-A/nova_permissions/current',
-      expect.objectContaining({ allowCalendarSignals: false }),
+      expect.objectContaining({ allowCalendarSignals: false, calendarSignalsExplicitConsentAt: null }),
     );
     expect(mocks.set).not.toHaveBeenCalled();
   });
