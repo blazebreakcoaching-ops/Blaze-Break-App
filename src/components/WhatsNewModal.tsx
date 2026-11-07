@@ -54,6 +54,13 @@ export const WhatsNewModal = ({ lastSeenVersion, loaded, paused = false, onSeen 
   const [isOpen, setIsOpen] = useState(false);
   const modalRef = useFocusTrap(isOpen);
 
+  // A higher-priority dialog can open after this informational popup has
+  // appeared. Close it without acknowledging the changelog: the person
+  // can read it on a later quiet visit.
+  useEffect(() => {
+    if (paused && isOpen) setIsOpen(false);
+  }, [paused, isOpen]);
+
   useEffect(() => {
     if (!loaded || paused || lastSeenVersion === CURRENT_CHANGELOG_VERSION) return;
 
