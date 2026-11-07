@@ -24,7 +24,7 @@ This document is a **working technical register**, not a release certificate. Th
 | Profile/consent save | Onboarding waits for successful Firestore save; Settings uses verified atomic profile+consent write and reverts failed toggles | Simulated rejected permissions, missing docs, low connectivity, rapid changes |
 | General stats save | Drops old subscription and support-circle fields, omits undefined fields | Emulated rules against legacy profile and current entitlements |
 | Notifications | Per-account preferences, visible error/retry, <=20 categories, explicit disabled default | Firestore emulator save failures; quiet hours; old response arriving after account switch |
-| Calendar and hidden background use | Calendar consent fails closed; stale account sync ignored; Slack tick suppressed for inactive/hidden accounts | Verify backend consent path + OAuth scope, with calendar disabled and enabled |
+| Calendar and hidden background use | Calendar aggregation now defaults OFF; privacy screen waits for current account consent and explicit opt-in is saved transactionally without erasing other choices; stale account sync ignored; Slack tick suppressed for inactive/hidden accounts | Verify existing legacy true/false, missing/denied reads, first-time enable without a permissions document, login-switch during a save, backend OAuth and scope, with calendar disabled and enabled |
 | Feedback | Accepted report remains successful if secondary audit fails; testimonial publication consent explicit | Rejected server POST, accepted POST + failed audit, no sensitive data in reports |
 | Audit trail | Old browser-global fallback removed; UID-scoped cache and stale-fetch protection | A and B account switch with offline audit endpoint and corrupt local storage |
 
