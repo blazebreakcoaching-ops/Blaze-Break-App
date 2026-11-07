@@ -127,6 +127,7 @@ import { useAuth } from "./lib/auth.tsx";
 import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigation";
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
 import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
+import { shouldPausePassivePrompts } from "./lib/quiet-first-visit";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
 import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
@@ -2433,6 +2434,17 @@ export default function App() {
     );
   }
 
+  const pausePassivePrompts = shouldPausePassivePrompts({
+    welcome: !!postOnboardingProfile,
+    novaGuide: showNovaGuide,
+    coachMarks: !!coachMarkPage,
+    dailyCheckIn: showCheckIn,
+    settings: showSettings,
+    walkthrough: showWalkthrough,
+    support: showCrisisSupport,
+    launcher: showLauncher,
+  });
+
   return (
     <div
       className={cn(
@@ -3391,7 +3403,7 @@ export default function App() {
           />
         </Suspense>
       )}
-      <InAppNudge suspended={!!postOnboardingProfile || showNovaGuide || !!coachMarkPage || showCheckIn || showSettings || showWalkthrough || showCrisisSupport || showLauncher} />
+      <InAppNudge suspended={pausePassivePrompts} />
       {/* Changelog is for existing registered accounts, not anonymous demos.
           Avoid interrupting a first-time visitor's Nova or onboarding flow. */}
       {user && !user.isAnonymous && (
@@ -3399,7 +3411,7 @@ export default function App() {
           <WhatsNewModal
             lastSeenVersion={stats.lastSeenChangelogVersion}
             loaded={statsLoaded}
-            paused={!!postOnboardingProfile || showNovaGuide || !!coachMarkPage || showCheckIn || showSettings || showWalkthrough || showCrisisSupport || showLauncher}
+            paused={pausePassivePrompts}
             onSeen={(version) => setStats(prev => ({ ...prev, lastSeenChangelogVersion: version }))}
           />
         </Suspense>
