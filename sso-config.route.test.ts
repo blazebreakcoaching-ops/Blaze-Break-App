@@ -21,12 +21,14 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 // lookup call should resolve to.
 const h = vi.hoisted(() => ({
   dnsLookup: vi.fn(async () => [{ address: '8.8.8.8', family: 4 }]),
+  httpsRequest: vi.fn(),
 }));
 vi.mock('dns', () => ({ default: { promises: { lookup: h.dnsLookup } } }));
+vi.mock('https', () => ({ default: { request: h.httpsRequest } }));
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceTransactionError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -45,15 +47,16 @@ function seedMember(orgId: string, uid: string, role: string) {
 
 const validConfig = { providerType: 'oidc', issuer: 'https://idp.example.com', clientId: 'client-123' };
 
-let fetchMock: ReturnType<typeof vi.fn>;
-
 beforeEach(() => {
   resetStore();
   delete process.env.SSO_CONFIG_ENCRYPTION_KEY;
   h.dnsLookup.mockClear();
   h.dnsLookup.mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
-  fetchMock = vi.fn(async () => ({ ok: true }));
-  vi.stubGlobal('fetch', fetchMock);
+  h.httpsRequest.mockReset();
+  h.httpsRequest.mockImplementation((_url: unknown, _options: unknown, callback: any) => {
+    callback({ statusCode: 200, destroy: vi.fn() });
+    return { on: vi.fn().mockReturnThis(), end: vi.fn(), destroy: vi.fn() };
+  });
 });
 
 describe('GET /api/org/:orgId/sso', () => {
@@ -172,15 +175,16 @@ describe('POST /api/org/:orgId/sso/enforce — the core guardrail', () => {
     expect(configRes.body.config.enforceSso).toBe(false);
   });
 
-  it('can be enabled once the platform feature flag is explicitly on', async () => {
+  it('still cannot be enabled by the flag alone without an assertion validator', async () => {
     seedDoc('public_feature_flags/sso_enforcement', { enabled: true });
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
     seedMember(ORG, 'owner_1', 'owner');
     await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(validConfig);
 
     const res = await request(app).post(`/api/org/${ORG}/sso/enforce`).set(auth('owner_1')).send({ enabled: true });
-    expect(res.status).toBe(200);
-    expect(res.body.enforceSso).toBe(true);
+    expect(res.status).toBe(403);
+    const configRes = await request(app).get(`/api/org/${ORG}/sso`).set(auth('owner_1'));
+    expect(configRes.body.config.enforceSso).toBe(false);
   });
 
   it('disabling enforcement is never gated by the feature flag', async () => {
@@ -188,8 +192,12 @@ describe('POST /api/org/:orgId/sso/enforce — the core guardrail', () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
     seedMember(ORG, 'owner_1', 'owner');
     await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(validConfig);
-    await request(app).post(`/api/org/${ORG}/sso/enforce`).set(auth('owner_1')).send({ enabled: true });
-
+    // Simulate a historical enforcement flag, even though new activation is
+    // now blocked until a real SSO identity verifier is integrated.
+    seedDoc(`organisations/${ORG}/sso_config/config`, {
+      ...getDocRaw(`organisations/${ORG}/sso_config/config`),
+      enforceSso: true,
+    });
     // Flag flips off after enforcement was already enabled - disabling must still always work.
     seedDoc('public_feature_flags/sso_enforcement', { enabled: false });
     const res = await request(app).post(`/api/org/${ORG}/sso/enforce`).set(auth('owner_1')).send({ enabled: false });
@@ -261,7 +269,7 @@ describe('POST /api/org/:orgId/sso/test', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.metadataReachable).toBe(true);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(h.httpsRequest).toHaveBeenCalledTimes(1);
     });
 
     it('never fetches, and reports unreachable, when the resolved address is a private/internal IP', async () => {
@@ -274,7 +282,7 @@ describe('POST /api/org/:orgId/sso/test', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.metadataReachable).toBe(false);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(h.httpsRequest).not.toHaveBeenCalled();
     });
 
     it('never fetches, and reports unreachable, when the resolved address is the cloud metadata link-local IP', async () => {
@@ -287,7 +295,7 @@ describe('POST /api/org/:orgId/sso/test', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.metadataReachable).toBe(false);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(h.httpsRequest).not.toHaveBeenCalled();
     });
 
     it('blocks if ANY resolved address is private, even when another is public', async () => {
@@ -300,7 +308,7 @@ describe('POST /api/org/:orgId/sso/test', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.metadataReachable).toBe(false);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(h.httpsRequest).not.toHaveBeenCalled();
     });
 
     it('reports unreachable (not an error) when DNS resolution itself fails', async () => {
@@ -313,24 +321,57 @@ describe('POST /api/org/:orgId/sso/test', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.metadataReachable).toBe(false);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(h.httpsRequest).not.toHaveBeenCalled();
     });
   });
 });
 
 describe('audit logging', () => {
-  it('records update_sso_config and enable/disable_sso_enforcement as separate entries', async () => {
+  it('records SSO configuration and historical enforcement disable as separate entries', async () => {
     seedDoc('public_feature_flags/sso_enforcement', { enabled: true });
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
     seedMember(ORG, 'owner_1', 'owner');
     await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(validConfig);
-    await request(app).post(`/api/org/${ORG}/sso/enforce`).set(auth('owner_1')).send({ enabled: true });
+    seedDoc(`organisations/${ORG}/sso_config/config`, {
+      ...getDocRaw(`organisations/${ORG}/sso_config/config`),
+      enforceSso: true,
+    });
     await request(app).post(`/api/org/${ORG}/sso/enforce`).set(auth('owner_1')).send({ enabled: false });
 
     const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
     const actions = res.body.logs.map((l: any) => l.action);
     expect(actions).toContain('update_sso_config');
-    expect(actions).toContain('enable_sso_enforcement');
+    expect(actions).not.toContain('enable_sso_enforcement');
     expect(actions).toContain('disable_sso_enforcement');
+  });
+});
+
+describe('SSO configuration and transport security regressions', () => {
+  it('keeps existing configuration unchanged if the audited transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const restore = forceTransactionError(new Error('simulated audit transaction failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1')).send(validConfig);
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/sso_config/config`)).toBeUndefined();
+    } finally { restore(); }
+  });
+
+  it('pins outbound metadata probes to the vetted address, without following redirects', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    await request(app).post(`/api/org/${ORG}/sso`).set(auth('owner_1'))
+      .send({ ...validConfig, metadataUrl: 'https://idp.example.com/metadata' });
+    h.dnsLookup.mockResolvedValue([{ address: '8.8.4.4', family: 4 }]);
+    const res = await request(app).post(`/api/org/${ORG}/sso/test`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(h.httpsRequest).toHaveBeenCalledTimes(1);
+    const [url, options] = h.httpsRequest.mock.calls[0];
+    expect(url).toBe('https://idp.example.com/metadata');
+    expect(options.method).toBe('GET');
+    const lookup = vi.fn();
+    options.lookup('idp.example.com', {}, lookup);
+    expect(lookup).toHaveBeenCalledWith(null, '8.8.4.4', 4);
   });
 });
