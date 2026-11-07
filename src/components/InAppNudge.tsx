@@ -124,6 +124,9 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
       if (!orgStatusCache.current.checked) {
         const meRes = await secureApiFetch('/api/org/me');
         const me = await meRes.json();
+        // The account can change while this HTTP request is in flight.
+        // Never put another person's organisation details in this UID's cache.
+        if (liveUidRef.current !== user.uid) return null;
         orgStatusCache.current = {
           checked: true,
           organisationId: me.organisationId || null,
