@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import { mayCommitNativeAuthCallback as allowed } from './native-auth-callback';
 
 describe('native Firebase authentication ownership', () => {
