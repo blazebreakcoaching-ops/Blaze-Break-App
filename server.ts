@@ -13528,7 +13528,7 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
     if (!canAssignRole(actorRole, nextRole)) {
       return res.status(403).json({ error: `Forbidden: only an owner can grant or revoke the '${nextRole}' role.` });
     }
-    if (!(org.memberUids || []).includes(memberUid) && memberUid !== user.uid) {
+    if (!(org.memberUids || []).includes(memberUid)) {
       return res.status(400).json({ error: "That person isn't a member of this organisation." });
     }
     const db = getDb();
@@ -13591,10 +13591,23 @@ app.post("/api/org/:orgId/members/:memberUid/suspend", verifyAppCheck, authentic
 app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const { org } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    // Reactivation is only for an existing, suspended staff member.
+    // Never create an active role document for an arbitrary UID.
+    if (!(org.memberUids || []).includes(memberUid)) {
+      return res.status(400).json({ error: 'That person is not a member of this organisation.' });
+    }
     const db = getDb();
     const memberRef = db.collection("organisations").doc(orgId).collection("members").doc(memberUid);
-    await memberRef.set({ status: 'active' }, { merge: true });
+    const existing = await memberRef.get();
+    if (!existing.exists || existing.data()?.status !== 'suspended' || !isOrgRole(existing.data()?.role)) {
+      return res.status(409).json({ error: 'Only an existing suspended member with a valid role can be reactivated.' });
+    }
+    const profile = await db.collection("users").doc(memberUid).get();
+    if (profile.exists && profile.data()?.organisationId && profile.data()?.organisationId !== orgId) {
+      return res.status(409).json({ error: 'This account belongs to another organisation.' });
+    }
+    await memberRef.update({ status: 'active' });
     await logOrgAuditAction(req, orgId, "reactivate_member", "member", memberUid, { status: 'suspended' }, { status: 'active' });
     res.json({ success: true });
   } catch (err: any) {
