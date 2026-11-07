@@ -98,12 +98,8 @@ async function startAnonymousDemo(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Prefer to look around first? View a demo' }).click();
   await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
-  // WhatsNewModal.tsx mounts for ANY signed-in Firebase identity (App.tsx
-  // gates it on plain `user`, anonymous included - unlike NovaFeedbackModal,
-  // which is guest-only), so a brand-new anonymous demo session with no
-  // lastSeenChangelogVersion yet sees it too, sharing NovaFeedbackModal's
-  // own z-[100] full-screen wrapper class and blocking the exact same
-  // clicks if left open.
+  // This helper safely dismisses any optional UI from older state or a
+  // delayed animation. Anonymous demo accounts do not receive What's New.
   await dismissPostOnboardingModals(page);
   await dismissFeedbackModalIfOpen(page);
 }
@@ -149,7 +145,7 @@ async function submitRealSignIn(page: Page, email: string) {
   await page.locator('[role="dialog"] button[type="submit"]').click();
 }
 
-async function completeRealOnboarding(page: Page, fullName: string) {
+async function completeRealOnboarding(page: Page, fullName: string, options: { dismissModals?: boolean } = {}) {
   // Drives the real SituationalOnboarding wizard end to end via its own
   // real buttons - never by calling onComplete() or setting profile state
   // directly. Steps 1-4 (welcome/pathway/pressure/nova_tone) auto-advance
@@ -180,32 +176,18 @@ async function completeRealOnboarding(page: Page, fullName: string) {
   await page.getByRole('button', { name: 'Get started' }).click();
 
   await expect(page.getByRole('button', { name: 'Nova' })).toBeVisible({ timeout: 25_000 });
-  await dismissPostOnboardingModals(page);
-  await dismissFeedbackModalIfOpen(page);
+  if (options.dismissModals !== false) {
+    await dismissPostOnboardingModals(page);
+    await dismissFeedbackModalIfOpen(page);
+  }
 }
 
 async function dismissPostOnboardingModals(page: Page) {
-  // A brand-new real account's very first landing on the dashboard stacks
-  // up to three real, legitimate dialogs on top of each other - the
-  // "Welcome, <name>." onboarding-completion card, "What's New", and the
-  // Daily Check-In prompt - all real UI a genuine new user would also see
-  // and have to dismiss before they could click anything else underneath.
-  // Each is independently optional (none of this phase's work depends on
-  // which ones appear), so this only closes whichever are actually open.
-  //
-  // Phase 5N finding (§6-adjacent, noted in the delivery report rather than
-  // fixed here - a z-index/stacking issue, not an account-privacy one,
-  // outside this phase's bounded scope): with all three mounted at once,
-  // the Daily Check-In dialog's own backdrop (an "absolute inset-0" layer
-  // scoped inside <main>, not a top-level "fixed" overlay) can visually
-  // sit OVER the Welcome modal's buttons despite the Welcome modal's own
-  // z-[110] - a real user would still see and could still click through
-  // this (browsers resolve the actual hit-test correctly; Playwright's
-  // stricter actionability check is what flags the overlap), so `force`
-  // here reproduces a real click without that stricter check blocking it.
-  // dismissAnyOpenModal already wraps each individual click in .catch(), so
-  // a single flaky/stale element (an AnimatePresence exit mid-render) can
-  // never hang this loop - it just tries again next iteration.
+  // Backwards-compatible cleanup for dialogs that might be present.
+  // A new account should now receive only its onboarding welcome, not
+  // an automatic Daily Check-In or an immediate What's New announcement.
+  // The explicit first-visit regression below checks that contract.
+  // Individual dismissals already handle transient animation races.
   for (let i = 0; i < 4; i++) {
     await dismissAnyOpenModal(page);
     await page.waitForTimeout(150);
