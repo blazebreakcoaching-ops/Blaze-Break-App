@@ -258,6 +258,38 @@ test.describe('Real app (Phase 5N directive §3): registration and onboarding jo
     await expect(page.getByText('This week has been relentless.')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('I hear you - let\'s look at what\'s driving that.')).toBeVisible();
   });
+
+  test('first registration shows one welcome, then offers an optional daily check-in without surprise popups', async ({ page }) => {
+    test.setTimeout(75_000);
+    const email = uniqueEmail('quiet-first-visit');
+
+    await startAnonymousDemo(page);
+    await openSignUpModal(page);
+    await submitRealSignUp(page, email);
+    await completeRealOnboarding(page, 'Taylor Example', { dismissModals: false });
+
+    const welcome = page.getByRole('dialog', { name: /welcome, taylor/i });
+    await expect(welcome).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /daily check-in|what's new/i })).toHaveCount(0);
+
+    // Completing onboarding does not automatically launch a second,
+    // higher-z-index modal. A customer can choose the next step.
+    await welcome.getByRole('button', { name: "I'll explore on my own" }).click();
+    await expect(page.getByRole('heading', { name: 'What would help right now?' })).toBeVisible();
+
+    // Check the full old 3-second auto-announcement window.
+    await page.waitForTimeout(3_250);
+    await expect(page.getByRole('dialog', { name: /daily check-in|what's new/i })).toHaveCount(0);
+
+    const checkIn = page.getByRole('button', { name: 'Or do a daily check-in' });
+    await expect(checkIn).toBeVisible();
+    await checkIn.click();
+    const checkInDialog = page.getByRole('dialog', { name: /daily check-in/i });
+    await expect(checkInDialog).toBeVisible();
+    await checkInDialog.getByRole('button', { name: 'Close' }).click();
+    await expect(checkInDialog).toHaveCount(0);
+  });
+
 });
 
 test.describe('Real app (Phase 5N directive §4): shared-device and account-switching privacy', () => {
