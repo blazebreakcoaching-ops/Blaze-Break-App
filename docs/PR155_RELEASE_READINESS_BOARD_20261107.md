@@ -24,7 +24,7 @@ This document is a **working technical register**, not a release certificate. Th
 | Profile/consent save | Onboarding waits for successful Firestore save; Settings uses verified atomic profile+consent write and reverts failed toggles | Simulated rejected permissions, missing docs, low connectivity, rapid changes |
 | General stats save | Drops old subscription and support-circle fields, omits undefined fields | Emulated rules against legacy profile and current entitlements |
 | Notifications | Per-account preferences, visible error/retry, <=20 categories, explicit disabled default | Firestore emulator save failures; quiet hours; old response arriving after account switch |
-| Calendar and hidden background use | Calendar aggregation now defaults OFF; privacy screen waits for current account consent and explicit opt-in is saved transactionally without erasing other choices; stale account sync ignored; Slack tick suppressed for inactive/hidden accounts | Verify existing legacy true/false, missing/denied reads, first-time enable without a permissions document, login-switch during a save, backend OAuth and scope, with calendar disabled and enabled |
+| Calendar and hidden background use | New accounts default OFF; old automatic TRUE without a dated opt-in is treated as OFF; the privacy screen verifies the active UID; first opt-in stores a timestamp; Firestore rules allow the marker; the backend POST checks explicit consent and writes atomically with that check; GET and organisation coverage also refuse unverified sharing | Real emulator POST with missing/legacy true/valid consent/revoked permission, concurrent revocation during pending write, old accounts re-opt-in, permission rule deployment, OAuth scope; confirm retained pre-opt-out aggregates follow the agreed deletion policy |
 | Feedback | Accepted report remains successful if secondary audit fails; testimonial publication consent explicit | Rejected server POST, accepted POST + failed audit, no sensitive data in reports |
 | Audit trail | Old browser-global fallback removed; UID-scoped cache and stale-fetch protection | A and B account switch with offline audit endpoint and corrupt local storage |
 
@@ -73,3 +73,7 @@ Capture the process exit code, test summary, precise SHA, log/report paths and a
 
 ## Release decision rule
 **NO-GO** if any data crosses accounts, any user can bypass MFA/roles, previously saved data is overwritten after a failed read, consent isn't enforced, the build/tests are not green, or there is no verified rollback. A large PR with source-only checks cannot be called launch-ready.
+
+## Special privacy migration note — legacy Calendar opt-in
+
+Older clients could create `allowCalendarSignals: true` automatically. That field alone cannot establish a real user choice. PR #155 therefore requires a **new explicit consent timestamp** before client sync, server ingestion or organisation Calendar coverage will accept this setting. Existing users who genuinely chose Calendar sharing must **opt in again** via the privacy screen. No old Calendar aggregates are automatically deleted in this source pass; retention/deletion policy and staging verification are required before live release. A customer switching Calendar on may need to refresh/reconnect before the next scheduled aggregation; verify that journey in staging.
