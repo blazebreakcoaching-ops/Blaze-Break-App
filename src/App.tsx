@@ -2423,48 +2423,34 @@ export default function App() {
       <>
         <SituationalOnboarding
           onComplete={async (profile) => {
-            // First-time users already receive the dedicated welcome.
-            // Do not queue an extra "What's New" announcement for them.
+            // Confirm the account and save FIRST. Never show completion or
+            // turn on personal memory if Firestore cannot persist the profile.
+            const uid = user?.uid;
+            if (!uid || auth.currentUser?.uid !== uid) throw new Error('Authentication is not ready');
+            const db = await getDb();
+            const { doc, setDoc } = await import("firebase/firestore");
+            await setDoc(doc(db, "users", uid, "user_stats", "core"), {
+              profile,
+              lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION,
+              updatedAt: new Date().toISOString(),
+            }, { merge: true });
+            if (auth.currentUser?.uid !== uid) throw new Error('Account changed while saving');
+
+            // Only a confirmed save may enter the customer dashboard.
             setStats((prev) => ({ ...prev, profile, lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION }));
-            writeAccountProfile(user?.uid, profile);
-            if (user) {
-              setNovaLearningAllowedForUid(user.uid, profile.letNovaLearn !== false);
-              initNovaBrain(user.uid);
-            }
+            writeAccountProfile(uid, profile);
+            setNovaLearningAllowedForUid(uid, profile.letNovaLearn !== false);
+            initNovaBrain(uid);
             setFlow("app");
             setActiveTab("home");
             setPostOnboardingProfile(profile);
-
-            // Saved immediately, not via the debounced stats-sync effect
-            // further up - that effect is keyed on `user`, so a sign-out
-            // in the next 800ms tears down its pending write before it
-            // ever reaches Firestore. profile.fullName is exactly the
-            // field the routing logic checks to decide whether to show
-            // onboarding again, so losing this write silently forced
-            // onboarding to repeat on the next sign-in.
-            if (user) {
-              try {
-                const db = await getDb();
-                const { doc, setDoc } = await import("firebase/firestore");
-                await setDoc(doc(db, "users", user.uid, "user_stats", "core"), {
-                  profile,
-                  lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION,
-                  updatedAt: new Date().toISOString(),
-                }, { merge: true });
-              } catch {
-                // Non-fatal - the debounced stats-sync effect still retries
-                // this shortly after, as long as the person stays signed in.
-              }
-            }
 
             // Creates the users/{uid}/nova_permissions/current doc Nova's
             // server-side context builder requires to have any context at
             // all - without this, Nova stays blind until someone separately
             // finds Settings > Nova Privacy Controls. Memory specifically
             // carries through whatever the user chose on the consent step.
-            if (user) {
-              initNovaPermissionsForNewUser(user.uid, profile.letNovaLearn !== false);
-            }
+            initNovaPermissionsForNewUser(uid, profile.letNovaLearn !== false);
 
             updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
               content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Work context: ${profile.pathway || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
@@ -2477,7 +2463,7 @@ export default function App() {
             // the "structured diffs, never raw content" rule every other
             // audit log entry in this app already follows.
             logAuditAction({
-              userId: profile.fullName || "anonymous",
+              userId: uid,
               action: "Completed onboarding",
               target: "onboarding_consent",
               status: "authorised",
