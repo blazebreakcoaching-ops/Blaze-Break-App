@@ -34,6 +34,17 @@ Full ordered scope: `docs/PR155_SUPERADMIN_BACKEND_RESTRUCTURE_PLAN_20261107.md`
 
 **Still P0:** atomic join-code seat checks, revocable invitations, cross-company initial-owner assignment, full removal/leave cleanup, live Firebase/Auth/Firestore role and two-company browser verification. **Still P1:** paginated directory beyond first 100 Firestore records, honest sign-in history governance, complete company executive workspace, other admin routes and operational observability. No automatic GitHub Actions. No merge, production release, or staging sign-off occurred.
 
+## 7 November — Organisation security batch 1 (source changes, not tested)
+
+Committed on PR #155 only:
+- `/api/org/join` now checks the organisation's current billing allowance plus active and pending places inside a Firestore transaction. A verified email invite converts the reserved place instead of spending two; unverified email cannot claim an invite seat.
+- `/api/org/:orgId/invite` now reserves places in a transaction before sending emails, preventing simultaneous invitation requests or joining from overspending seats. Duplicate resends reserve no additional place; delivery failure retains the pending row.
+- Leave and staff removal clear `teamManagers`, `memberTeams` and `hrViewerUids` as well as role documents, core membership arrays and org devices. The final active owner cannot leave.
+- Cancelling a pending invitation now logs the event and clearly reports that the shared joining code remains active. **This is not individual invitation revocation.** Expiring per-invite tokens are still P0.
+- New route tests cover full-cap join rejection, reserved email slots, unverified invitees, concurrent joins/invites, duplicate resends, HR/team cleanup and last-owner protection.
+
+**No test was run** and no Firebase transaction/emulator or real Brevo email evidence exists at this SHA. P0 owner-transfer/concurrent removal, individual invitation revocation, real Firestore semantics and regression sign-off are outstanding.
+
 ## Platform Command Centre — all 15 admin sections
 
 See `docs/PR155_PLATFORM_ADMIN_ALL_SECTIONS_REVIEW_20261107.md` for the all-tab source inventory and the **59 server-side /api/admin routes**, including additional admin-only Nova/Evolution, content, analytics, and policy endpoints outside the visible dashboard. The previously limited customer-focused release checklist is **not** admin-functionality sign-off. Source fixes to company-list, feedback and statistics failure states and NHEI reviewer denial handling were committed to the draft branch; no full admin suite has run. Require per-tab permission-denied, error-recovery, role, account-switch, audit and staging verification before admin release.
