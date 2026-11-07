@@ -1765,13 +1765,24 @@ export const AdminDashboard = () => {
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   <input
                     type="text"
-                    aria-label="Query accounts by Email or UID"
-                    placeholder="Query accounts by Email or UID..."
+                    aria-label="Find a person, email, company or account ID"
+                    placeholder="Search name, email, company or account ID..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
                   />
                 </div>
+                <select
+                  aria-label="Account category"
+                  value={accountCategory}
+                  onChange={(e) => setAccountCategory(e.target.value as typeof accountCategory)}
+                  className="px-3 py-2.5 bg-surface dark:bg-card border border-border rounded-xl text-sm text-text-main focus:outline-none focus:border-primary shrink-0"
+                >
+                  <option value="all">All account types</option>
+                  <option value="registered">Registered accounts</option>
+                  <option value="demo">Demo / anonymous sessions</option>
+                  <option value="orphan">Orphaned records</option>
+                </select>
                 <select
                   aria-label="Filter by email verification status"
                   value={verifiedFilter}
@@ -1807,9 +1818,14 @@ export const AdminDashboard = () => {
                 </select>
               </div>
               <div className="text-xs uppercase tracking-wider font-black text-text-muted shrink-0">
-                Displaying {filteredUsers.length} of {users.length}{usersCapped ? '+' : ''} registered
-                {usersCapped && <span className="block normal-case font-medium text-[10px] mt-0.5">Showing the first {users.length} - there are more.</span>}
+                Displaying {filteredUsers.length} of {users.length}{usersCapped ? '+' : ''} loaded accounts
+                {usersCapped && <span className="block normal-case font-medium text-[10px] mt-0.5">This is only the first {users.length} records. Search and filters do not cover accounts on later pages.</span>}
               </div>
+            </div>
+
+            <div className="text-xs text-text-muted rounded-xl bg-surface border border-border px-4 py-3 space-y-1">
+              <p><strong className="text-text-main">Account directory:</strong> {users.filter(u => !u.isAnonymous && u.accessStatus !== 'unknown').length} registered, {users.filter(u => u.isAnonymous).length} demo sessions and {users.filter(u => u.accessStatus === 'unknown').length} orphaned records in the loaded page.</p>
+              <p>Identifiable people appear first. Joined and last sign-in times come from Firebase Authentication, shown in your device's time zone. Last sign-in is not a full activity or session history.</p>
             </div>
 
             {/* Saved Views - a per-browser convenience for quickly re-
@@ -1865,14 +1881,13 @@ export const AdminDashboard = () => {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-white/5">
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">User ID</th>
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Email Address</th>
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Lifecycle</th>
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Role</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Person / Email</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Company</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Access / Role</th>
                         <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Plan</th>
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Date Joined</th>
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Active</th>
-                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Actions</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Joined</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted">Last Sign-in</th>
+                        <th scope="col" className="pb-3 text-xs font-black uppercase tracking-widest text-text-muted text-right">Manage</th>
                       </tr>
                     </thead>
                     <tbody className="text-sm">
@@ -1880,17 +1895,16 @@ export const AdminDashboard = () => {
                         const lifecycle = lifecycleOf(u);
                         return (
                         <tr key={u.uid} className="border-b border-white/[0.02] hover:bg-white/5 transition-colors">
-                          <td className="py-4 text-text-muted font-mono text-[10px] truncate max-w-[110px]" title={u.uid}>{u.uid}</td>
-                          <td className="py-4 font-bold text-text-main">
-                            {u.email || (
-                              <span className="font-normal italic text-text-muted">
-                                {u.isAnonymous ? 'No email (anonymous/demo account)' : 'No email on record'}
-                              </span>
-                            )}
-                            {!u.emailVerified && u.email && (
-                              <span className="block text-[10px] font-normal normal-case text-[#9a3412] dark:text-warning mt-0.5">Unverified</span>
-                            )}
+                          <td className="py-4 pr-3 max-w-[270px]">
+                            <div className="font-bold text-text-main truncate" title={u.displayName || u.email || u.uid}>
+                              {u.displayName || u.email || (u.isAnonymous ? 'Demo session' : 'Unlinked account')}
+                            </div>
+                            <div className="text-[11px] text-text-muted truncate" title={u.email || u.uid}>
+                              {u.displayName && u.email ? u.email : u.isAnonymous ? 'No email linked' : `Account ID: ${u.uid.slice(0, 12)}…`}
+                            </div>
+                            {!u.emailVerified && !!u.email && <span className="text-[10px] text-warning">Email unverified</span>}
                           </td>
+                          <td className="py-4 pr-3 text-text-muted text-xs">{u.organisationId || 'No company linked'}</td>
                           <td className="py-4">
                             <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
                               lifecycle.tone === 'active' ? 'bg-success/10 text-success dark:text-[#4ade80]'
@@ -1900,8 +1914,8 @@ export const AdminDashboard = () => {
                             }`}>
                               {lifecycle.label}
                             </span>
+                            <span className="block text-[10px] text-text-muted mt-1">{u.role || 'user'}</span>
                           </td>
-                          <td className="py-4 text-text-muted text-xs font-mono">{u.role || 'user'}</td>
                           <td className="py-4">
                             <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
                               u.plan === 'executive' ? 'bg-primary/10 text-primary'
@@ -1916,8 +1930,8 @@ export const AdminDashboard = () => {
                               <span className="block text-[10px] text-text-muted mt-1 normal-case">{u.entitlementStatus}</span>
                             )}
                           </td>
-                          <td className="py-4 text-text-muted text-xs">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Unknown'}</td>
-                          <td className="py-4 text-text-muted text-xs">{u.lastSignIn ? new Date(u.lastSignIn).toLocaleDateString() : 'Unknown'}</td>
+                          <td className="py-4 pr-3 text-text-muted text-xs whitespace-nowrap">{formatAdminDateTime(u.createdAt)}</td>
+                          <td className="py-4 pr-3 text-text-muted text-xs whitespace-nowrap">{formatAdminDateTime(u.lastSignIn)}</td>
                           <td className="py-4 text-right">
                             <button
                               onClick={() => openAccountDrawer(u)}
@@ -1931,8 +1945,8 @@ export const AdminDashboard = () => {
                       })}
                       {filteredUsers.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="py-12 text-center text-text-muted text-sm italic">
-                            No matching user accounts registered on this node.
+                          <td colSpan={7} className="py-12 text-center text-text-muted text-sm italic">
+                            No matching accounts in the loaded page. Clear filters or switch to All account types.
                           </td>
                         </tr>
                       )}
@@ -3585,6 +3599,12 @@ export const AdminDashboard = () => {
                     {selectedUser.email || (selectedUser.isAnonymous ? 'No email (anonymous/demo account)' : 'No email on record')}
                   </p>
                   <p className="text-[10px] font-mono text-text-muted truncate">{selectedUser.uid}</p>
+                  <div className="pt-2 text-xs text-text-muted space-y-1">
+                    <p><strong className="text-text-main">Name:</strong> {selectedUser.displayName || 'Not recorded'}</p>
+                    <p><strong className="text-text-main">Company:</strong> {selectedUser.organisationId || 'No company linked'}</p>
+                    <p><strong className="text-text-main">Joined:</strong> {formatAdminDateTime(selectedUser.createdAt)}</p>
+                    <p><strong className="text-text-main">Last sign-in:</strong> {formatAdminDateTime(selectedUser.lastSignIn)}</p>
+                  </div>
                 </div>
                 <button
                   onClick={closeAccountDrawer}
