@@ -39,6 +39,13 @@ describe('administrative governance follow-up source checks', () => {
     expect(audit).toContain('await doc.ref.delete()');
   });
 
+  it('attempts a small automatic repair after a later successful audit write', () => {
+    expect(audit).toContain('const repairPendingAdminAudit = async (db: any)');
+    expect(audit).toContain('.limit(3).get()');
+    expect(audit).toContain('await repairPendingAdminAudit(db)');
+    expect(audit).toContain('if (!(await original.get()).exists) await original.set(entry)');
+  });
+
   it('restricts repair to platform owner and bounds the batch', () => {
     expect(audit).toContain('requirePlatformOwner(req)');
     expect(audit).toContain('.limit(25).get()');
