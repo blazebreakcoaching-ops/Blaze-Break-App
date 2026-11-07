@@ -69,6 +69,7 @@ const NovaChat = lazy(() => import("./components/NovaChat.tsx").then(m => ({ def
 const NovaAgenticJourney = lazy(() => import("./components/NovaAgenticJourney.tsx").then(m => ({ default: m.NovaAgenticJourney })));
 const Walkthrough = lazy(() => import("./components/Walkthrough.tsx").then(m => ({ default: m.Walkthrough })));
 const NovaGuide = lazy(() => import("./components/NovaGuide.tsx").then(m => ({ default: m.NovaGuide })));
+const NovaCoachMarks = lazy(() => import("./components/NovaCoachMarks.tsx").then(m => ({ default: m.NovaCoachMarks })));
 import { CrisisSupportModal, CrisisSupportButton } from "./components/CrisisSupport.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 const CommandPalette = lazy(() => import("./components/CommandPalette.tsx").then(m => ({ default: m.CommandPalette })));
@@ -124,7 +125,7 @@ import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCir
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
 import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigation";
-import { novaGuideInviteKey } from "./lib/nova-guide";
+import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
 import { useNovaAgenticJourneyEnabled } from "./lib/useNovaAgenticJourneyEnabled";
 import { ReturnToNovaLink } from "./components/ReturnToNovaLink";
 const IntegrationsDashboard = lazy(() => import("./components/IntegrationsDashboard.tsx").then(m => ({ default: m.IntegrationsDashboard })));
@@ -1271,6 +1272,21 @@ export default function App() {
     setShowNovaGuide(true);
     dismissNovaGuideInvite();
   };
+
+  const [coachMarkPage, setCoachMarkPage] = useState<NovaGuideTab | null>(null);
+  const launchNovaCoachMarks = (page: NovaGuideTab) => {
+    setShowNovaGuide(false);
+    safeSetActiveTab(page);
+    setCoachMarkPage(page);
+    dismissNovaGuideInvite();
+  };
+  // Coach marks are contextual and must never follow a different account
+  // or stay above a page after the customer navigates elsewhere.
+  useEffect(() => { setCoachMarkPage(null); }, [user?.uid]);
+  useEffect(() => {
+    if (coachMarkPage && activeTab !== coachMarkPage) setCoachMarkPage(null);
+  }, [activeTab, coachMarkPage]);
+
   const [showCrisisSupport, setShowCrisisSupport] = useState(false);
   // One-shot flag consumed by LandingPage's own initialAuthModalOpen
   // effect - set true right before routing a demo session back to
@@ -2578,8 +2594,8 @@ export default function App() {
                 <h2 id="today-question" className="font-display text-3xl sm:text-4xl text-text-main">What would help right now?</h2>
                 <p className="text-text-muted mt-3 max-w-xl">Start with one small step. The rest can wait.</p>
                 <div className="flex flex-col sm:flex-row gap-3 mt-6 mb-10">
-                  <button className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
-                  <button className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
+                  <button data-nova-guide-target="today-reset" className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
+                  <button data-nova-guide-target="today-nova" className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
                 </div>
                 {showNovaGuideInvite && user?.uid && isCustomerRole(effectiveRole) && !postOnboardingProfile && (
                   <div className="mb-8 max-w-xl rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 flex items-start gap-4">
@@ -2601,7 +2617,7 @@ export default function App() {
                   </div>
                 )}
                 <details>
-                  <summary className="cursor-pointer py-4 text-text-muted">My check-ins and recovery progress</summary>
+                  <summary data-nova-guide-target="today-progress" className="cursor-pointer py-4 text-text-muted">My check-ins and recovery progress</summary>
                   <HomeSection
                     onChatRequest={(voice) => {
                       setActiveTab("nova");
@@ -2635,41 +2651,46 @@ export default function App() {
             )}
 
             {activeTab === "plan" && (
-              <RecoveryPlan
-                stats={stats}
-                fingerprint={fingerprint}
-                onAwardPoints={awardPoints}
-                onNavigateTab={(tab) => safeSetActiveTab(tab)}
-                onRehearsalComplete={incrementRehearsal}
-              />
+              <div data-nova-guide-target="plan-content" tabIndex={-1}>
+                <RecoveryPlan
+                  stats={stats}
+                  fingerprint={fingerprint}
+                  onAwardPoints={awardPoints}
+                  onNavigateTab={(tab) => safeSetActiveTab(tab)}
+                  onRehearsalComplete={incrementRehearsal}
+                />
+              </div>
             )}
 
             {activeTab === "recovery_intelligence" && (
               <RecoveryIntelligenceHub />
             )}
 
-            {activeTab === "diagnose" &&
-              (!fingerprint ? (
-                <DiagnoseView
-                  onComplete={(f) => {
-                    setFingerprint(f);
-                    awardPoints(250, "Burnout Check-in Completed");
-                    unlockBadge("first_step");
-                  }}
-                />
-              ) : (
-                <div className="space-y-32">
-                  <ResultView
-                    result={fingerprint}
-                    onRestart={() => setFingerprint(null)}
-                    onPlanStart={() => setActiveTab("recover")}
-                    onAwardPoints={awardPoints}
+            {activeTab === "diagnose" && (
+              <div data-nova-guide-target="checkin-content" tabIndex={-1}>
+                {!fingerprint ? (
+                  <DiagnoseView
+                    onComplete={(f) => {
+                      setFingerprint(f);
+                      awardPoints(250, "Burnout Check-in Completed");
+                      unlockBadge("first_step");
+                    }}
                   />
-                  <FutureSelfSimulator
-                    fingerprint={fingerprint}
-                  />
-                </div>
-              ))}
+                ) : (
+                  <div className="space-y-32">
+                    <ResultView
+                      result={fingerprint}
+                      onRestart={() => setFingerprint(null)}
+                      onPlanStart={() => setActiveTab("recover")}
+                      onAwardPoints={awardPoints}
+                    />
+                    <FutureSelfSimulator
+                      fingerprint={fingerprint}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             {activeTab === "recover" && (
               <div className="space-y-32">
@@ -2880,6 +2901,7 @@ export default function App() {
                 onStyleChange: handleNovaStyleChange,
                 autoOpenVoice: novaAutoVoiceRequested,
                 onVoiceAutoOpened: () => setNovaAutoVoiceRequested(false),
+                onShowMeHow: () => launchNovaCoachMarks('nova'),
               };
               return (
                 <div className="ember-nova-tab space-y-32">
@@ -3335,6 +3357,16 @@ export default function App() {
                 safeSetActiveTab(tab);
                 setShowNovaGuide(false);
               }}
+              onShowOnPage={launchNovaCoachMarks}
+            />
+          </Suspense>
+        )}
+        {coachMarkPage && isCustomerRole(effectiveRole) && (
+          <Suspense fallback={null}>
+            <NovaCoachMarks
+              key={coachMarkPage}
+              page={coachMarkPage}
+              onClose={() => setCoachMarkPage(null)}
             />
           </Suspense>
         )}
