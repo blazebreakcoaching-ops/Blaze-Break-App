@@ -2651,46 +2651,41 @@ export default function App() {
             )}
 
             {activeTab === "plan" && (
-              <div data-nova-guide-target="plan-content" tabIndex={-1}>
-                <RecoveryPlan
-                  stats={stats}
-                  fingerprint={fingerprint}
-                  onAwardPoints={awardPoints}
-                  onNavigateTab={(tab) => safeSetActiveTab(tab)}
-                  onRehearsalComplete={incrementRehearsal}
-                />
-              </div>
+              <RecoveryPlan
+                stats={stats}
+                fingerprint={fingerprint}
+                onAwardPoints={awardPoints}
+                onNavigateTab={(tab) => safeSetActiveTab(tab)}
+                onRehearsalComplete={incrementRehearsal}
+              />
             )}
 
             {activeTab === "recovery_intelligence" && (
               <RecoveryIntelligenceHub />
             )}
 
-            {activeTab === "diagnose" && (
-              <div data-nova-guide-target="checkin-content" tabIndex={-1}>
-                {!fingerprint ? (
-                  <DiagnoseView
-                    onComplete={(f) => {
-                      setFingerprint(f);
-                      awardPoints(250, "Burnout Check-in Completed");
-                      unlockBadge("first_step");
-                    }}
+            {activeTab === "diagnose" &&
+              (!fingerprint ? (
+                <DiagnoseView
+                  onComplete={(f) => {
+                    setFingerprint(f);
+                    awardPoints(250, "Burnout Check-in Completed");
+                    unlockBadge("first_step");
+                  }}
+                />
+              ) : (
+                <div className="space-y-32">
+                  <ResultView
+                    result={fingerprint}
+                    onRestart={() => setFingerprint(null)}
+                    onPlanStart={() => setActiveTab("recover")}
+                    onAwardPoints={awardPoints}
                   />
-                ) : (
-                  <div className="space-y-32">
-                    <ResultView
-                      result={fingerprint}
-                      onRestart={() => setFingerprint(null)}
-                      onPlanStart={() => setActiveTab("recover")}
-                      onAwardPoints={awardPoints}
-                    />
-                    <FutureSelfSimulator
-                      fingerprint={fingerprint}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+                  <FutureSelfSimulator
+                    fingerprint={fingerprint}
+                  />
+                </div>
+              ))}
 
             {activeTab === "recover" && (
               <div className="space-y-32">
@@ -2901,7 +2896,7 @@ export default function App() {
                 onStyleChange: handleNovaStyleChange,
                 autoOpenVoice: novaAutoVoiceRequested,
                 onVoiceAutoOpened: () => setNovaAutoVoiceRequested(false),
-                onShowMeHow: () => launchNovaCoachMarks('nova'),
+                onShowMeHow: isCustomerRole(effectiveRole) ? () => launchNovaCoachMarks('nova') : undefined,
               };
               return (
                 <div className="ember-nova-tab space-y-32">
