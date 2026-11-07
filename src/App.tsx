@@ -1075,6 +1075,8 @@ const Header = ({
 
 export default function App() {
   const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
+  // Never show or save a previous Firebase account's data during a switch.
+  const [statsOwnerUid, setStatsOwnerUid] = useState<string | null>(null);
 
   // Bulletproof global super admin check, now delegating the owner-email
   // allowlist to admin-roles.ts's shared DEFAULT_OWNER_BOOTSTRAP_EMAILS
@@ -1657,13 +1659,20 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading) return;
+    let cancelled = false;
+    const requestUid = user?.uid ?? null;
+    statsLoadedRef.current = false;
+    fingerprintLoadedRef.current = false;
+    setStatsLoaded(false);
+    setStatsOwnerUid(null);
+    setPostOnboardingProfile(null);
 
     const email = user?.email || null;
     (window as any).__ACTIVE_USER_EMAIL__ = email;
 
     const loadStats = async () => {
-      const savedFingerprint = localStorage.getItem("blaze_fingerprint");
-
+      // The old browser-global fingerprint key has no provable owner.
+      // Importing it into a signed-in account risks leaking personal data.
       if (user) {
         initNovaBrain(user.uid); // Fire-and-forget - populates the cache; callers just see an empty brain until it resolves.
       } else {
@@ -1742,7 +1751,9 @@ export default function App() {
           // Leaves the honest defaults in place rather than pretending progress loaded.
         }
       }
+      if (!mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) return;
       setStats(loadedStats);
+      setStatsOwnerUid(requestUid);
       statsLoadedRef.current = true;
       setStatsLoaded(true);
 
@@ -1753,7 +1764,9 @@ export default function App() {
       // before this existed) and reconciles local state with it.
       if (user) {
         migrateSupportCircleIfNeeded(user.uid, loadedStats.supportCircle).then((supportCircle) => {
-          setStats((prev) => ({ ...prev, supportCircle }));
+          if (mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) {
+            setStats((prev) => ({ ...prev, supportCircle }));
+          }
         }).catch(() => {
           // Non-fatal - the legacy array already in loadedStats.supportCircle
           // stays in local state either way, so contacts still render.
@@ -1769,22 +1782,9 @@ export default function App() {
         ensureNovaPermissionsExist(user.uid, loadedStats.profile?.letNovaLearn !== false);
       }
 
-      // Firestore is the real source of truth now. localStorage is only
-      // consulted as a one-time migration path for anyone who took the
-      // assessment before this was persisted server-side - their result
-      // gets picked up here and will save to Firestore on the next
-      // natural save cycle below, rather than being silently lost.
-      if (loadedFingerprint) {
-        setFingerprint(loadedFingerprint);
-      } else if (savedFingerprint) {
-        try {
-          setFingerprint(JSON.parse(savedFingerprint));
-        } catch (e) {
-          setFingerprint(null);
-        }
-      } else {
-        setFingerprint(null);
-      }
+      // Only restore the current account's Firestore-backed assessment.
+      // Ambiguous legacy unscoped browser data is intentionally not imported.
+      setFingerprint(loadedFingerprint);
       fingerprintLoadedRef.current = true;
 
       if (user) {
@@ -1835,6 +1835,7 @@ export default function App() {
     };
 
     loadStats();
+    return () => { cancelled = true; };
   }, [user, authLoading]);
 
   const checkBadges = (currentStats: UserStats): string[] => {
@@ -1909,7 +1910,7 @@ export default function App() {
   }, [stats.unlockedBadges, authLoading, user]);
 
   useEffect(() => {
-    if (authLoading || !user || !statsLoadedRef.current) return;
+    if (authLoading || !user || !statsLoadedRef.current || statsOwnerUid !== user.uid) return;
     const t = setTimeout(async () => {
       try {
         const db = await getDb();
@@ -1930,10 +1931,10 @@ export default function App() {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [stats, authLoading, user]);
+  }, [stats, authLoading, user, statsOwnerUid]);
 
   useEffect(() => {
-    if (authLoading || !user || !fingerprintLoadedRef.current) return;
+    if (authLoading || !user || !fingerprintLoadedRef.current || statsOwnerUid !== user.uid) return;
     const t = setTimeout(async () => {
       try {
         const db = await getDb();
@@ -1947,7 +1948,7 @@ export default function App() {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [fingerprint, authLoading, user]);
+  }, [fingerprint, authLoading, user, statsOwnerUid]);
 
   const handleCheckInComplete = (data: {
     energyLevel: number;
