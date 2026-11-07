@@ -15101,13 +15101,21 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
     await requireOrgAdmin(req, orgId);
     const db = getDb();
     const newCode = createOrgJoinCode();
-    await db.collection("organisations").doc(orgId).update({
-      joinCode: newCode,
-      updatedAt: FieldValue.serverTimestamp(),
+    // Atomic rotation and audit: a secret joining code must never change
+    // without the corresponding company security event being recorded.
+    await db.runTransaction(async (tx) => {
+      const orgRef = db.collection("organisations").doc(orgId);
+      const current = await tx.get(orgRef);
+      if (!current.exists) throw new Error("Organisation not found.");
+      tx.update(orgRef, { joinCode: newCode, updatedAt: FieldValue.serverTimestamp() });
+      tx.set(orgRef.collection("audit_logs").doc(), {
+        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        orgId, action: 'rotate_join_code', targetResourceType: 'organisation', targetResourceId: orgId,
+        before: { sharedCodeValid: true }, after: { oldSharedCodeInvalidated: true },
+        createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+        userAgent: req.headers?.['user-agent'] || '',
+      });
     });
-    // Audit the rotation without ever recording old or new secret codes.
-    await logOrgAuditAction(req, orgId, "rotate_join_code", "organisation", orgId,
-      { sharedCodeValid: true }, { oldSharedCodeInvalidated: true });
     res.json({ success: true, joinCode: newCode });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -15330,13 +15338,23 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
       return res.status(400).json({ error: 'Invalid invitation email.' });
     }
     const inviteRef = db.collection("organisations").doc(orgId).collection("pending_invites").doc(normalizedEmail);
-    const existing = await inviteRef.get();
-    if (!existing.exists) return res.status(404).json({ error: "That invitation is no longer pending." });
-    await inviteRef.delete();
-    await logOrgAuditAction(req, orgId, "cancel_invitation", "invitation", normalizedEmail,
-      { pending: true }, { pending: false, sharedJoinCodeStillValid: true });
-    // Email invites currently send the shared join code. Cancelling a
-    // pending row never revokes a code someone already received.
+    const outcome = await db.runTransaction(async (tx) => {
+      const existing = await tx.get(inviteRef);
+      if (!existing.exists) return { status: 404 };
+      tx.delete(inviteRef);
+      tx.set(db.collection("organisations").doc(orgId).collection("audit_logs").doc(), {
+        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        orgId, action: 'cancel_invitation', targetResourceType: 'invitation',
+        targetResourceId: normalizedEmail, before: { pending: true },
+        after: { pending: false, sharedJoinCodeStillValid: true },
+        createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+        userAgent: req.headers?.['user-agent'] || '',
+      });
+      return { status: 200 };
+    });
+    if (outcome.status === 404) return res.status(404).json({ error: "That invitation is no longer pending." });
+    // This revokes only the addressed person's expiring token.
+    // The separate manually issued company joining code remains valid.
     res.json({ success: true, invitationTokenRevoked: true, sharedJoinCodeStillValid: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
