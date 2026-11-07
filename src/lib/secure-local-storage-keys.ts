@@ -16,6 +16,7 @@ const ACCOUNT_PREFIXES = [
   'blaze_break_last_pulse_alert_v2:',
   'blaze_break_last_checkin_v2:',
   'blaze_nudge_history_v2:',
+  'blaze_audit_logs_v2:',
   'blaze-nova-guide-invite-v1:',
   'blaze-nova-guide-progress-v1:',
 ] as const;
