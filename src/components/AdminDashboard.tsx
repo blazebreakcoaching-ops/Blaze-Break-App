@@ -2416,9 +2416,10 @@ export const AdminDashboard = () => {
                   />
                   <p className="text-[11px] text-text-muted mt-1">Aggregate dashboards stay locked below this many opted-in members.</p>
                 </div>
-                {!editingOrgId && (
+                {(!editingOrgId || orgs.some(o => o.id === editingOrgId && o.memberCount === 0 && o.adminCount === 0)) && (
                   <div>
-                    <label htmlFor="admin-org-email" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">Initial Admin Email (optional)</label>
+                    <label htmlFor="admin-org-email" className="text-xs font-bold uppercase tracking-widest text-text-muted block mb-1.5">First Company Owner Email (existing Blaze Break account)</label>
+                    <p className="text-[11px] text-text-muted mb-2">Optional for a draft company, but a verified owner account is needed before staff can use the company dashboard. For existing companies, ownership transfers require separate support.</p>
                     <input
                       id="admin-org-email"
                       type="email"
@@ -2470,6 +2471,11 @@ export const AdminDashboard = () => {
                         <div>
                           <h5 className="font-bold text-text-main">{org.name}</h5>
                           <p className="text-xs text-text-muted font-mono">{org.id}</p>
+                          {org.adminCount === 0 && (
+                            <p role="status" className="text-xs font-bold text-warning mt-1">
+                              {org.memberCount === 0 ? 'Unclaimed company — assign its first owner using Edit.' : 'Owner missing — contact support to review permissions.'}
+                            </p>
+                          )}
                           {org.createdAt && <p className="text-[10px] text-text-muted mt-0.5">Created {new Date(org.createdAt).toLocaleDateString()}</p>}
                         </div>
                         <div className="flex items-center gap-4 text-xs">
