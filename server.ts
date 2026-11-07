@@ -10681,7 +10681,7 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       // Clean up expired reservations while the same transaction updates
       // the company seat ledger. Expired personal codes remain invalid.
       pending.docs.filter((d: any) => !isActivePendingOrgInvite(d.data()))
-        .forEach((d: any) => tx.delete(d.ref));
+        .slice(0, 25).forEach((d: any) => tx.delete(d.ref));
       tx.set(userRef, {
         organisationId: orgRef.id,
         updatedAt: FieldValue.serverTimestamp(),
@@ -14547,7 +14547,7 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
       tx.update(orgRef, { updatedAt: FieldValue.serverTimestamp() });
       // Do not queue a delete and set for the same document on a resend.
       pending.docs.filter((d: any) => !isActivePendingOrgInvite(d.data()) &&
-        !cleaned.includes(d.id)).forEach((d: any) => tx.delete(d.ref));
+        !cleaned.includes(d.id)).slice(0, 25).forEach((d: any) => tx.delete(d.ref));
       cleaned.forEach(email => {
         const credentials = tokensByEmail.get(email)!;
         tx.set(pendingRef.doc(email), {
