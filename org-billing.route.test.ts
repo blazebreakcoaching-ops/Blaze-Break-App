@@ -216,6 +216,33 @@ describe('atomic company joins and invitation reservations', () => {
     expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toHaveLength(2);
   });
 
+  it('an expired personal invitation no longer consumes an available joining seat', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedDoc(`organisations/${ORG}/pending_invites/expired@test.dev`, {
+      email: 'expired@test.dev', tokenHash: 'a'.repeat(64),
+      tokenExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    seedDoc('users/new_joiner', {});
+    const res = await request(app).post('/api/org/join').set(auth('new_joiner')).send({ joinCode: 'ABC123' });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/new_joiner`)?.role).toBe('member');
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/expired@test.dev`)).toBeUndefined();
+  });
+
+  it('an expired invitation does not block another new invite when one seat remains', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/pending_invites/expired@test.dev`, {
+      email: 'expired@test.dev', tokenHash: 'b'.repeat(64),
+      tokenExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const res = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1'))
+      .send({ emails: ['fresh@test.dev'] });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/fresh@test.dev`)).toBeDefined();
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/expired@test.dev`)).toBeUndefined();
+  });
+
   it('simultaneous invitations reserve seats only once and reject the over-capacity request', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
     seedMember(ORG, 'owner_1', 'owner');
