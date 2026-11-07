@@ -25,6 +25,7 @@ This document is a **working technical register**, not a release certificate. Th
 | Notifications | Per-account preferences, visible error/retry, <=20 categories, explicit disabled default | Firestore emulator save failures; quiet hours; old response arriving after account switch |
 | Calendar and hidden background use | Calendar consent fails closed; stale account sync ignored; Slack tick suppressed for inactive/hidden accounts | Verify backend consent path + OAuth scope, with calendar disabled and enabled |
 | Feedback | Accepted report remains successful if secondary audit fails; testimonial publication consent explicit | Rejected server POST, accepted POST + failed audit, no sensitive data in reports |
+| Audit trail | Old browser-global fallback removed; UID-scoped cache and stale-fetch protection | A and B account switch with offline audit endpoint and corrupt local storage |
 
 ## P1 — simple customer experience (source changes/tests drafted; browser evidence pending)
 | Area | Acceptance criteria |
