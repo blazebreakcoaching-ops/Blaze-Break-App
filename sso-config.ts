@@ -206,7 +206,14 @@ export const decryptSecret = (encrypted: EncryptedSecret, rawKey: string): strin
 // that decision is made: enforcement can only ever be enabled while a
 // platform-wide feature flag is explicitly on. Disabling enforcement is
 // never gated - turning off something risky must always be possible.
-export const canEnableSsoEnforcement = (featureFlagEnabled: boolean): boolean => featureFlagEnabled === true;
+// A feature flag is not an authentication verifier. Until a real SAML/OIDC
+// assertion-validation path exists, no administrator can turn enforcement
+// on and lock every employee out. The second gate must only be passed by
+// a future verified sign-in integration, never by user-supplied data.
+export const canEnableSsoEnforcement = (
+  featureFlagEnabled: boolean,
+  assertionValidationReady = false,
+): boolean => featureFlagEnabled === true && assertionValidationReady === true;
 
 // ---- Redaction ----
 
