@@ -14539,8 +14539,16 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
     const { orgId, email } = req.params;
     await requireOrgAdmin(req, orgId);
     const db = getDb();
-    await db.collection("organisations").doc(orgId).collection("pending_invites").doc(email).delete();
-    res.json({ success: true });
+    const normalizedEmail = email.trim().toLowerCase();
+    const inviteRef = db.collection("organisations").doc(orgId).collection("pending_invites").doc(normalizedEmail);
+    const existing = await inviteRef.get();
+    if (!existing.exists) return res.status(404).json({ error: "That invitation is no longer pending." });
+    await inviteRef.delete();
+    await logOrgAuditAction(req, orgId, "cancel_invitation", "invitation", normalizedEmail,
+      { pending: true }, { pending: false, sharedJoinCodeStillValid: true });
+    // Email invites currently send the shared join code. Cancelling a
+    // pending row never revokes a code someone already received.
+    res.json({ success: true, sharedJoinCodeStillValid: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
