@@ -1983,11 +1983,16 @@ export default function App() {
         newHistory.push({ date: todayStr, score });
         if (newHistory.length > 30) newHistory.shift();
       }
-      localStorage.setItem("blaze_break_pulse_history", JSON.stringify(newHistory));
       return newHistory;
     });
 
-    localStorage.setItem("blaze_break_last_checkin", new Date().toDateString());
+    if (user?.uid) {
+      try {
+        localStorage.setItem(lastCheckInKey(user.uid), new Date().toDateString());
+      } catch {
+        // A blocked browser store must not undo the completed check-in.
+      }
+    }
 
     // Auto-unlock first_step if completing first check-in
     unlockBadge("first_step");
@@ -2076,7 +2081,6 @@ export default function App() {
           copy.shift();
         }
       }
-      localStorage.setItem("blaze_break_pulse_history", JSON.stringify(copy));
       return copy;
     });
   };
@@ -2455,6 +2459,19 @@ export default function App() {
     launcher: showLauncher,
   });
 
+  // React retains component state across Firebase sign-ins. Until the
+  // current UID's stats load, show no prior account's personal dashboard.
+  if (flow === "app" && (!user?.uid || statsOwnerUid !== user.uid)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-text-main" role="status" aria-live="polite">
+        <div className="flex items-center gap-3 p-6">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />
+          <span>Loading your account…</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -2670,7 +2687,7 @@ export default function App() {
                     energyLevel={isDemoSession ? DEMO_ENERGY_LEVEL : energyLevel}
                     burnoutRisk={isDemoSession ? DEMO_BURNOUT_RISK : burnoutRisk}
                     onOpenCheckIn={() => setShowCheckIn(true)}
-                    pulseHistory={isDemoSession ? DEMO_PULSE_HISTORY : pulseHistory}
+                    pulseHistory={isDemoSession ? DEMO_PULSE_HISTORY : pulseOwnerUid === user?.uid ? pulseHistory : []}
                     onAwardPoints={awardPoints}
                     onIncrementStreak={() => setStats((prev) => ({ ...prev, streak: (prev.streak || 0) + 1 }))}
                     onUpdateOperationalMetrics={handleUpdateOperationalMetrics}
