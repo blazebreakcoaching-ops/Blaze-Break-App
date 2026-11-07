@@ -513,7 +513,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
     try {
       await secureApiFetch(`/api/org/${orgStatus.organisationId}/invites/${encodeURIComponent(inviteId)}/cancel`, { method: 'POST' });
       await fetchInvites(orgStatus.organisationId);
-      setInviteResult('Pending invite removed. The shared joining code is still valid. Regenerate the code if it may have been shared with somebody who should no longer join.');
+      setInviteResult('Email invitation cancelled: its personal invitation code no longer works. The separate shared company code still works until regenerated.');
     } catch (e) {
       setInviteResult("Couldn't remove that invitation. Its staff seat may still be reserved.");
     }
@@ -1171,7 +1171,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                     </label>
                   </div>
                   <p className="text-xs text-text-muted">One email per line, or separated by commas. Up to 50 at once. Pending invitations reserve staff seats, even when delivery fails.</p>
-                  <p className="text-xs text-text-muted">Email invitations currently contain the shared company code. Removing a pending invite frees the reserved seat but does not invalidate a code already sent. Use Regenerate Code above to revoke the old shared code for everyone.</p>
+                  <p className="text-xs text-text-muted">Each new email invitation has a separate seven-day code for that verified email. Resending or cancelling invalidates the previous personal code. The manual company code above remains separate; regenerate it if you need to revoke older shared codes.</p>
                   {csvError && (
                     <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-lg">{csvError}</div>
                   )}
