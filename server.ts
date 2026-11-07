@@ -10578,7 +10578,7 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
     const normalizedCode = joinCode.trim().toUpperCase();
     // Each new email invitation has its own unpredictable token; the
     // existing shared joining code remains a separate manual fallback.
-    const inviteMatch = /^BBI\.([A-Z0-9-]{1,100})\.([A-F0-9]{32})$/.exec(normalizedCode);
+    const inviteMatch = /^BBI\.([A-Z0-9_-]{1,100})\.([A-F0-9]{32})$/.exec(normalizedCode);
     const isInviteCode = normalizedCode.startsWith('BBI.');
     if (isInviteCode && !inviteMatch) {
       return res.status(400).json({ error: "That invitation code is invalid." });
@@ -10587,7 +10587,9 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
     let orgRef;
     if (inviteMatch) {
       const candidateId = inviteMatch[1].toLowerCase();
-      if (!OrgIdSchema.safeParse(candidateId).success) {
+      // Older organisation ids can contain underscores, even though new
+      // company ids use the stricter provisioning schema.
+      if (!/^[a-z0-9_-]{1,100}$/.test(candidateId)) {
         return res.status(400).json({ error: "That invitation code is invalid." });
       }
       orgRef = db.collection("organisations").doc(candidateId);
