@@ -6618,12 +6618,20 @@ app.get("/api/signals/calendar", verifyAppCheck, authenticateFirebaseUser, async
   try {
     const uid = requireAuth(req).uid;
     const db = getDb();
-    const consent = await db.collection("users").doc(uid).collection("nova_permissions").doc("current").get();
-    if (!consent.exists || !hasExplicitCalendarSignalConsent(consent.data())) {
-      return res.json({ state: null });
-    }
-    const doc = await db.collection("users").doc(uid).collection("live_signals").doc("calendar").get();
-    res.json({ state: doc.exists ? doc.data() : null });
+    const accountRef = db.collection("users").doc(uid);
+    const consentRef = accountRef.collection("nova_permissions").doc("current");
+    const signalRef = accountRef.collection("live_signals").doc("calendar");
+    // Read permission and stored aggregate at one consistent Firestore
+    // transaction snapshot. Consent revoked during a pending read forces a
+    // retry instead of returning stale calendar data from a separate fetch.
+    const state = await db.runTransaction(async (tx) => {
+      const consent = await tx.get(consentRef);
+      if (!consent.exists || !hasExplicitCalendarSignalConsent(consent.data())) return null;
+      const signal = await tx.get(signalRef);
+      return signal.exists ? signal.data() : null;
+    });
+    if (state === null) return res.json({ state: null });
+    res.json({ state });
   } catch (err: any) {
     logger.error("[Signals] calendar read error:", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
