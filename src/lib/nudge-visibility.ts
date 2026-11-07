@@ -36,3 +36,19 @@ export function parseNudgeHistory(raw: string | null): { shownAt: string }[] {
     return [];
   }
 }
+
+/** Firestore's existing schema distinguishes a chosen action from a skip.
+ * This is a CTA interaction, not proof a recovery task was completed. */
+export function nudgeInteractionUpdate(
+  interaction: 'not_now' | 'action_taken',
+  timestamp: string,
+): { status: 'acted_on'; actionTakenAt: string; updatedAt: string } |
+   { status: 'dismissed'; dismissedAt: string; reasonCategory: string; updatedAt: string } {
+  if (interaction === 'action_taken') {
+    return { status: 'acted_on', actionTakenAt: timestamp, updatedAt: timestamp };
+  }
+  return {
+    status: 'dismissed', dismissedAt: timestamp,
+    reasonCategory: 'not_now', updatedAt: timestamp,
+  };
+}
