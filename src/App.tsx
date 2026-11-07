@@ -1078,6 +1078,8 @@ export default function App() {
   const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
   // Never show or save a previous Firebase account's data during a switch.
   const [statsOwnerUid, setStatsOwnerUid] = useState<string | null>(null);
+  const [statsLoadError, setStatsLoadError] = useState(false);
+  const [statsLoadRetry, setStatsLoadRetry] = useState(0);
 
   // Bulletproof global super admin check, now delegating the owner-email
   // allowlist to admin-roles.ts's shared DEFAULT_OWNER_BOOTSTRAP_EMAILS
@@ -1666,6 +1668,7 @@ export default function App() {
     fingerprintLoadedRef.current = false;
     setStatsLoaded(false);
     setStatsOwnerUid(null);
+    setStatsLoadError(false);
     setPostOnboardingProfile(null);
 
     const email = user?.email || null;
@@ -1752,8 +1755,13 @@ export default function App() {
               loadedFingerprint = data.fingerprint as BurnoutFingerprint;
             }
           }
-        } catch (e) {
-          // Leaves the honest defaults in place rather than pretending progress loaded.
+        } catch {
+          // An unknown Firestore result is NOT a new/empty account. Never
+          // overwrite previously saved data with fallback defaults.
+          if (mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) {
+            setStatsLoadError(true);
+          }
+          return;
         }
       }
       if (!mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) return;
@@ -1770,6 +1778,7 @@ export default function App() {
         setNovaLearningAllowedForUid(user.uid, persistedProfileVerified && loadedStats.profile?.letNovaLearn !== false);
       }
       setStats(loadedStats);
+      setStatsLoadError(false);
       setStatsOwnerUid(requestUid);
       statsLoadedRef.current = true;
       setStatsLoaded(true);
@@ -1853,7 +1862,7 @@ export default function App() {
 
     loadStats();
     return () => { cancelled = true; };
-  }, [user, authLoading]);
+  }, [user, authLoading, statsLoadRetry]);
 
   const checkBadges = (currentStats: UserStats): string[] => {
     const newBadges = [...currentStats.unlockedBadges];
@@ -2387,6 +2396,23 @@ export default function App() {
         </button>
         <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       </>
+    );
+  }
+
+  // A failed read must never masquerade as a brand-new profile. Keep all
+  // data-writing surfaces closed until the right account loads successfully.
+  if (user?.uid && statsLoadError && (flow === "onboarding" || flow === "app" || (!user.isAnonymous && flow === "landing"))) {
+    return (
+      <main className="min-h-screen bg-background text-text-main flex items-center justify-center p-6">
+        <section role="alert" aria-labelledby="account-load-error-heading" className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-6">
+          <h1 id="account-load-error-heading" className="text-xl font-bold">We couldn't load your account</h1>
+          <p className="text-sm text-text-muted">Your saved information has not been changed. Check your connection and try again.</p>
+          <button type="button" className="btn-primary rounded-xl px-5 py-3" onClick={() => setStatsLoadRetry(n => n + 1)}>
+            Try again
+          </button>
+          <p className="text-xs text-text-muted">If this continues, contact support. Please do not create another account.</p>
+        </section>
+      </main>
     );
   }
 
