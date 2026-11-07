@@ -3458,7 +3458,7 @@ export default function App() {
                     {postOnboardingProfile.fullName ? `Welcome, ${postOnboardingProfile.fullName.split(" ")[0]}.` : "Welcome."}
                   </h2>
                   <p className="text-sm text-text-muted leading-relaxed">
-                    You'll earn points and unlock badges as you go - check your progress anytime from the home screen. Not sure where to start? Just ask Nova; it can point you to the right tool.
+                    You're ready to begin. Pick one small step, or let Nova show you the essentials. There's no need to learn everything today.
                   </p>
                 </div>
                 {rec && (
@@ -3470,10 +3470,17 @@ export default function App() {
                   </div>
                 )}
                 <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { dismiss(); launchNovaGuide('welcome'); }}
+                    className="w-full py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:opacity-90 transition-opacity focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    Show me around
+                  </button>
                   {rec && (
                     <button
                       onClick={() => { setActiveTab(rec.tab); dismiss(); }}
-                      className="w-full py-3 bg-primary text-primary-foreground font-bold text-sm rounded-xl hover:opacity-90 transition-opacity"
+                      className="w-full py-3 border border-border text-text-main font-bold text-sm rounded-xl hover:bg-surface transition-colors focus-visible:outline-2 focus-visible:outline-primary"
                     >
                       Take me there
                     </button>
