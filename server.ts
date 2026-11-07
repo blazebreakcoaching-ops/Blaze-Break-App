@@ -10674,6 +10674,8 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
         [`teamManagers.${user.uid}`]: FieldValue.delete(),
       });
       tx.delete(memberRef);
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "leave_organisation", user.uid,
+        { membership: 'active' }, { accessRemoved: true });
       return { status: 200 };
     });
     if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
@@ -10683,7 +10685,6 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
     const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
       .where("ownerUid", "==", user.uid).get();
     await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
-    await logOrgAuditAction(req, orgId, "leave_organisation", "member", user.uid, null, { accessRemoved: true });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Operation Rejected")) {
@@ -12107,6 +12108,8 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
         [`teamManagers.${memberUid}`]: FieldValue.delete(),
       });
       tx.delete(memberRef);
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "remove_member", memberUid,
+        { membership: 'active' }, { accessRemoved: true });
       return { status: 200 };
     });
     if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
@@ -12116,7 +12119,6 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
     const devicesSnap = await db.collection("organisations").doc(orgId).collection("devices")
       .where("ownerUid", "==", memberUid).get();
     await Promise.all(devicesSnap.docs.map((d: any) => d.ref.delete()));
-    await logOrgAuditAction(req, orgId, "remove_member", "member", memberUid);
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13642,6 +13644,13 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
         throw new Error("Forbidden: Membership no longer active.");
       }
       const beforeRole = memberSnap.exists ? memberSnap.data()?.role : null;
+      // A suspended or malformed membership must not be modified through the
+      // active-role endpoint. Reactivation is an explicit, separate operation.
+      if (memberSnap.exists &&
+          ((memberSnap.data()?.status !== undefined && memberSnap.data()?.status !== 'active') ||
+           !isOrgRole(beforeRole))) {
+        throw new Error("Operation Rejected: Membership is not active or has an invalid role.");
+      }
       // Protected roles cannot be REVOKED by a lesser administrator,
       // even when that administrator is allowed to assign the destination
       // role. Check the real existing role, not just the requested one.
@@ -13666,7 +13675,7 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
     } else if (err.message?.includes("Rejected")) {
-      res.status(400).json({ error: err.message });
+      res.status(409).json({ error: err.message });
     } else if (err.message?.includes("not found")) {
       res.status(404).json({ error: err.message });
     } else {
@@ -13735,14 +13744,23 @@ app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authen
     if (actorRole !== 'owner' && (existing.data()?.role === 'owner' || existing.data()?.role === 'security_admin')) {
       return res.status(403).json({ error: 'Only a company owner can reactivate a protected administrator.' });
     }
-    const profile = await db.collection("users").doc(memberUid).get();
-    if (profile.exists && profile.data()?.organisationId && profile.data()?.organisationId !== orgId) {
-      return res.status(409).json({ error: 'This account belongs to another organisation.' });
-    }
+    const profileRef = db.collection("users").doc(memberUid);
+    const orgRef = db.collection("organisations").doc(orgId);
     await db.runTransaction(async (tx) => {
-      const current = await tx.get(memberRef);
+      const [orgSnap, current, profile] = await Promise.all([
+        tx.get(orgRef), tx.get(memberRef), tx.get(profileRef),
+      ]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
+        throw new Error("Operation Rejected: Employee is no longer on this company roster.");
+      }
       if (!current.exists || current.data()?.status !== 'suspended' || !isOrgRole(current.data()?.role)) {
         throw new Error("Operation Rejected: Membership status changed.");
+      }
+      if (profile.exists && profile.data()?.organisationId && profile.data()?.organisationId !== orgId) {
+        throw new Error("Operation Rejected: This account belongs to another organisation.");
+      }
+      if (actorRole !== 'owner' && (current.data()?.role === 'owner' || current.data()?.role === 'security_admin')) {
+        throw new Error("Forbidden: only an owner can reactivate a protected administrator.");
       }
       tx.update(memberRef, { status: 'active' });
       writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "reactivate_member", memberUid,
@@ -13752,6 +13770,8 @@ app.post("/api/org/:orgId/members/:memberUid/reactivate", verifyAppCheck, authen
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("Operation Rejected")) {
+      res.status(409).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
