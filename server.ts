@@ -10607,7 +10607,11 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
       if (members.has(user.uid)) {
         return { status: 409, error: "This account already appears on the company roster. Contact its administrator to correct the membership." };
       }
-      const reservedInvite = verifiedEmail ? pending.docs.find((d: any) => d.id === email) : undefined;
+      const matchingInvite = email ? pending.docs.find((d: any) => d.id === email) : undefined;
+      if (matchingInvite && !verifiedEmail) {
+        return { status: 403, error: "Verify your email address before accepting your company's invitation." };
+      }
+      const reservedInvite = verifiedEmail ? matchingInvite : undefined;
       const seatAllowance = billingProvider.getSeatAllowance(getEffectiveBillingState(org.billing));
       const seatCheck = checkSeatLimit(members.size, pending.size, reservedInvite ? 0 : 1, seatAllowance);
       if (!seatCheck.allowed) {
