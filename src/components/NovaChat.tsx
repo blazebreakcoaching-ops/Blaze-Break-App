@@ -21,7 +21,7 @@ import { addNovaMemory } from "../lib/nova-brain";
 import { secureApiFetch } from "../lib/secure-api";
 import { auth } from '../lib/firebase';
 import { onAuthStateChanged } from "firebase/auth";
-import { novaStorageKey } from "../lib/nova-chat-storage";
+import { novaStorageKey, canPersistNovaChatState } from "../lib/nova-chat-storage";
 import { readAccountProfile, patchAccountProfile } from "../lib/account-profile-storage";
 import { db } from '../lib/firestore';
 import { doc, getDoc } from "firebase/firestore";
@@ -210,6 +210,7 @@ export const NovaChat = ({
     return [];
   };
   const [messages, setMessages] = useState<Message[]>(loadMessages);
+  const [messagesOwnerUid, setMessagesOwnerUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
   // Reads from the single shared source of truth (feature-flags.ts)
   // rather than a hand-duplicated default that had drifted out of sync
   // with it - this local default said enable_nova_voice: false, and
@@ -329,6 +330,7 @@ export const NovaChat = ({
     return saved !== null ? saved === "true" : true;
   };
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(loadIsVoiceEnabled);
+  const [voiceOwnerUid, setVoiceOwnerUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
 
   // Phase 5N (directive §1/§2) - App.tsx never remounts NovaChat across a
   // sign-out/sign-in transition (only AuthProvider's context value
@@ -348,10 +350,20 @@ export const NovaChat = ({
   // active at first paint, and re-running immediately would be redundant
   // (not wrong, just wasted work) and race with their own render.
   const [currentUid, setCurrentUid] = useState(() => auth.currentUser?.uid ?? '__pending__');
+  const observedUidRef = useRef(currentUid);
+  const identityEpochRef = useRef(0);
   const didMountRef = useRef(false);
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUid(user?.uid ?? '__pending__');
+      const nextUid = user?.uid ?? '__pending__';
+      if (observedUidRef.current !== nextUid) {
+        observedUidRef.current = nextUid;
+        identityEpochRef.current += 1;
+        // An old request must not leave the new account stuck on "thinking".
+        setLoading(false);
+        setInput('');
+      }
+      setCurrentUid(nextUid);
     });
     return () => unsubscribe();
   }, []);
@@ -371,11 +383,16 @@ export const NovaChat = ({
     // reload actually read from - overwriting that identity's real saved
     // history with the stale/empty state this reload produced.
     setMessages(loadMessages(currentUid));
+    setMessagesOwnerUid(currentUid);
     setRatings(loadRatings(currentUid));
     setFeedbackNotes(loadFeedbackNotes(currentUid));
     setFeedbackTag(loadFeedbackTag(currentUid));
     setIsFeedbackSubmitted(loadIsFeedbackSubmitted(currentUid));
     setIsVoiceEnabled(loadIsVoiceEnabled(currentUid));
+    setVoiceOwnerUid(currentUid);
+    setActiveToolSuggestion(null);
+    setActiveGuardianOffer(null);
+    setActivePracticalAssistanceOffer(null);
   }, [currentUid]);
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
@@ -541,12 +558,22 @@ export const NovaChat = ({
     // fresh live read - see novaStorageKey's own comment on why a plain
     // live read here can race the identity-reload effect above and
     // overwrite a different identity's saved history.
-    localStorage.setItem(novaStorageKey("nova_chat_history", currentUid), JSON.stringify(messages));
-  }, [messages, currentUid]);
+    if (!canPersistNovaChatState(messagesOwnerUid, currentUid, auth.currentUser?.uid ?? null)) return;
+    try {
+      localStorage.setItem(novaStorageKey("nova_chat_history", currentUid), JSON.stringify(messages));
+    } catch {
+      // Private mode can restrict storage. Messages remain in this session.
+    }
+  }, [messages, messagesOwnerUid, currentUid]);
 
   useEffect(() => {
-    localStorage.setItem(novaStorageKey("nova_voice_enabled", currentUid), String(isVoiceEnabled));
-  }, [isVoiceEnabled, currentUid]);
+    if (!canPersistNovaChatState(voiceOwnerUid, currentUid, auth.currentUser?.uid ?? null)) return;
+    try {
+      localStorage.setItem(novaStorageKey("nova_voice_enabled", currentUid), String(isVoiceEnabled));
+    } catch {
+      // A browser preference is optional; never break Nova's chat.
+    }
+  }, [isVoiceEnabled, voiceOwnerUid, currentUid]);
 
   useEffect(() => {
     if (messages.length === 0) {
