@@ -23,6 +23,12 @@ describe('safe notification preferences', () => {
     expect(result.quietHoursEnd).toBe('07:45');
     expect(result.allowedNudgeCategories).toEqual(['check_in_reminder']);
   });
+  it('never saves more categories than Firestore's 20-item limit', () => {
+    const categories = Array.from({ length: 40 }, (_, i) => `category-${i}`);
+    expect(normaliseNudgePreferences({ allowedNudgeCategories: categories })
+      .allowedNudgeCategories).toHaveLength(20);
+  });
+
   it('never applies a delayed read from the previous account', () => {
     expect(isLivePreferenceOwner('A', 'B', false)).toBe(false);
     expect(isLivePreferenceOwner('A', 'A', true)).toBe(false);
