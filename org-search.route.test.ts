@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, forceTransactionError, getDocRaw } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
@@ -269,5 +269,38 @@ describe('audit logging never includes raw chunkText', () => {
     const entry = res.body.logs.find((l: any) => l.action === 'register_search_resource');
     expect(entry).toBeTruthy();
     expect(JSON.stringify(entry)).not.toContain('THIS-IS-SENSITIVE-CONTENT-MARKER');
+  });
+});
+
+
+describe('enterprise resource mutations are audit-atomic', () => {
+  it('never publishes a searchable resource when its audit transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const restore = forceTransactionError(new Error('simulated audit failure'));
+    try {
+      const res = await registerResource(ORG, 'owner_1', {
+        title: 'Sensitive Doc', contentType: 'document', chunkText: 'Private text',
+      });
+      expect(res.status).toBe(500);
+      const listed = await request(app).get(`/api/org/${ORG}/search/resources`).set(auth('owner_1'));
+      expect(listed.body.resources).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it('preserves the resource if audited removal fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc(`organisations/${ORG}/searchable_resources/one`, {
+      title: 'Private', contentType: 'document', chunkText: 'Sensitive content',
+      aclUids: [], aclRoles: [], aclTeams: [],
+    });
+    const restore = forceTransactionError(new Error('simulated audit failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/search/resources/one/remove`)
+        .set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/searchable_resources/one`)).toBeDefined();
+    } finally { restore(); }
   });
 });
