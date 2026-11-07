@@ -10785,20 +10785,21 @@ const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid
   const membersSnap = tx ? await tx.get(membersRef) : await membersRef.get();
   const resolvedRoleByUid = new Map<string, string>();
   membersSnap.docs.forEach((d: any) => {
-    const role = d.data()?.role;
-    if (d.data()?.status === 'suspended') {
-      // Also blocks legacy adminUids fallback from counting a suspended
-      // owner as the remaining active owner.
-      resolvedRoleByUid.set(d.id, 'suspended');
-    } else if (isOrgRole(role)) resolvedRoleByUid.set(d.id, role);
+    const member = d.data();
+    // Match getOrgMemberRole exactly: an existing granular record always
+    // overrides legacy arrays, even when the role/status is invalid.
+    const role = member?.status !== undefined && member.status !== 'active'
+      ? null
+      : (isOrgRole(member?.role) ? member.role : null);
+    resolvedRoleByUid.set(d.id, role || 'inactive');
   });
   const ownerUids = new Set<string>();
   resolvedRoleByUid.forEach((role, uid) => {
     if (role === 'owner') ownerUids.add(uid);
   });
-  // Anyone in the legacy adminUids array who does NOT have a granular
-  // members doc (or whose doc has no valid role) still resolves to 'owner'
-  // via getOrgMemberRole's fallback, and must count as one here too.
+  // Only genuine legacy members WITHOUT a granular record can inherit
+  // an owner role from the old adminUids array. Invalid or inactive
+  // granular records must never revive their privileges.
   const adminUids: string[] = org?.adminUids || [];
   adminUids.forEach((uid) => {
     if (!resolvedRoleByUid.has(uid)) ownerUids.add(uid);
