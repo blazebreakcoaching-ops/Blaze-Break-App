@@ -616,14 +616,14 @@ export const PrivacyVault = ({
                 ) : (
                   <div className="p-6 rounded-2xl bg-surface border border-dashed border-border space-y-4">
                     <h4 className="text-sm font-bold text-text-main">Join Your Organisation</h4>
-                    <p className="text-xs text-text-muted max-w-lg">If your employer has a Blaze Break account, ask them for your team's join code to link your account. This is entirely optional — everything works fully without it.</p>
+                    <p className="text-xs text-text-muted max-w-lg">Enter the company join code, or the personal invitation code sent to your verified email address. Joining is optional and does not share your private recovery notes.</p>
                     <div className="flex flex-col sm:flex-row gap-3">
                       <input
                         type="text"
                         value={joinCodeInput}
                         onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                        placeholder="e.g. F3K9QZ"
-                        maxLength={8}
+                        placeholder="Company code or email invitation code"
+                        maxLength={180}
                         className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-sm font-mono tracking-widest focus:outline-none focus:border-primary text-text-main"
                       />
                       <button
