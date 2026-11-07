@@ -1737,11 +1737,13 @@ export default function App() {
       let loadedStats = defaults;
       let loadedFingerprint: BurnoutFingerprint | null = null;
       let persistedProfileVerified = false;
+      let profileReadSucceeded = false;
       if (user) {
         try {
           const db = await getDb();
           const { doc, getDoc } = await import("firebase/firestore");
           const snap = await getDoc(doc(db, "users", user.uid, "user_stats", "core"));
+          profileReadSucceeded = true;
           if (snap.exists()) {
             const data = snap.data();
             persistedProfileVerified = !!data.profile?.fullName;
@@ -1758,7 +1760,9 @@ export default function App() {
       if (user) {
         if (persistedProfileVerified) {
           writeAccountProfile(user.uid, loadedStats.profile);
-        } else {
+        } else if (profileReadSucceeded) {
+          // Only remove a local profile after Firestore actually confirmed
+          // that there is no saved profile. A network outage is not deletion.
           clearAccountProfile(user.uid);
         }
         // A missing/failed Firestore profile read cannot opt Nova into
