@@ -3,6 +3,7 @@ import { User, Auth as FirebaseAuth, signInWithPopup, signInAnonymously, linkWit
 import { auth, authPersistenceReady, getDb } from './firebase';
 import { secureApiFetch, publicPasswordApiFetch } from './secure-api';
 import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken, MFA_SESSION_REQUIRED_EVENT } from './mfa-session';
+import { mayCommitAuthCallback } from './auth-callback-ownership';
 import { AuthRole } from '../types';
 
 interface AuthContextType {
@@ -293,6 +294,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     let cancelled = false;
+    let latestAuthEvent = 0;
 
     // Persistence must be settled before the listener attaches - otherwise
     // a fast-firing initial callback can run against whatever the SDK's
@@ -301,6 +303,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     authPersistenceReady.then(() => {
       if (cancelled) return;
       unsubscribe = onAuthStateChanged(auth, async (userRecord) => {
+      const requestNumber = ++latestAuthEvent;
+      const stillCurrent = () => mayCommitAuthCallback(
+        requestNumber, latestAuthEvent,
+        userRecord?.uid ?? null, auth.currentUser?.uid ?? null, cancelled,
+      );
+      if (!stillCurrent()) return;
       if (userRecord) {
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
@@ -309,6 +317,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { doc, getDoc, setDoc } = await import('firebase/firestore');
           const userDocRef = doc(db, 'users', userRecord.uid);
           const userDoc = await getDoc(userDocRef);
+          if (!stillCurrent()) return;
 
           if (!userDoc.exists()) {
              await setDoc(userDocRef, {
@@ -316,12 +325,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
              });
+             if (!stillCurrent()) return;
           }
 
           // Fetch protected role from entitlements
           const entitlementsRef = doc(db, 'users', userRecord.uid, 'entitlements', 'status');
           const entitlementsDoc = await getDoc(entitlementsRef);
-          
+          if (!stillCurrent()) return;
+
           let role: AuthRole = 'individual';
           if (entitlementsDoc.exists()) {
             role = entitlementsDoc.data().role || 'individual';
@@ -330,6 +341,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Check custom claims for role
           try {
             const tokenResult = await userRecord.getIdTokenResult();
+            if (!stillCurrent()) return;
             const claims = tokenResult.claims;
             if (claims.admin || claims.platform_admin || claims.platformOwner || userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
               (userRecord as any).isAdmin = true;
@@ -343,8 +355,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.warn("Could not read custom claims from ID token — defaulting to standard role.", e);
           }
 
+          if (!stillCurrent()) return;
           setAppRole(role);
         } catch (e) {
+          if (!stillCurrent()) return;
           console.error("Authorised Access Framework mapping failed:", e);
           setAppRole('individual');
         }
@@ -353,6 +367,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // is a real account. Cached per-tab-session in sessionStorage so a
         // page refresh doesn't re-challenge someone who already verified
         // moments ago; a genuinely new browser session always re-checks.
+        if (!stillCurrent()) return;
         if (!userRecord.isAnonymous) {
           // A stored token (not just a boolean flag) - it's the exact
           // thing the server checks, so "do we already have a live one"
@@ -366,10 +381,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             try {
               const res = await secureApiFetch('/api/auth/mfa/status');
               const data = await res.json();
+              if (!stillCurrent()) return;
               if (typeof data?.enabled !== 'boolean') throw new Error('Invalid security status');
               setMfaStatusError(false);
               setMfaPending(data.enabled);
             } catch {
+              if (!stillCurrent()) return;
               // A failed status check is UNKNOWN, not "MFA disabled".
               // Show a retryable secure gate rather than permitting app
               // access with an unverified MFA state.
@@ -391,6 +408,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // A new visitor stays signed out until they choose an action.
         explicitSignOutRef.current = false;
       }
+      if (!stillCurrent()) return;
       setUser(userRecord);
       setEmailVerified(userRecord?.emailVerified ?? false);
       if (!userRecord) {
@@ -402,6 +420,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       cancelled = true;
+      ++latestAuthEvent;
       if (unsubscribe) unsubscribe();
     };
   }, []);
