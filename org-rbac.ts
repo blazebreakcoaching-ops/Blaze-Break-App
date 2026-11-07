@@ -127,5 +127,10 @@ export const canAssignRole = (actorRole: unknown, targetRole: OrgRole): boolean 
   if (targetRole === 'owner' || targetRole === 'security_admin') {
     return actorRole === 'owner';
   }
+  // The scoped security_admin may maintain ordinary memberships, but
+  // must not grant general admin or finance authority to themselves or
+  // others. Doing so would bypass the owner's role separation.
+  if (actorRole === 'security_admin' &&
+      (targetRole === 'admin' || targetRole === 'billing_admin')) return false;
   return hasOrgPermission(actorRole, 'org.roles.manage');
 };
