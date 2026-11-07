@@ -374,10 +374,11 @@ test.describe('Real app (directive §2): signed-in navigation and Nova', () => {
     await expect(page.getByRole('dialog', { name: /one small step at a time/i })).toBeVisible();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
     await page.getByRole('button', { name: 'Show me on this page' }).click();
-    await expect(page.getByRole('dialog', { name: /start where you are/i })).toBeVisible();
+    const coachMark = page.getByRole('dialog', { name: /start where you are/i });
+    await expect(coachMark).toBeVisible();
     await expect(page.getByTestId('nova-guide-highlight')).toBeVisible();
-    await page.getByRole('button', { name: 'Skip for now' }).click();
-    await expect(page.getByRole('dialog', { name: /start where you are/i })).toHaveCount(0);
+    await coachMark.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(coachMark).toHaveCount(0);
   });
 
 });
