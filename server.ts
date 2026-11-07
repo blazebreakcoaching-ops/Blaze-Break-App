@@ -8865,9 +8865,13 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
       await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
     }
     const administrativeRole = isPlatformAdminRole(role);
-    await mergeCustomClaims(targetUid, administrativeRole
-      ? { role }
-      : { role, admin: false, platform_admin: false, platformOwner: false, roleExpiresAt: null });
+    // Replace ALL effective platform-privilege claims for every role change,
+    // not only non-admin downgrades. An old platformOwner:true flag must
+    // never survive reassignment to support_admin or any narrower role.
+    await mergeCustomClaims(targetUid, {
+      role, admin: administrativeRole, platform_admin: false,
+      platformOwner: role === 'platform_owner', roleExpiresAt: null,
+    });
     // verifyIdToken(token, true) rejects older ID tokens after revocation.
     // Never let an existing session keep the previous, more powerful role.
     await getAuth().revokeRefreshTokens(targetUid);
