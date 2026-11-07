@@ -165,10 +165,12 @@ export const NovaCoachMarks = ({ page, onClose }: NovaCoachMarksProps) => {
           <p className="flex items-center gap-2 text-xs font-semibold text-primary"><Sparkles className="h-4 w-4" /> Nova Guide</p>
           <button type="button" onClick={onClose} aria-label="Close guided highlight" className="rounded-lg p-2 text-text-muted hover:bg-surface focus-visible:outline-2 focus-visible:outline-primary"><X className="h-4 w-4" /></button>
         </div>
-        <p className="mt-3 text-xs font-medium text-text-muted">Tip {stepIndex + 1} of {steps.length}</p>
-        <h2 id="nova-coach-mark-title" className="mt-2 font-display text-lg font-semibold">{step.title}</h2>
-        <p id="nova-coach-mark-description" className="mt-2 text-sm leading-relaxed text-text-muted">{step.explanation}</p>
-        {!highlight && <p className="mt-2 text-xs text-text-muted">This part isn't visible yet. You can move on or close the guide.</p>}
+        <div aria-live="polite" aria-atomic="true">
+          <p className="mt-3 text-xs font-medium text-text-muted">Tip {stepIndex + 1} of {steps.length}</p>
+          <h2 id="nova-coach-mark-title" className="mt-2 font-display text-lg font-semibold">{step.title}</h2>
+          <p id="nova-coach-mark-description" className="mt-2 text-sm leading-relaxed text-text-muted">{step.explanation}</p>
+          {!highlight && <p className="mt-2 text-xs text-text-muted">This part isn't visible yet. You can move on or close the guide.</p>}
+        </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {stepIndex > 0 && <button type="button" onClick={previous} className="rounded-xl border border-border px-3 py-2.5 text-sm font-semibold"><ChevronLeft className="inline h-4 w-4" /> Back</button>}
           <button type="button" onClick={next} className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">
