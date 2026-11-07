@@ -18,6 +18,18 @@ describe('explicit Calendar signal aggregation consent', () => {
     }
   });
 
+  it('does not accept ambiguous dates or calendar-overflow timestamps', () => {
+    for (const stamp of [
+      '0', '2026', '2026-11-07', '2026-11-07T12:00:00Z',
+      '2026-02-30T12:00:00.000Z', '2026-11-07T25:00:00.000Z',
+      '2026-11-07T12:00:00.000+00:00',
+    ]) {
+      expect(hasExplicitCalendarSignalConsent({
+        allowCalendarSignals: true, calendarSignalsExplicitConsentAt: stamp,
+      })).toBe(false);
+    }
+  });
+
   it('recognises a dated, affirmative choice', () => {
     expect(hasExplicitCalendarSignalConsent({
       allowCalendarSignals: true,
