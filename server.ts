@@ -9169,6 +9169,9 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     const { suspend } = parsed.data;
 
     await getAuth().updateUser(targetUid, { disabled: suspend });
+    // Invalidate old sessions on both suspension and reactivation.
+    // Existing bearer tokens must not regain access through reactivation.
+    await getAuth().revokeRefreshTokens(targetUid);
     const auditRecorded = await logAdminAction(req, suspend ? "suspend_user" : "unsuspend_user", targetUid, "", { suspend }, 'succeeded');
     res.json({ success: true, auditRecorded });
   } catch (err: any) {
