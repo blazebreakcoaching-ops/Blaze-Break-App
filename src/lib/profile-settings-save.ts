@@ -1,5 +1,6 @@
 import type { UserProfileData } from '../types';
 import { auth, getDb } from './firebase';
+import { NOVA_PERMISSION_DEFAULTS } from './nova-brain';
 
 /**
  * A Settings success message must mean the database actually committed.
@@ -13,18 +14,27 @@ export async function saveVerifiedProfileSettings(
   if (!uid || auth.currentUser?.uid !== uid) throw new Error('Account changed');
   const db = await getDb();
   if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
-  const { doc, writeBatch } = await import('firebase/firestore');
+  const { doc, getDoc, writeBatch } = await import('firebase/firestore');
 
   // Firestore rejects explicit undefined values. Do not silently discard
   // the legitimate "Off" questioning style: it is persisted as null.
   const cleanProfile = Object.fromEntries(
-    Object.entries(profile).filter(([, value]) => value !== undefined),
+    Object.entries(profile).filter(([key, value]) =>
+      value !== undefined && key !== 'subscription'),
   );
   const updatedAt = new Date().toISOString();
+  const permissionsRef = doc(db, 'users', uid, 'nova_permissions', 'current');
+  // Rules require 13 named fields on a NEW permissions document.
+  // Read first to distinguish a missing document from an existing one:
+  // merging all defaults into an existing record could overwrite choices
+  // the customer has already withdrawn in the Privacy Centre.
+  const existingPermissions = await getDoc(permissionsRef);
+  if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
   const batch = writeBatch(db);
   batch.set(doc(db, 'users', uid, 'user_stats', 'core'),
     { profile: cleanProfile, updatedAt }, { merge: true });
-  batch.set(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+  batch.set(permissionsRef, {
+    ...(existingPermissions.exists() ? {} : NOVA_PERMISSION_DEFAULTS),
     allowNovaMemory: profile.letNovaLearn !== false,
     allowNovaUseSavedMemories: profile.letNovaLearn !== false,
     updatedAt,
