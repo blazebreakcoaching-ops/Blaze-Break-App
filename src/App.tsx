@@ -2324,32 +2324,17 @@ export default function App() {
       });
     }
 
-    // Sync Preferences
-    try {
-      const savedPrefs = localStorage.getItem("blaze_notification_preferences");
-      if (savedPrefs) {
-        const prefs = JSON.parse(savedPrefs);
-        updateNovaMemoryBySourceAndType("Settings", "preference", {
-          content: `Notification preferences: Emails ${prefs.email ? "Enabled" : "Disabled"}, Internal Warnings ${prefs.internalWarnings ? "Enabled" : "Disabled"}. Focus schedule: ${prefs.focusSchedule.start} to ${prefs.focusSchedule.end}.`,
-          confidence: "verified",
-          canEdit: true,
-        });
-      }
-    } catch (e) {
-      // Non-fatal - one memory-sync block among several here; a failure
-      // doesn't need to block the Guardian Protocol sync right below it.
-    }
+    // Never import the old browser-global notification preferences into
+    // personal Nova memory. They have no reliable account ownership.
+    // Current per-user notification preferences live in Firestore.
 
     // Sync Guardian Protocol
-    const flags = localStorage.getItem("blaze_feature_flags");
     let guardianEnabled = false;
-    if (flags) {
-      try {
-        guardianEnabled = JSON.parse(flags).enable_guardian_protocol;
-      } catch (e) {
-        // Non-fatal - guardianEnabled just stays false if this is
-        // missing or corrupted.
-      }
+    try {
+      const flags = localStorage.getItem("blaze_feature_flags");
+      guardianEnabled = flags ? JSON.parse(flags).enable_guardian_protocol === true : false;
+    } catch {
+      // Browser storage is optional; never break the dashboard or memory.
     }
     const trustedContactsCount =
       stats.supportCircle?.filter((c: any) => c.isGuardian).length || 0;
