@@ -270,6 +270,7 @@ test.describe('Real app (Phase 5N directive §3): registration and onboarding jo
 
     const welcome = page.getByRole('dialog', { name: /welcome, taylor/i });
     await expect(welcome).toBeVisible();
+    await expect(welcome.getByRole('button', { name: 'Show me around' })).toBeVisible();
     await expect(page.getByRole('dialog', { name: /daily check-in|what's new/i })).toHaveCount(0);
 
     // Completing onboarding does not automatically launch a second,
