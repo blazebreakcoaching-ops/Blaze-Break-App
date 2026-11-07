@@ -620,10 +620,13 @@ export const EvolutionEngine = () => {
     setIsLoadingAuditLogs(true);
     setAuditLogsError(null);
     try {
-      const res = await secureApiFetch('/api/admin/audit-logs');
+      // Server-side filter over the FULL history: previously only the
+      // first page of all platform events was fetched and then filtered
+      // here, so older Evolution Engine actions silently disappeared.
+      const res = await secureApiFetch('/api/admin/audit-logs?action=' + encodeURIComponent(EVOLUTION_AUDIT_ACTIONS.join(',')));
       if (res.ok) {
         const data = await res.json();
-        setAuditLogs((data.logs || []).filter((l: any) => EVOLUTION_AUDIT_ACTIONS.includes(l.action)));
+        setAuditLogs(data.logs || []);
       } else {
         const err = await res.json();
         setAuditLogsError(err.error || "Couldn't load the audit log.");
@@ -1835,14 +1838,14 @@ export const EvolutionEngine = () => {
             </button>
           </div>
           <p className="text-sm text-text-muted max-w-3xl">
-            Every Evolution Engine action, filtered from the same real admin_audit_logs Command Centre's Security & Audit trail already shows (the most recent 100 platform-wide admin actions) - not a separate audit system that could drift from it.
+            Every Evolution Engine action, drawn from the same real admin_audit_logs Command Centre's Security & Audit trail shows (the most recent 50 Evolution Engine actions across the full history) - not a separate audit system that could drift from it.
           </p>
           {auditLogsError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{auditLogsError}</div>}
           {isLoadingAuditLogs && !auditLogs ? (
             <p className="text-sm text-text-muted italic">Loading...</p>
           ) : auditLogs && auditLogs.length === 0 ? (
             <div className="p-8 text-center bg-surface/30 border border-border/40 rounded-2xl">
-              <p className="text-sm text-text-muted">No Evolution Engine actions in the most recent 100 platform-wide admin actions.</p>
+              <p className="text-sm text-text-muted">No Evolution Engine actions have been recorded yet.</p>
             </div>
           ) : (
             <div className="space-y-1.5">

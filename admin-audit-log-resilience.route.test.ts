@@ -20,6 +20,8 @@ vi.mock('firebase-admin/auth', () => ({
     verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev`, role: 'platform_owner' }),
     updateUser: vi.fn(async () => {}),
     revokeRefreshTokens: h.revokeRefreshTokens,
+    // The suspend route now looks up the target (404 / platform-staff check).
+    getUser: async (uid: string) => ({ uid, email: `${uid}@test.dev`, emailVerified: true, customClaims: {} }),
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {

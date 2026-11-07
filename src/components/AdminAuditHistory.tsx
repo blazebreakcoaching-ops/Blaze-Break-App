@@ -10,6 +10,9 @@ type AuditEvent = {
   metadata: Record<string, string | number | boolean>;
 };
 type AuditPage = { logs: AuditEvent[]; nextCursor: string | null; complete: boolean };
+type HistoryFilter = { kind: 'action' | 'actor'; value: string } | null;
+const filterQuery = (filter: HistoryFilter) => filter
+  ? (filter.kind === 'action' ? 'action=' : 'actor=') + encodeURIComponent(filter.value) : '';
 const displayDate = (value: string | null) => value && Number.isFinite(Date.parse(value))
   ? new Date(value).toLocaleString() : 'Time not recorded';
 
@@ -19,18 +22,22 @@ export function AdminAuditHistory({ refreshRevision = 0 }: { refreshRevision?: n
   const [cursor, setCursor] = useState<string | null>(null);
   const [history, setHistory] = useState<(string | null)[]>([]);
   const [category, setCategory] = useState('all');
+  // Exact search over the FULL history, enforced server-side.
+  const [filter, setFilter] = useState<HistoryFilter>(null);
+  const [filterKind, setFilterKind] = useState<'action' | 'actor'>('actor');
+  const [filterInput, setFilterInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
   const refreshMarker = useRef(refreshRevision);
 
-  const load = async (next: string | null = null, previous: (string | null)[] = []) => {
+  const load = async (next: string | null = null, previous: (string | null)[] = [], activeFilter: HistoryFilter = filter) => {
     const request = ++generation.current;
     setLoading(true);
     setError(null);
     try {
-      const response = await secureApiFetch('/api/admin/audit-logs' +
-        (next ? '?cursor=' + encodeURIComponent(next) : ''));
+      const params = [next ? 'cursor=' + encodeURIComponent(next) : '', filterQuery(activeFilter)].filter(Boolean);
+      const response = await secureApiFetch('/api/admin/audit-logs' + (params.length ? '?' + params.join('&') : ''));
       if (!response.ok) throw new Error(response.status === 429
         ? 'Audit requests are temporarily rate limited.' :
           response.status === 403 ? 'You do not have access to this audit trail.' :
@@ -79,7 +86,29 @@ export function AdminAuditHistory({ refreshRevision = 0 }: { refreshRevision?: n
         <option value="operations">Other operations</option>
       </select>
     </div>
-    <p className="text-xs text-text-muted">Category filters apply only to this page of results; they do not search historical pages.</p>
+    <form className="flex flex-wrap gap-2 items-end" onSubmit={event => {
+      event.preventDefault();
+      const value = filterInput.trim();
+      if (!value) return;
+      const next: HistoryFilter = { kind: filterKind, value: filterKind === 'action' ? value.toLowerCase().replace(/\s+/g, '_') : value };
+      setFilter(next);
+      void load(null, [], next);
+    }}>
+      <label className="text-xs text-text-muted flex flex-col gap-1">Search full history by
+        <select aria-label="Search full history by" value={filterKind} onChange={event => setFilterKind(event.target.value as 'action' | 'actor')}
+          className="border border-border rounded-lg bg-background px-3 py-2 text-sm">
+          <option value="actor">Administrator (email or UID)</option>
+          <option value="action">Exact action (e.g. suspend_user)</option>
+        </select>
+      </label>
+      <input aria-label="Audit search value" value={filterInput} onChange={event => setFilterInput(event.target.value)}
+        placeholder={filterKind === 'actor' ? 'admin@example.com' : 'update_user_role'}
+        className="border border-border rounded-lg bg-background px-3 py-2 text-sm min-w-[14rem]" />
+      <button type="submit" className="border border-border rounded-lg px-3 py-2 text-xs font-bold">Search</button>
+      {filter && <button type="button" className="underline text-xs" onClick={() => { setFilter(null); setFilterInput(''); void load(null, [], null); }}>Clear search</button>}
+    </form>
+    {filter && <p role="status" className="text-xs text-text-main">Showing all history where {filter.kind === 'actor' ? 'the administrator is' : 'the action is'} <strong>{filter.value}</strong>.</p>}
+    <p className="text-xs text-text-muted">Category filters apply only to this page of results; use Search for the full history.</p>
     {error && <p role="alert" className="text-sm text-destructive">{error} <button type="button" className="underline" onClick={() => void load(cursor, history)}>Retry</button></p>}
     {loading ? <p role="status" className="text-sm text-text-muted">Loading audit records…</p> : <>
       <p className="text-xs text-text-muted">Showing {matching.length} matching events from {events.length} records on this page.</p>
@@ -95,7 +124,9 @@ export function AdminAuditHistory({ refreshRevision = 0 }: { refreshRevision?: n
           {Object.keys(event.metadata || {}).length > 0 && <p className="text-xs text-text-muted">Details: {Object.entries(event.metadata).map(([key, value]) => key + ': ' + String(value)).join(', ')}</p>}
         </li>)}
       </ol>
-      {!matching.length && <p role="status" className="text-sm text-text-muted">No matching events on this page. Other pages may contain results.</p>}
+      {!matching.length && <p role="status" className="text-sm text-text-muted">{filter && category === 'all' && !nextCursor && !history.length
+        ? 'No events match this search in the full history.'
+        : 'No matching events on this page. Other pages may contain results.'}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" className="border border-border rounded-lg px-3 py-2 text-xs disabled:opacity-40" disabled={!history.length} onClick={() => void load(history[history.length - 1], history.slice(0, -1))}>Previous</button>
         <button type="button" className="border border-border rounded-lg px-3 py-2 text-xs disabled:opacity-40" disabled={!nextCursor} onClick={() => void load(nextCursor, [...history, cursor])}>Next</button>

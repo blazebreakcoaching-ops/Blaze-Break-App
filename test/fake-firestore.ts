@@ -114,6 +114,12 @@ function matchesWhere(data: DocData, [field, op, value]: WhereClause): boolean {
     case '>': return actual > value;
     case '<=': return actual <= value;
     case '<': return actual < value;
+    // Mirrors the real SDK: 'in' takes a non-empty array of at most 30 values.
+    case 'in':
+      if (!Array.isArray(value) || value.length === 0 || value.length > 30) {
+        throw new Error("fake-firestore: 'in' requires an array of 1-30 values");
+      }
+      return value.includes(actual);
     default: throw new Error(`fake-firestore: unsupported where operator '${op}'`);
   }
 }
@@ -157,6 +163,7 @@ class CollectionRef {
   private clauses: WhereClause[] = [];
   private order: { field: string; dir: 'asc' | 'desc' } | null = null;
   private limitN: number | null = null;
+  private afterPath: string | null = null;
 
   constructor(private store: FakeStore, public path: string) {}
 
@@ -190,6 +197,14 @@ class CollectionRef {
     return q;
   }
 
+  // Cursor paging: results continue strictly after the anchor document in
+  // the query's current order, like the real SDK's startAfter(snapshot).
+  startAfter(anchor: DocSnapshot) {
+    const q = this.clone();
+    q.afterPath = anchor.path;
+    return q;
+  }
+
   // Firestore aggregation count() reports matching documents without
   // applying a limited first page. Fake mirrors the public .data().count API.
   count() {
@@ -208,6 +223,7 @@ class CollectionRef {
     q.clauses = this.clauses.slice();
     q.order = this.order;
     q.limitN = this.limitN;
+    q.afterPath = this.afterPath;
     return q;
   }
 
@@ -232,6 +248,10 @@ class CollectionRef {
         if (av === bv) return 0;
         return (av > bv ? 1 : -1) * (dir === 'desc' ? -1 : 1);
       });
+    }
+    if (this.afterPath) {
+      const at = rows.findIndex((r) => r.path === this.afterPath);
+      rows = at === -1 ? [] : rows.slice(at + 1);
     }
     if (this.limitN !== null) rows = rows.slice(0, this.limitN);
     return new QuerySnapshot(rows);

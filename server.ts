@@ -8839,6 +8839,8 @@ app.get("/api/admin/users/:uid", verifyAppCheck, authenticateFirebaseUser, async
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err?.code === "auth/user-not-found") {
+      res.status(404).json({ error: "No account with that ID." });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -8896,6 +8898,8 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     if (err.message?.includes("Forbidden")) {
       return res.status(403).json({ error: "You do not have permission to update account roles." });
     }
+    if (err?.code === "auth/user-not-found") return res.status(404).json({ error: "No account with that ID." });
+    if (err.message?.includes("Operation Rejected")) return res.status(409).json({ error: err.message });
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
@@ -9216,6 +9220,29 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
     }
     const targetUid = req.params.uid;
     const { suspend } = parsed.data;
+    const actor = requireAuth(req);
+    if (targetUid === actor.uid) {
+      return res.status(400).json({ error: "You cannot suspend or reinstate your own account." });
+    }
+    let target: import("firebase-admin/auth").UserRecord;
+    try {
+      target = await getAuth().getUser(targetUid);
+    } catch (error: any) {
+      if (error?.code === "auth/user-not-found") return res.status(404).json({ error: "No account with that ID." });
+      throw error;
+    }
+    // Platform staff (any admin role, legacy admin flag, or the verified
+    // bootstrap owner) may only be suspended or reinstated by a Platform
+    // Owner. Previously any platform_admin (users.manage) could disable
+    // the Platform Owner's own account and lock them out of the platform.
+    const claims: any = target.customClaims || {};
+    const targetIsPlatformStaff = isPlatformAdminRole(claims.role) || claims.admin === true ||
+      claims.platform_admin === true || claims.platformOwner === true ||
+      isOwnerBootstrapIdentity({ email: target.email, email_verified: target.emailVerified });
+    if (targetIsPlatformStaff && !isUserPlatformOwner(actor)) {
+      return res.status(403).json({ error: "Forbidden: only a Platform Owner can suspend or reinstate platform staff." });
+    }
+    if (suspend) await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
 
     await getAuth().updateUser(targetUid, { disabled: suspend });
     // Invalidate old sessions on both suspension and reactivation.
@@ -9226,6 +9253,8 @@ app.post("/api/admin/users/:uid/suspend", verifyAppCheck, authenticateFirebaseUs
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
+    } else if (err.message?.includes("Operation Rejected")) {
+      res.status(409).json({ error: err.message });
     } else {
       logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
       res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -9477,11 +9506,54 @@ app.get("/api/admin/audit-logs", verifyAppCheck, authenticateFirebaseUser, async
         !/^[A-Za-z0-9_-]{1,160}$/.test(cursor))) {
       return res.status(400).json({ error: "Invalid audit cursor." });
     }
+    // Optional exact filters over the FULL history (not just one page):
+    // `action` = one action or a comma-separated list (max 30, Firestore's
+    // 'in' limit); `actor` = the acting admin's UID or email. One filter at
+    // a time, each backed by a composite index in firestore.indexes.json.
+    const rawAction = req.query.action;
+    const rawActor = req.query.actor;
+    if ((rawAction !== undefined && (typeof rawAction !== "string" || rawAction.length > 2000)) ||
+        (rawActor !== undefined && (typeof rawActor !== "string" || rawActor.length > 320)) ||
+        (rawAction !== undefined && rawActor !== undefined)) {
+      return res.status(400).json({ error: "Filter by one action list or one administrator at a time." });
+    }
+    const actions = typeof rawAction === "string"
+      ? [...new Set(rawAction.split(",").map(a => a.trim()).filter(Boolean))] : [];
+    if (rawAction !== undefined && (actions.length === 0 || actions.length > 30 ||
+        actions.some(a => !/^[a-z0-9_]{1,64}$/.test(a)))) {
+      return res.status(400).json({ error: "Invalid audit action filter." });
+    }
+    const actorInput = typeof rawActor === "string" ? rawActor.trim() : "";
+    if (rawActor !== undefined && !actorInput) {
+      return res.status(400).json({ error: "Enter an administrator's full email or UID." });
+    }
     const db = getDb();
-    let query = db.collection("admin_audit_logs").orderBy("createdAt", "desc");
+    let actorUid: string | null = null;
+    if (actorInput) {
+      if (actorInput.includes("@")) {
+        try {
+          actorUid = (await getAuth().getUserByEmail(actorInput)).uid;
+        } catch (error: any) {
+          if (error?.code !== "auth/user-not-found") throw error;
+          return res.json({ logs: [], nextCursor: null, pageSize: ADMIN_AUDIT_PAGE_SIZE, complete: true });
+        }
+      } else if (/^[A-Za-z0-9_-]{1,160}$/.test(actorInput)) {
+        actorUid = actorInput;
+      } else {
+        return res.status(400).json({ error: "Enter an administrator's full email or UID." });
+      }
+    }
+    let query: any = db.collection("admin_audit_logs");
+    if (actions.length === 1) query = query.where("action", "==", actions[0]);
+    else if (actions.length > 1) query = query.where("action", "in", actions);
+    if (actorUid) query = query.where("actorUid", "==", actorUid);
+    query = query.orderBy("createdAt", "desc");
     if (typeof cursor === "string") {
       const anchor = await db.collection("admin_audit_logs").doc(cursor).get();
-      if (!anchor.exists || !anchor.data()?.createdAt) {
+      // The cursor must belong to the SAME filtered result set.
+      if (!anchor.exists || !anchor.data()?.createdAt ||
+          (actions.length > 0 && !actions.includes(anchor.data()?.action)) ||
+          (actorUid && anchor.data()?.actorUid !== actorUid)) {
         return res.status(400).json({ error: "Audit cursor is no longer valid. Start again." });
       }
       query = query.startAfter(anchor);
