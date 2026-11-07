@@ -10573,6 +10573,16 @@ const getConsentingMemberUids = async (db: any, memberUids: string[]): Promise<s
   return consentingUids;
 };
 
+// Legacy invitations without an expiry remain visible/reserved so older
+// email flows are not silently invalidated. New individual tokens expire
+// after seven days; expired rows no longer consume a staff place.
+const isActivePendingOrgInvite = (data: Record<string, any>): boolean => {
+  const expiresAt = data?.tokenExpiresAt;
+  if (expiresAt === undefined || expiresAt === null) return true;
+  return typeof expiresAt === 'string' &&
+    Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) > Date.now();
+};
+
 // Employee redeems a join code to link themselves to their employer's org.
 // This is the only way `organisationId` ever gets set on a user - the
 // Firestore rules explicitly block clients from setting it directly, so
@@ -10644,6 +10654,7 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       if (members.has(user.uid)) {
         return { status: 409, error: "This account already appears on the company roster. Contact its administrator to correct the membership." };
       }
+      const activeInvites = pending.docs.filter((d: any) => isActivePendingOrgInvite(d.data()));
       const matchingInvite = email ? pending.docs.find((d: any) => d.id === email) : undefined;
       if (inviteMatch) {
         if (!verifiedEmail) return { status: 403, error: "Verify your email before accepting a company invitation." };
@@ -10660,12 +10671,17 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
       if (matchingInvite && !verifiedEmail) {
         return { status: 403, error: "Verify your email address before accepting your company's invitation." };
       }
-      const reservedInvite = verifiedEmail ? matchingInvite : undefined;
+      const reservedInvite = verifiedEmail && matchingInvite &&
+        isActivePendingOrgInvite(matchingInvite.data()) ? matchingInvite : undefined;
       const seatAllowance = billingProvider.getSeatAllowance(getEffectiveBillingState(org.billing));
-      const seatCheck = checkSeatLimit(members.size, pending.size, reservedInvite ? 0 : 1, seatAllowance);
+      const seatCheck = checkSeatLimit(members.size, activeInvites.length, reservedInvite ? 0 : 1, seatAllowance);
       if (!seatCheck.allowed) {
         return { status: 400, error: seatCheck.error || "This company has no available staff seats." };
       }
+      // Clean up expired reservations while the same transaction updates
+      // the company seat ledger. Expired personal codes remain invalid.
+      pending.docs.filter((d: any) => !isActivePendingOrgInvite(d.data()))
+        .forEach((d: any) => tx.delete(d.ref));
       tx.set(userRef, {
         organisationId: orgRef.id,
         updatedAt: FieldValue.serverTimestamp(),
@@ -11274,7 +11290,8 @@ app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, asyn
     const billingState = getEffectiveBillingState(data.billing);
     const seatAllowance = billingProvider.getSeatAllowance(billingState);
     const memberCount = new Set<string>(Array.isArray(data.memberUids) ? data.memberUids : []).size;
-    const seatsUsed = memberCount + pendingInvitesSnap.size;
+    const activePendingCount = pendingInvitesSnap.docs.filter((d: any) => isActivePendingOrgInvite(d.data())).length;
+    const seatsUsed = memberCount + activePendingCount;
     // Account-management metadata only. Never return private coaching,
     // health, app engagement or staff-level wellbeing information.
     res.json({
@@ -11288,7 +11305,7 @@ app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, asyn
       seatSummary: {
         allowance: seatAllowance,
         members: memberCount,
-        pendingInvites: pendingInvitesSnap.size,
+        pendingInvites: activePendingCount,
         remaining: Math.max(0, seatAllowance - seatsUsed),
         overCapacity: seatsUsed > seatAllowance,
         roleRecords: members.length,
@@ -14520,13 +14537,17 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
       const pending = await tx.get(pendingRef);
       if (!currentOrg.exists) return { allowed: false, error: "Organisation not found." };
       const data = currentOrg.data()!;
-      const pendingEmails = new Set(pending.docs.map((d: any) => d.id));
+      const activeInvites = pending.docs.filter((d: any) => isActivePendingOrgInvite(d.data()));
+      const pendingEmails = new Set(activeInvites.map((d: any) => d.id));
       const addedSeats = cleaned.filter(email => !pendingEmails.has(email)).length;
       const allowance = billingProvider.getSeatAllowance(getEffectiveBillingState(data.billing));
       const members = new Set<string>(Array.isArray(data.memberUids) ? data.memberUids : []);
-      const seatCheck = checkSeatLimit(members.size, pending.size, addedSeats, allowance);
+      const seatCheck = checkSeatLimit(members.size, activeInvites.length, addedSeats, allowance);
       if (!seatCheck.allowed) return { allowed: false, error: seatCheck.error || "No free staff seats." };
       tx.update(orgRef, { updatedAt: FieldValue.serverTimestamp() });
+      // Do not queue a delete and set for the same document on a resend.
+      pending.docs.filter((d: any) => !isActivePendingOrgInvite(d.data()) &&
+        !cleaned.includes(d.id)).forEach((d: any) => tx.delete(d.ref));
       cleaned.forEach(email => {
         const credentials = tokensByEmail.get(email)!;
         tx.set(pendingRef.doc(email), {
