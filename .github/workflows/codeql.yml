@@ -7,13 +7,7 @@ name: CodeQL
 # code is scanned before it lands) plus a weekly schedule (so a newly
 # published query/advisory still gets applied to code that didn't change).
 on:
-  push:
-    branches: ['main']
-  pull_request:
-    branches: ['main']
-  schedule:
-    - cron: '17 3 * * 1'
-
+  workflow_dispatch:
 jobs:
   analyze:
     name: Analyze (javascript-typescript)
