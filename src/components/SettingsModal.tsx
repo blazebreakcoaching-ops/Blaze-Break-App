@@ -15,7 +15,7 @@ import { profileImageFileError, profileImageDimensions } from '../lib/profile-im
 
 interface SettingsModalProps {
   profile: UserProfileData | undefined;
-  onSave: (profile: UserProfileData) => void;
+  onSave: (profile: UserProfileData) => Promise<void> | void;
   onClose: () => void;
   onOpenPrivacyCentre?: () => void;
 }
@@ -34,6 +34,11 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   const imageUploadSeq = useRef(0);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaveError, setProfileSaveError] = useState(false);
+  // Rapid consent-toggle changes must be committed in order. A slow older
+  // response must not overwrite the last choice the customer made.
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [errors, setErrors] = useState<{ fullName?: string; email?: string }>({});
   const [deletionRequestStatus, setDeletionRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [marketingChoice, setMarketingChoice] = useState<boolean | null>(null);
@@ -145,16 +150,40 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-    
-    onSave(formData);
-    setSaved(true);
-    setTimeout(() => {
+  const queueSave = (next: UserProfileData): Promise<void> => {
+    const pending = saveQueueRef.current.catch(() => {}).then(() => onSave(next));
+    saveQueueRef.current = pending;
+    return pending;
+  };
+
+  const savePreference = (next: UserProfileData) => {
+    setFormData(next);
+    setSaved(false);
+    setProfileSaveError(false);
+    void queueSave(next).then(() => setSaved(true)).catch(() => {
       setSaved(false);
-      onClose();
-    }, 1500);
+      setProfileSaveError(true);
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (savingProfile || !validate()) return;
+    setSavingProfile(true);
+    setSaved(false);
+    setProfileSaveError(false);
+    try {
+      await queueSave(formData);
+      setSaved(true);
+      window.setTimeout(() => {
+        setSaved(false);
+        onClose();
+      }, 1500);
+    } catch {
+      setProfileSaveError(true);
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   return (
@@ -177,6 +206,11 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
         tabIndex={-1}
         className="relative card w-full max-w-2xl p-8 overflow-hidden bg-white dark:bg-card max-h-[90vh] flex flex-col border border-border shadow-lg"
       >
+        {profileSaveError && (
+          <div role="alert" className="mb-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            Your changes were not saved. Please check your connection and try again.
+          </div>
+        )}
         <AnimatePresence>
           {saved && (
             <motion.div
@@ -401,7 +435,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       id="settings-manager-email"
                       type="email"
                       value={formData.managerEmail}
-                      placeholder="For proactive organisational resilience alerts"
+                      placeholder="Optional — no automatic alerts sent"
                       onChange={e => {
                         setFormData({...formData, managerEmail: e.target.value});
                         if (errors.email) setErrors({ ...errors, email: undefined });
@@ -419,7 +453,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       <p id="settings-manager-email-error" role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.email}</p>
                     ) : (
                       <p className="text-[11px] text-text-muted italic px-1 pt-1">
-                        We use this ONLY to send aggregated load warnings (predictive sick-leave) when nervous system debt is critical. Personal chat logs and medical fingerprint data are never exposed. Secrecy remains intact.
+                        This is optional profile information. Blaze Break will not automatically contact this person or send wellbeing alerts.
                       </p>
                     )}
                   </div>
@@ -427,7 +461,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
 
                 <button 
                   type="submit"
-                  disabled={saved}
+                  disabled={saved || savingProfile}
                   className={cn(
                     "w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest mt-4 flex items-center justify-center gap-2 transition-all cursor-pointer",
                     saved 
@@ -436,8 +470,8 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                   )}
                 >
                   {saved ? (
-                    <><CheckCircle2 className="w-4 h-4" /> Identity Synced</>
-                  ) : "Update Identity Profile"}
+                    <><CheckCircle2 className="w-4 h-4" /> Saved</>
+                  ) : savingProfile ? "Saving…" : "Save Profile"}
                 </button>
               </form>
             </div>
@@ -502,8 +536,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      <h4 className="text-sm font-bold text-text-main">Use Name</h4>
                      <button onClick={() => {
                         const next = { ...formData, useNameInGreetings: formData.useNameInGreetings === false ? true : false };
-                        setFormData(next);
-                        onSave(next);
+                        savePreference(next);
                      }} role="switch" aria-checked={formData.useNameInGreetings !== false} aria-label="Use Name" className={cn("w-10 h-6 rounded-full transition-colors relative", formData.useNameInGreetings !== false ? "bg-success" : "bg-surface dark:bg-surface")}>
                         <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", formData.useNameInGreetings !== false ? "left-5" : "left-1")} />
                      </button>
@@ -517,8 +550,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      <h4 className="text-sm font-bold text-text-main">Local Context</h4>
                      <button onClick={() => {
                         const next = { ...formData, useLocalTime: formData.useLocalTime === false ? true : false };
-                        setFormData(next);
-                        onSave(next);
+                        savePreference(next);
                      }} role="switch" aria-checked={formData.useLocalTime !== false} aria-label="Local Context" className={cn("w-10 h-6 rounded-full transition-colors relative", formData.useLocalTime !== false ? "bg-success" : "bg-surface dark:bg-surface")}>
                         <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", formData.useLocalTime !== false ? "left-5" : "left-1")} />
                      </button>
@@ -532,8 +564,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      <h4 className="text-sm font-bold text-text-main">Behavioural Learning</h4>
                      <button onClick={() => {
                         const next = { ...formData, letNovaLearn: formData.letNovaLearn === false ? true : false };
-                        setFormData(next);
-                        onSave(next);
+                        savePreference(next);
                      }} role="switch" aria-checked={formData.letNovaLearn !== false} aria-label="Behavioural Learning" className={cn("w-10 h-6 rounded-full transition-colors relative", formData.letNovaLearn !== false ? "bg-success" : "bg-surface dark:bg-surface")}>
                         <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", formData.letNovaLearn !== false ? "left-5" : "left-1")} />
                      </button>
@@ -547,8 +578,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      <h4 className="text-sm font-bold text-text-main flex items-center gap-1"><Settings2 className="w-3 h-3"/> Nova Nudges</h4>
                      <button onClick={() => {
                         const next = { ...formData, sendNovaNudges: formData.sendNovaNudges === false ? true : false };
-                        setFormData(next);
-                        onSave(next);
+                        savePreference(next);
                      }} role="switch" aria-checked={formData.sendNovaNudges !== false} aria-label="Nova Nudges" className={cn("w-10 h-6 rounded-full transition-colors relative", formData.sendNovaNudges !== false ? "bg-success" : "bg-surface dark:bg-surface")}>
                         <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", formData.sendNovaNudges !== false ? "left-5" : "left-1")} />
                      </button>
