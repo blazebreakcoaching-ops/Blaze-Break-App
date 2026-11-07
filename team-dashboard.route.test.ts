@@ -170,7 +170,7 @@ describe('GET /api/org/:orgId/team-dashboard — Work Design Signals (Meeting Pr
     const nowIso = new Date().toISOString();
     for (const uid of ['a1', 'a2', 'a3']) {
       seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, {
         updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
       });
@@ -212,7 +212,7 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
     const nowIso = new Date().toISOString();
     for (const uid of ['a1', 'a2', 'a3']) {
       seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, {
         updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
       });
@@ -240,7 +240,7 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
     const nowIso = new Date().toISOString();
     for (const uid of ['a1', 'a2', 'a3']) {
       seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, {
         updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
       });
@@ -267,7 +267,7 @@ describe('GET /api/org/:orgId/team-dashboard — Nova Manager Coach recommendati
     const nowIso = new Date().toISOString();
     for (const uid of ['a1', 'a2', 'a3']) {
       seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, {
         updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
       });

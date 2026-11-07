@@ -158,13 +158,41 @@ describe('admin_audit_log_write_integrity', () => {
     expect(match![1]).toMatch(/allow write: if false;/);
   });
 
-  it('server.ts writes to admin_audit_logs from exactly one place - inside logAdminAction', () => {
-    const writeCalls = serverSource.match(/collection\("admin_audit_logs"\)\.add\(/g) || [];
-    expect(writeCalls).toHaveLength(1);
-    const logAdminActionStart = serverSource.indexOf('const logAdminAction =');
-    const writeCallIndex = serverSource.indexOf('collection("admin_audit_logs").add(');
-    expect(writeCallIndex).toBeGreaterThan(logAdminActionStart);
-    expect(writeCallIndex - logAdminActionStart).toBeLessThan(1000);
+  // Audit entries are authored ONLY by logAdminAction. The two recovery
+  // paths may re-write an entry logAdminAction already built (read from
+  // admin_audit_recovery) under its original event ID - they never author
+  // new content. Every other reference to the collection must be a read.
+  it('server.ts authors admin_audit_logs entries only in logAdminAction (plus idempotent recovery replays)', () => {
+    expect(serverSource.match(/collection\("admin_audit_logs"\)\.add\(/g) || []).toHaveLength(0);
+    const allowedRegions = [
+      'const repairPendingAdminAudit =',
+      'const logAdminAction =',
+      'app.post("/api/admin/audit-recovery/replay"',
+    ].map((marker) => {
+      const start = serverSource.indexOf(marker);
+      expect(start).toBeGreaterThan(-1);
+      return { marker, start, end: start + 2500 };
+    });
+    // Regions must not overlap: end each one where the next begins.
+    for (const r of allowedRegions) {
+      const next = allowedRegions.filter((o) => o.start > r.start).map((o) => o.start);
+      if (next.length) r.end = Math.min(r.end, Math.min(...next));
+    }
+    const pattern = /collection\("admin_audit_logs"\)\.doc\(([^)]*)\)(\.get\(\))?/g;
+    const writeSites: string[] = [];
+    for (const m of serverSource.matchAll(pattern)) {
+      if (m[2]) continue; // immediate .get() - a read
+      const region = allowedRegions.find((r) => m.index! > r.start && m.index! < r.end);
+      expect(region, `unexpected admin_audit_logs doc reference at offset ${m.index}`).toBeTruthy();
+      writeSites.push(region!.marker);
+    }
+    expect(writeSites.sort()).toEqual([...allowedRegions.map((r) => r.marker)].sort());
+    // Only logAdminAction mints a NEW event id (.doc() with no argument).
+    const newIds = [...serverSource.matchAll(/collection\("admin_audit_logs"\)\.doc\(\)/g)];
+    expect(newIds).toHaveLength(1);
+    const logStart = allowedRegions.find((r) => r.marker === 'const logAdminAction =')!.start;
+    expect(newIds[0].index! - logStart).toBeGreaterThan(0);
+    expect(newIds[0].index! - logStart).toBeLessThan(2500);
   });
 });
 
@@ -226,7 +254,7 @@ describe('organisation_aggregate_cohort_threshold', () => {
 
   it('a cohort meeting the threshold receives the real aggregate, not a locked response', async () => {
     const memberUids = Array.from({ length: 5 }, (_, i) => `member_${i}`);
-    seedDoc('organisations/org_1', { name: 'Test Org', adminUids: ['owner_1'], memberUids, privacyThreshold: 5 });
+    seedDoc('organisations/org_1', { name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', ...memberUids], privacyThreshold: 5 });
     for (const uid of memberUids) {
       seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
     }
@@ -322,7 +350,7 @@ describe('executive_financial_estimate_is_a_range', () => {
     const nowIso = new Date().toISOString();
     for (const uid of ['a1', 'a2', 'a3']) {
       seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, {
         updatedAt: nowIso, totalMeetingHours: 30, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
       });

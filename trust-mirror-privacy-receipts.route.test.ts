@@ -37,7 +37,7 @@ function consenting(uid: string) {
 }
 
 function connectCalendar(uid: string) {
-  seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+  seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
   seedDoc(`users/${uid}/live_signals/calendar`, { updatedAt: new Date().toISOString() });
 }
 

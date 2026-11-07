@@ -57,7 +57,9 @@ interface Member { uid: string; team?: string; consenting: boolean; }
 function seedOrg(threshold: number, members: Member[]) {
   seedDoc(`organisations/${ORG}`, {
     adminUids: [ADMIN],
-    memberUids: members.map((m) => m.uid),
+    // Real provisioning always lists the creating admin on the roster;
+    // the roster is authoritative for every role (getOrgMemberRole).
+    memberUids: [ADMIN, ...members.map((m) => m.uid)],
     memberTeams: Object.fromEntries(members.filter((m) => m.team).map((m) => [m.uid, m.team])),
     privacyThreshold: threshold,
   });
@@ -302,7 +304,7 @@ describe('POST /api/org/:orgId/manager-coach/chat — get_cost_of_pressure_snaps
 
   it('reports the org\'s own real entered cost figures once set', async () => {
     seedDoc(`organisations/${ORG}`, {
-      adminUids: [ADMIN], memberUids: members(3, true).map((m) => m.uid), privacyThreshold: 3,
+      adminUids: [ADMIN], memberUids: [ADMIN, ...members(3, true).map((m) => m.uid)], privacyThreshold: 3,
       costInputs: { headcount: 45, avgDailyCostPerEmployee: 180, annualSicknessDays: 240 },
     });
     for (const m of members(3, true)) seedDoc(`users/${m.uid}`, { shareAnonymizedDataWithOrg: true });
@@ -332,7 +334,7 @@ describe('POST /api/org/:orgId/manager-coach/chat — get_meeting_load_signal (r
     seedOrg(3, mems);
     const recentIso = new Date().toISOString();
     mems.forEach((m, i) => {
-      seedDoc(`users/${m.uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${m.uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${m.uid}/live_signals/calendar`, {
         totalMeetingHours: 10 + i,
         meetingCount: 5,
@@ -360,7 +362,7 @@ describe('POST /api/org/:orgId/manager-coach/chat — get_meeting_load_signal (r
     seedOrg(3, mems);
     const staleIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     mems.forEach((m) => {
-      seedDoc(`users/${m.uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${m.uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${m.uid}/live_signals/calendar`, {
         totalMeetingHours: 10, meetingCount: 5, backToBackCount: 1, eveningMeetingCount: 0, weekendMeetingCount: 0, windowDays: 7,
         updatedAt: staleIso,

@@ -63,7 +63,7 @@ describe('Work Design Intelligence - closing end-to-end checklist', () => {
     seedDoc('users/owner_1', { organisationId: ORG });
     for (const uid of ['a1', 'a2', 'a3']) {
       seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, { updatedAt: nowIso, totalMeetingHours: 28, backToBackCount: 9, eveningMeetingCount: 2, weekendMeetingCount: 0 });
     }
 

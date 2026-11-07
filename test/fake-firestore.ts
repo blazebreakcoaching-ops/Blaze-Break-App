@@ -349,7 +349,10 @@ class FakeTransaction {
   async get(ref: DocRef): Promise<DocSnapshot>;
   async get(ref: CollectionRef): Promise<QuerySnapshot>;
   async get(ref: DocRef | CollectionRef): Promise<DocSnapshot | QuerySnapshot> {
-    if (ref instanceof CollectionRef) return new CollectionRef(this.store, ref.path).get();
+    // Run the query AS GIVEN (where/orderBy/limit included), exactly like
+    // the real SDK. Rebuilding a bare CollectionRef here silently dropped
+    // every filter, so tx.get(query) returned the whole collection.
+    if (ref instanceof CollectionRef) return ref.get();
     return new DocSnapshot(this.store, ref.path, this.store.docs.get(ref.path));
   }
 

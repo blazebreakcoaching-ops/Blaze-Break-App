@@ -14,7 +14,10 @@ vi.hoisted(() => {
 vi.mock('express-rate-limit', () => ({ default: () => (_req: any, _res: any, next: any) => next() }));
 vi.mock('firebase-admin/app', () => ({ initializeApp: vi.fn(), getApps: () => [{}] }));
 vi.mock('firebase-admin/app-check', () => ({ getAppCheck: () => ({ verifyToken: vi.fn() }) }));
-vi.mock('firebase-admin/auth', () => ({ getAuth: () => ({ verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev` }) }) }));
+// Accounts whose email the identity provider has verified. Joining a
+// company now requires a verified email (POST /api/org/join).
+const verifiedEmailUids = vi.hoisted(() => new Set<string>(['new_joiner']));
+vi.mock('firebase-admin/auth', () => ({ getAuth: () => ({ verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev`, email_verified: verifiedEmailUids.has(t) }) }) }));
 vi.mock('firebase-admin/firestore', async () => {
   const fake = await import('./test/fake-firestore');
   return { getFirestore: () => fake.fakeDb, FieldValue: fake.FakeFieldValue };
@@ -78,7 +81,7 @@ describe('legacy fallback - orgs and members that predate the members/ subcollec
       .post(`/api/org/${ORG}/members/legacy_owner/role`)
       .set(auth('legacy_owner'))
       .send({ role: 'admin' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/last owner/i);
   });
 
@@ -136,7 +139,7 @@ describe('last-owner safety uses only effective active ownership', () => {
         .post(`/api/org/${ORG}/members/owner_1/role`)
         .set(auth('owner_1'))
         .send({ role: 'member' });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(409);
       expect(res.body.error).toMatch(/last owner/i);
     }
   );
@@ -147,7 +150,7 @@ describe('last-owner safety uses only effective active ownership', () => {
     seedMember(ORG, 'bad_role', 'bad_role');
     const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
       .set(auth('owner_1')).send({ role: 'member' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/last owner/i);
   });
 });
@@ -289,7 +292,9 @@ describe('role mutation cannot manufacture organisation membership', () => {
     seedMember(ORG, 'owner_1', 'owner');
     const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
       .set(auth('owner_1')).send({ role: 'admin' });
-    expect(res.status).toBe(400);
+    // The roster is authoritative: a caller absent from memberUids is not a
+    // member at all, so the request is refused before any role logic runs.
+    expect(res.status).toBe(403);
   });
 
   it('cannot reactivate a UID that is not on the organisation roster', async () => {
@@ -511,7 +516,7 @@ describe('last-owner protection', () => {
       .post(`/api/org/${ORG}/members/owner_1/role`)
       .set(auth('owner_1'))
       .send({ role: 'admin' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/last owner/i);
   });
 
@@ -661,8 +666,11 @@ describe('suspended membership must never grant organisation permissions', () =>
     seedMember(ORG, 'owner_1', 'owner');
     seedMember(ORG, 'sec_1', 'security_admin');
     const res = await request(app).post(`/api/org/${ORG}/members/owner_1/suspend`).set(auth('sec_1'));
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/last owner/i);
+    // Stronger than the old last-owner check: a security_admin may not
+    // suspend ANY owner, so the request is refused outright.
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/only an owner can suspend/i);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_1`)?.status).toBe('active');
   });
 });
 
@@ -1265,7 +1273,7 @@ describe('offboarding cannot be bypassed through stale member documents', () => 
     seedMember(ORG, 'former_owner', 'owner');
     const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
       .set(auth('owner_1')).send({ role: 'member' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/last owner/i);
     expect(getDocRaw(`organisations/${ORG}/members/owner_1`)?.role).toBe('owner');
   });
@@ -1276,7 +1284,7 @@ describe('offboarding cannot be bypassed through stale member documents', () => 
     seedMember(ORG, 'ordinary_staff', 'member');
     const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
       .set(auth('owner_1')).send({ role: 'member' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/last owner/i);
   });
 });
@@ -1393,7 +1401,7 @@ describe('cross-company owner records cannot defeat last-owner protection', () =
     seedDoc('users/moved_owner', { organisationId: OTHER_ORG });
     const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
       .set(auth('owner_1')).send({ role: 'member' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/last owner/i);
     expect(getDocRaw(`organisations/${ORG}/members/owner_1`)?.role).toBe('owner');
   });

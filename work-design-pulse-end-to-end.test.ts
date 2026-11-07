@@ -33,7 +33,7 @@ const TEAM_B = ['b1', 'b2', 'b3'];
 
 function connectCalendar(uid: string, metrics: { totalMeetingHours: number; backToBackCount: number; eveningMeetingCount: number; weekendMeetingCount: number }) {
   seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: true });
-  seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+  seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
   seedDoc(`users/${uid}/live_signals/calendar`, { updatedAt: new Date().toISOString(), ...metrics });
 }
 

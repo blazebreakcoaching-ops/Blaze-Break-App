@@ -165,7 +165,7 @@ describe('GET /api/org/:orgId/executive-work-design — financial range estimate
     const nowIso = new Date().toISOString();
     for (const uid of ['a1', 'a2', 'a3']) {
       consenting(uid);
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, {
         updatedAt: nowIso, totalMeetingHours: 30, backToBackCount: 10, eveningMeetingCount: 2, weekendMeetingCount: 0,
       });
@@ -184,7 +184,7 @@ describe('GET /api/org/:orgId/executive-work-design — baseline period, confide
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'a1', 'a2', 'a3'], privacyThreshold: 3 });
     for (const uid of ['a1', 'a2', 'a3']) {
       consenting(uid);
-      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true });
+      seedDoc(`users/${uid}/nova_permissions/current`, { allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z' });
       seedDoc(`users/${uid}/live_signals/calendar`, { updatedAt, totalMeetingHours: 10, backToBackCount: 1, eveningMeetingCount: 0, weekendMeetingCount: 0 });
     }
   };
