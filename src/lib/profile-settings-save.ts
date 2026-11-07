@@ -10,6 +10,7 @@ import { NOVA_PERMISSION_DEFAULTS } from './nova-brain';
 export async function saveVerifiedProfileSettings(
   uid: string,
   profile: UserProfileData,
+  options: { lastSeenChangelogVersion?: string } = {},
 ): Promise<void> {
   if (!uid || auth.currentUser?.uid !== uid) throw new Error('Account changed');
   const db = await getDb();
@@ -32,7 +33,11 @@ export async function saveVerifiedProfileSettings(
   if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
   const batch = writeBatch(db);
   batch.set(doc(db, 'users', uid, 'user_stats', 'core'),
-    { profile: cleanProfile, updatedAt }, { merge: true });
+    { profile: cleanProfile, updatedAt,
+      ...(options.lastSeenChangelogVersion ? {
+        lastSeenChangelogVersion: options.lastSeenChangelogVersion,
+      } : {}),
+    }, { merge: true });
   batch.set(permissionsRef, {
     ...(existingPermissions.exists() ? {} : NOVA_PERMISSION_DEFAULTS),
     allowNovaMemory: profile.letNovaLearn !== false,
