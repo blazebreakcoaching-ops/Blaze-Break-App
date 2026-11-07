@@ -87,9 +87,9 @@ export const isNovaLearningAllowed = (): boolean => {
 };
 
 // Everything Nova's server-side context builder (getNovaContextAndMetadata
-// in server.ts) is willing to use, gated per category on this doc. Defaults
-// to on for every category except the two memory ones, which the caller
-// decides based on what the user actually chose during onboarding.
+// in server.ts) is willing to use, gated per category on this doc. Memory
+// requires onboarding opt-in; Calendar aggregation also requires an explicit
+// opt-in beyond the Google OAuth scope.
 export const NOVA_PERMISSION_DEFAULTS = {
   allowCheckins: true,
   allowEnergyBudgets: true,
@@ -108,7 +108,7 @@ export const NOVA_PERMISSION_DEFAULTS = {
   // runs at all. Lives in the same doc since it's the same "how Nova-branded
   // features use my data" consent surface the user sees in one place
   // (DataPrivacyDashboard.tsx / "Nova Privacy Controls").
-  allowCalendarSignals: true,
+  allowCalendarSignals: false,
   // Broader "Nova sees the whole app" pass - same default-on, compact-
   // aggregate-only treatment as every category above. Each gates one more
   // module's summary in server.ts's getNovaContextAndMetadata.
@@ -175,6 +175,37 @@ export const isCalendarSignalConsentGranted = async (uid: string): Promise<boole
   } catch {
     return false;
   }
+};
+
+/** An explicit Calendar choice may create a new permission record, but
+ * must never replace the customer's existing granular consent choices. */
+export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): Promise<void> => {
+  if (!uid || auth.currentUser?.uid !== uid) throw new Error('Account changed');
+  const db = await getDb();
+  if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+  const { doc, runTransaction } = await import('firebase/firestore');
+  const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref);
+    if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+    if (snap.exists()) {
+      transaction.update(ref, {
+        allowCalendarSignals: enabled === true,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      // Firestore's creation rules require the standard named categories.
+      // Never default memory or Calendar aggregation to on.
+      transaction.set(ref, {
+        ...NOVA_PERMISSION_DEFAULTS,
+        allowNovaMemory: false,
+        allowNovaUseSavedMemories: false,
+        allowCalendarSignals: enabled === true,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
+  if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
 };
 
 // Updates just the memory-specific permissions from Settings or the Trust
