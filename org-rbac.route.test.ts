@@ -1378,3 +1378,22 @@ describe('company invitation and governance audit transactions', () => {
     ]));
   });
 });
+
+
+describe('cross-company owner records cannot defeat last-owner protection', () => {
+  it('cannot demote the only effective owner when another listed owner has moved company', async () => {
+    seedOrg(ORG, {
+      memberUids: ['owner_1', 'moved_owner'],
+      adminUids: ['owner_1', 'moved_owner'],
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'moved_owner', 'owner');
+    seedDoc('users/owner_1', { organisationId: ORG });
+    seedDoc('users/moved_owner', { organisationId: OTHER_ORG });
+    const res = await request(app).post(`/api/org/${ORG}/members/owner_1/role`)
+      .set(auth('owner_1')).send({ role: 'member' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+    expect(getDocRaw(`organisations/${ORG}/members/owner_1`)?.role).toBe('owner');
+  });
+});
