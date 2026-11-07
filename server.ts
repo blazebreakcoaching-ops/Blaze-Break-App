@@ -10572,16 +10572,33 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
   try {
     const user = requireAuth(req);
     const { joinCode } = req.body;
-    if (typeof joinCode !== 'string' || !joinCode.trim() || joinCode.trim().length > 64) {
-      return res.status(400).json({ error: "Enter a valid company joining code." });
+    if (typeof joinCode !== 'string' || !joinCode.trim() || joinCode.trim().length > 180) {
+      return res.status(400).json({ error: "Enter a valid company joining or invitation code." });
     }
     const normalizedCode = joinCode.trim().toUpperCase();
-    const db = getDb();
-    const orgsSnap = await db.collection("organisations").where("joinCode", "==", normalizedCode).limit(1).get();
-    if (orgsSnap.empty) {
-      return res.status(404).json({ error: "That join code doesn't match any organisation. Double-check with your admin." });
+    // Each new email invitation has its own unpredictable token; the
+    // existing shared joining code remains a separate manual fallback.
+    const inviteMatch = /^BBI\.([A-Z0-9-]{1,100})\.([A-F0-9]{32})$/.exec(normalizedCode);
+    const isInviteCode = normalizedCode.startsWith('BBI.');
+    if (isInviteCode && !inviteMatch) {
+      return res.status(400).json({ error: "That invitation code is invalid." });
     }
-    const orgRef = db.collection("organisations").doc(orgsSnap.docs[0].id);
+    const db = getDb();
+    let orgRef;
+    if (inviteMatch) {
+      const candidateId = inviteMatch[1].toLowerCase();
+      if (!OrgIdSchema.safeParse(candidateId).success) {
+        return res.status(400).json({ error: "That invitation code is invalid." });
+      }
+      orgRef = db.collection("organisations").doc(candidateId);
+    } else {
+      const orgsSnap = await db.collection("organisations").where("joinCode", "==", normalizedCode).limit(1).get();
+      if (orgsSnap.empty) {
+        return res.status(404).json({ error: "That join code doesn't match any organisation. Double-check with your admin." });
+      }
+      orgRef = db.collection("organisations").doc(orgsSnap.docs[0].id);
+    }
+    const tokenHash = inviteMatch ? crypto.createHash('sha256').update(normalizedCode).digest('hex') : null;
     const userRef = db.collection("users").doc(user.uid);
     const memberRef = orgRef.collection("members").doc(user.uid);
     const pendingRef = orgRef.collection("pending_invites");
@@ -10596,8 +10613,8 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
       const orgSnap = await tx.get(orgRef);
       const profileSnap = await tx.get(userRef);
       const pending = await tx.get(pendingRef);
-      if (!orgSnap.exists || orgSnap.data()?.joinCode !== normalizedCode) {
-        return { status: 404, error: "The company joining code has changed. Ask your company administrator for the latest code." };
+      if (!orgSnap.exists || (!inviteMatch && orgSnap.data()?.joinCode !== normalizedCode)) {
+        return { status: 404, error: "The company joining code has changed, or the company no longer exists." };
       }
       if (profileSnap.exists && profileSnap.data()?.organisationId) {
         return { status: 400, error: "You're already part of an organisation. Contact support to switch." };
@@ -10608,6 +10625,18 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
         return { status: 409, error: "This account already appears on the company roster. Contact its administrator to correct the membership." };
       }
       const matchingInvite = email ? pending.docs.find((d: any) => d.id === email) : undefined;
+      if (inviteMatch) {
+        if (!verifiedEmail) return { status: 403, error: "Verify your email before accepting a company invitation." };
+        // A token is valid ONLY for this verified email and this currently
+        // pending invitation. Deletion or resend immediately revokes it.
+        if (!matchingInvite || matchingInvite.data()?.tokenHash !== tokenHash) {
+          return { status: 403, error: "This invitation is cancelled or has been replaced. Ask your company administrator for a new one." };
+        }
+        const expiry = matchingInvite.data()?.tokenExpiresAt;
+        if (typeof expiry !== 'string' || !Number.isFinite(Date.parse(expiry)) || Date.parse(expiry) <= Date.now()) {
+          return { status: 410, error: "This invitation has expired. Ask your company administrator to resend it." };
+        }
+      }
       if (matchingInvite && !verifiedEmail) {
         return { status: 403, error: "Verify your email address before accepting your company's invitation." };
       }
@@ -10630,7 +10659,7 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
         status: 'active',
         email,
         joinedAt: FieldValue.serverTimestamp(),
-        invitedBy: reservedInvite ? 'email_invite' : 'join_code',
+        invitedBy: inviteMatch ? 'email_invite' : 'join_code',
       }, { merge: true });
       if (reservedInvite) tx.delete(reservedInvite.ref);
       return { status: 200, organisationId: orgRef.id, organisationName: org.name };
@@ -14453,6 +14482,14 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     const db = getDb();
     const orgRef = db.collection("organisations").doc(orgId);
     const pendingRef = orgRef.collection("pending_invites");
+    const tokensByEmail = new Map(cleaned.map(email => {
+      const token = `BBI.${orgId}.${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
+      return [email, {
+        token,
+        tokenHash: crypto.createHash('sha256').update(token.toUpperCase()).digest('hex'),
+        tokenExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }];
+    }));
 
     // Reserve invitation seats BEFORE sending any email. Every invitation
     // transaction updates the same organisation document as joining does.
@@ -14470,10 +14507,15 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
       const seatCheck = checkSeatLimit(members.size, pending.size, addedSeats, allowance);
       if (!seatCheck.allowed) return { allowed: false, error: seatCheck.error || "No free staff seats." };
       tx.update(orgRef, { updatedAt: FieldValue.serverTimestamp() });
-      cleaned.forEach(email => tx.set(pendingRef.doc(email), {
-        email, invitedAt: FieldValue.serverTimestamp(), emailSent: false,
-      }, { merge: true }));
-      return { allowed: true, name: data.name, joinCode: data.joinCode };
+      cleaned.forEach(email => {
+        const credentials = tokensByEmail.get(email)!;
+        tx.set(pendingRef.doc(email), {
+          email, invitedAt: FieldValue.serverTimestamp(), emailSent: false,
+          tokenHash: credentials.tokenHash,
+          tokenExpiresAt: credentials.tokenExpiresAt,
+        }, { merge: true });
+      });
+      return { allowed: true, name: data.name };
     });
     if (!reservation.allowed) {
       return res.status(400).json({ error: reservation.error });
@@ -14484,22 +14526,30 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     // delivery retains a visible pending row with emailSent=false so an
     // administrator can retry without silently losing the reserved seat.
     for (const email of cleaned) {
+      const credentials = tokensByEmail.get(email)!;
+      const inviteDoc = pendingRef.doc(email);
+      const beforeDelivery = await inviteDoc.get();
+      // Avoid knowingly sending a cancelled/replaced code. A cancellation
+      // racing the email provider still invalidates the token at redemption.
+      if (!beforeDelivery.exists || beforeDelivery.data()?.tokenHash !== credentials.tokenHash) {
+        results.push({ email, sent: false });
+        continue;
+      }
       let sent = false;
       try {
         sent = await sendBrevoEmail(
           email,
           `You're invited to ${reservation.name} on Blaze Break`,
-          `${reservation.name} has set up Blaze Break, a burnout recovery tool, for their team.\n\nTo join, sign in to Blaze Break and enter this code in your Privacy Centre under "Organisation Participation":\n\n${reservation.joinCode}\n\nJoining is entirely optional, and any data sharing with ${reservation.name} is off by default and fully within your control.`
+          `${reservation.name} has invited you to join Blaze Break.\n\nSign in with this email address, verify it, then enter this one-time invitation code in Privacy Centre > Organisation Participation:\n\n${credentials.token}\n\nThis code expires in seven days and can be revoked by your company administrator. Joining is optional; sharing your wellbeing information with your employer remains off by default.`
         );
       } catch (e) {
         logger.error("Company invitation delivery failed", errorFields(e));
       }
       results.push({ email, sent });
-      // Do not recreate an invitation cancelled while delivery was
-      // underway. A joined employee's resolved invite stays resolved.
-      const inviteDoc = pendingRef.doc(email);
+      // A token refresh or cancellation while email is in flight must not
+      // restore the old record or mark a replacement invitation delivered.
       const pendingNow = await inviteDoc.get();
-      if (pendingNow.exists) {
+      if (pendingNow.exists && pendingNow.data()?.tokenHash === credentials.tokenHash) {
         await inviteDoc.update({ emailSent: sent });
       }
     }
@@ -14522,7 +14572,14 @@ app.get("/api/org/:orgId/invites", verifyAppCheck, authenticateFirebaseUser, asy
     const db = getDb();
     const snap = await db.collection("organisations").doc(orgId).collection("pending_invites")
       .orderBy("invitedAt", "desc").limit(100).get();
-    const invites = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Never return even hashed invitation credentials to admin browsers.
+    const invites = snap.docs.map(d => ({
+      id: d.id, email: d.data().email || d.id,
+      emailSent: d.data().emailSent === true,
+      invitedAt: d.data().invitedAt || null,
+      tokenExpiresAt: d.data().tokenExpiresAt || null,
+      individualCode: typeof d.data().tokenHash === 'string',
+    }));
     res.json({ invites });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14548,7 +14605,7 @@ app.post("/api/org/:orgId/invites/:email/cancel", verifyAppCheck, authenticateFi
       { pending: true }, { pending: false, sharedJoinCodeStillValid: true });
     // Email invites currently send the shared join code. Cancelling a
     // pending row never revokes a code someone already received.
-    res.json({ success: true, sharedJoinCodeStillValid: true });
+    res.json({ success: true, invitationTokenRevoked: true, sharedJoinCodeStillValid: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
