@@ -60,3 +60,28 @@ describe('shared company code verified-email boundary', () => {
     expect(getDocRaw('users/verified_employee')?.organisationId).toBeUndefined();
   });
 });
+
+
+describe('orphan memberships cannot be revived by joining', () => {
+  it('rejects a suspended member document left off the roster', async () => {
+    seedDoc('organisations/company_a/members/verified_employee', {
+      role: 'admin', status: 'suspended', email: 'verified_employee@test.dev',
+    });
+    const res = await request(app).post('/api/org/join')
+      .set(auth('verified_employee')).send({ joinCode: 'ABC123' });
+    expect(res.status).toBe(409);
+    expect(getDocRaw('organisations/company_a/members/verified_employee')?.status).toBe('suspended');
+    expect(getDocRaw('organisations/company_a')?.memberUids).not.toContain('verified_employee');
+  });
+
+  it('rejects a stale active member document absent from the company roster', async () => {
+    seedDoc('organisations/company_a/members/verified_employee', {
+      role: 'owner', status: 'active', email: 'verified_employee@test.dev',
+    });
+    const res = await request(app).post('/api/org/join')
+      .set(auth('verified_employee')).send({ joinCode: 'ABC123' });
+    expect(res.status).toBe(409);
+    expect(getDocRaw('organisations/company_a/members/verified_employee')?.role).toBe('owner');
+    expect(getDocRaw('users/verified_employee')?.organisationId).toBeUndefined();
+  });
+});
