@@ -8853,7 +8853,15 @@ app.post("/api/admin/users/:uid/role", verifyAppCheck, authenticateFirebaseUser,
     const targetUid = req.params.uid;
     const { role } = parsed.data;
 
-    await mergeCustomClaims(targetUid, { role });
+    // This general account-role editor must not bypass the platform-owner
+    // governance path or retain legacy admin booleans on a downgrade.
+    if (role !== 'platform_owner') {
+      await assertNotLastPlatformOwner(targetUid, firebaseConfigDatabaseId);
+    }
+    const administrativeRole = isPlatformAdminRole(role);
+    await mergeCustomClaims(targetUid, administrativeRole
+      ? { role }
+      : { role, admin: false, platform_admin: false, platformOwner: false, roleExpiresAt: null });
     // verifyIdToken(token, true) rejects older ID tokens after revocation.
     // Never let an existing session keep the previous, more powerful role.
     await getAuth().revokeRefreshTokens(targetUid);
