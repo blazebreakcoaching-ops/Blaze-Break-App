@@ -9582,6 +9582,7 @@ app.post("/api/admin/incidents", verifyAppCheck, authenticateFirebaseUser, async
     await logAdminAction(req, "create_incident", "", ref.id, { title: record.title, severity: record.severity });
     res.json({ id: ref.id, ...record });
   } catch (err: any) {
+    if (err.message?.includes("Forbidden")) return res.status(403).json({ error: "Incident management permission required." });
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
@@ -9629,6 +9630,9 @@ app.post("/api/admin/incidents/:id/update", verifyAppCheck, authenticateFirebase
     await logAdminAction(req, "update_incident", "", req.params.id, { status: nextStatus, severity: nextSeverity, note: parsed.data.note });
     res.json({ success: true });
   } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      return res.status(403).json({ error: "Incident management permission required." });
+    }
     if (err.message?.includes("not found")) {
       res.status(404).json({ error: err.message });
     } else {
@@ -16542,6 +16546,7 @@ app.post("/api/admin/legal/:docType/publish", verifyAppCheck, authenticateFireba
     });
     res.json({ published: true, docType, version: parsed.data.version });
   } catch (err: any) {
+    if (err.message?.includes("Forbidden")) return res.status(403).json({ error: "Legal publishing permission required." });
     logger.error("[Legal] Failed to publish document:", errorFields(err));
     res.status(500).json({ error: "Could not publish this document right now." });
   }
