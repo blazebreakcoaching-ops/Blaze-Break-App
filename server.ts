@@ -10898,15 +10898,27 @@ const requireOrgAdmin = async (req: any, orgId: string) => {
 // responsible for checking the returned list against org.privacyThreshold
 // before using any of it, the same k-anonymity gate every one of these
 // endpoints already enforces.
-const getConsentingMemberUids = async (db: any, memberUids: string[]): Promise<string[]> => {
-  const consentingUids: string[] = [];
-  await Promise.all(memberUids.map(async (uid) => {
-    const userDoc = await db.collection("users").doc(uid).get();
-    if (userDoc.exists && userDoc.data()?.shareAnonymizedDataWithOrg === true) {
-      consentingUids.push(uid);
+const getConsentingMemberUids = async (db: any, orgId: string, memberUids: string[]): Promise<string[]> => {
+  // Consent to anonymised reporting is not permission for a former
+  // employer to keep using a person's data after they leave or transfer.
+  // Reconcile the current profile link and granular membership for every
+  // report, not just the company roster's possibly stale UID array.
+  const consenting = await Promise.all([...new Set(memberUids)].map(async (uid) => {
+    const [userDoc, memberDoc] = await Promise.all([
+      db.collection("users").doc(uid).get(),
+      db.collection("organisations").doc(orgId).collection("members").doc(uid).get(),
+    ]);
+    if (!userDoc.exists || userDoc.data()?.shareAnonymizedDataWithOrg !== true) return null;
+    const linkedOrg = userDoc.data()?.organisationId;
+    if (linkedOrg && linkedOrg !== orgId) return null;
+    if (memberDoc.exists) {
+      const membership = memberDoc.data();
+      if ((membership?.status !== undefined && membership.status !== 'active') ||
+          !isOrgRole(membership?.role)) return null;
     }
+    return uid;
   }));
-  return consentingUids;
+  return consenting.filter((uid): uid is string => uid !== null);
 };
 
 // Legacy invitations without an expiry remain visible/reserved so older
@@ -11120,7 +11132,7 @@ app.get("/api/org/:orgId/my-privacy-status", verifyAppCheck, authenticateFirebas
     }
     const threshold = org?.privacyThreshold || 5;
     const memberTeams: Record<string, string> = org?.memberTeams || {};
-    const consentingUids = await getConsentingMemberUids(db, org?.memberUids || []);
+    const consentingUids = await getConsentingMemberUids(db, orgId, org?.memberUids || []);
     const orgCohortSufficient = checkCohortSufficiency(consentingUids.length, threshold).sufficient;
 
     const myTeam = memberTeams[user.uid] || null;
@@ -11243,7 +11255,7 @@ app.get("/api/org/:orgId/recognition-suggestions", verifyAppCheck, authenticateF
 
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const consentingUids = await getConsentingMemberUids(db, orgId, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold, suggestions: [] });
@@ -11469,7 +11481,7 @@ app.get("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser,
     // rather than being an exception just because nothing numeric is
     // involved.
     const threshold = org?.privacyThreshold || 5;
-    const consentingUids = await getConsentingMemberUids(db, org?.memberUids || []);
+    const consentingUids = await getConsentingMemberUids(db, orgId, org?.memberUids || []);
     const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
     if (!sufficiency.sufficient) {
       return res.json(buildLockedAggregateResponse(sufficiency, { suggestions: [] }));
@@ -12263,7 +12275,7 @@ app.get("/api/org/:orgId/team-dashboard", verifyAppCheck, authenticateFirebaseUs
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
     const memberTeams: Record<string, string> = org.memberTeams || {};
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const consentingUids = await getConsentingMemberUids(db, orgId, memberUids);
     // Read-only - this route never computes the org-wide snapshot itself
     // (only its own managed teams'), so it must never be the one to
     // record today's org-wide availability; see getWorkDesignBaselineDays.
@@ -12423,7 +12435,7 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
     // cohort isn't big enough yet to compute one honestly.
     const memberTeams: Record<string, string> = org.memberTeams || {};
     const threshold = org.privacyThreshold || 5;
-    const teamConsentingUids = (await getConsentingMemberUids(db, org.memberUids || [])).filter((uid) => memberTeams[uid] === team);
+    const teamConsentingUids = (await getConsentingMemberUids(db, orgId, org.memberUids || [])).filter((uid) => memberTeams[uid] === team);
     const startSnapshot = await computeMeetingLoadSnapshotForCohort(db, teamConsentingUids, threshold);
     const signalSnapshotAtStart = startSnapshot.available ? {
       avgMeetingHoursPerWeek: startSnapshot.avgMeetingHoursPerWeek,
@@ -12687,7 +12699,7 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/outcome", verifyAppChec
     if (existing.signalSnapshotAtStart) {
       const memberTeams: Record<string, string> = org.memberTeams || {};
       const threshold = org.privacyThreshold || 5;
-      const teamConsentingUids = (await getConsentingMemberUids(db, org.memberUids || [])).filter((uid) => memberTeams[uid] === existing.team);
+      const teamConsentingUids = (await getConsentingMemberUids(db, orgId, org.memberUids || [])).filter((uid) => memberTeams[uid] === existing.team);
       const endSnapshot = await computeMeetingLoadSnapshotForCohort(db, teamConsentingUids, threshold);
       if (endSnapshot.available) {
         pressureTransferCheck = detectPressureTransfer(existing.signalSnapshotAtStart, {
@@ -12956,7 +12968,7 @@ app.get("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFireba
       });
     }
     const threshold = org.privacyThreshold || 5;
-    const consentingUids = await getConsentingMemberUids(db, org.memberUids || []);
+    const consentingUids = await getConsentingMemberUids(db, orgId, org.memberUids || []);
     const snapshot = await computeMeetingLoadSnapshotForCohort(db, consentingUids, threshold);
     const withGaps = policies.map((policy: any) => {
       const gap = snapshot.available
@@ -13135,7 +13147,7 @@ app.get("/api/org/:orgId/work-design-drift", verifyAppCheck, authenticateFirebas
       return res.json({ findings: [] });
     }
     const threshold = org.privacyThreshold || 5;
-    const consentingUids = await getConsentingMemberUids(db, org.memberUids || []);
+    const consentingUids = await getConsentingMemberUids(db, orgId, org.memberUids || []);
     const baselineDaysObserved = await getWorkDesignBaselineDays(db, orgId);
     const findings: { signalKey: string; message: string }[] = [];
     for (const doc of principlesSnap.docs) {
@@ -13171,7 +13183,7 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
     const memberTeams: Record<string, string> = org.memberTeams || {};
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const consentingUids = await getConsentingMemberUids(db, orgId, memberUids);
 
     const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
     if (!sufficiency.sufficient) {
@@ -13240,7 +13252,7 @@ app.get("/api/org/:orgId/hr-dashboard", verifyAppCheck, authenticateFirebaseUser
 const buildExecutiveWorkDesignPayload = async (db: any, orgId: string, org: any, recordBaseline: boolean) => {
   const threshold = org.privacyThreshold || 5;
   const memberUids: string[] = org.memberUids || [];
-  const consentingUids = await getConsentingMemberUids(db, memberUids);
+  const consentingUids = await getConsentingMemberUids(db, orgId, memberUids);
 
   const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
   if (!sufficiency.sufficient) {
@@ -13371,7 +13383,7 @@ app.get("/api/org/:orgId/data-coverage", verifyAppCheck, authenticateFirebaseUse
 
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const consentingUids = await getConsentingMemberUids(db, orgId, memberUids);
 
     const sufficiency = checkCohortSufficiency(consentingUids.length, threshold);
     if (!sufficiency.sufficient) {
@@ -13666,7 +13678,7 @@ app.get("/api/org/:orgId/manager-coach", managerCoachLimiter, verifyAppCheck, au
 
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const consentingUids = await getConsentingMemberUids(db, orgId, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold, suggestions: [] });
@@ -13898,7 +13910,7 @@ app.post("/api/org/:orgId/manager-coach/chat", managerCoachLimiter, verifyAppChe
 
     const threshold = org.privacyThreshold || 5;
     const memberUids: string[] = org.memberUids || [];
-    const consentingUids = await getConsentingMemberUids(db, memberUids);
+    const consentingUids = await getConsentingMemberUids(db, orgId, memberUids);
 
     if (consentingUids.length < threshold) {
       return res.json({ locked: true, cohortSize: consentingUids.length, threshold, text: '', planTrace: [] });
