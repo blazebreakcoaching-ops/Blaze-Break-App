@@ -276,6 +276,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // anonymous account - discarding the real one - and the app treated that
   // empty account as someone who'd never onboarded, running onboarding again.
   const explicitSignOutRef = React.useRef(false);
+  const settledAuthUidRef = React.useRef<string | null>(null);
 
   // A server-expired MFA session must take the active user back to the
   // security challenge immediately, not leave protected screens mounted
@@ -309,6 +310,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userRecord?.uid ?? null, auth.currentUser?.uid ?? null, cancelled,
       );
       if (!stillCurrent()) return;
+      // Fail closed while loading roles and MFA. Never display the previous
+      // account's React state under Firebase's newly selected identity.
+      if (settledAuthUidRef.current !== (userRecord?.uid ?? null)) {
+        setUser(null);
+        setAppRole('individual');
+        setEmailVerified(false);
+        setAccessToken(null);
+      }
+      setLoading(true);
+      if (userRecord && !userRecord.isAnonymous) setMfaPending(true);
       if (userRecord) {
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
@@ -409,6 +420,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         explicitSignOutRef.current = false;
       }
       if (!stillCurrent()) return;
+      settledAuthUidRef.current = userRecord?.uid ?? null;
       setUser(userRecord);
       setEmailVerified(userRecord?.emailVerified ?? false);
       if (!userRecord) {
