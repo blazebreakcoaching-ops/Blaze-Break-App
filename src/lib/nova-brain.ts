@@ -41,6 +41,10 @@ let cachedBrain: NovaMemory[] = [];
 let cachedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
 let cacheEpoch = 0;
+let cacheLoadSucceeded = false;
+
+export const isNovaBrainReadyForAutoSync = (uid: string): boolean =>
+  cachedUid === uid && auth.currentUser?.uid === uid && cacheLoadSucceeded;
 
 const announceNovaBrainUpdated = () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('nova-brain-updated'));
@@ -210,18 +214,22 @@ export const initNovaBrain = (uid: string): Promise<void> => {
   const requestedEpoch = ++cacheEpoch;
   cachedUid = uid;
   cachedBrain = []; // Clear the previous account immediately on switch.
+  cacheLoadSucceeded = false;
   announceNovaBrainUpdated();
   initPromise = (async () => {
     let loadedMemories: NovaMemory[] = [];
+    let succeeded = false;
     try {
       const { getDocs, query, orderBy } = await import('firebase/firestore');
       const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
       loadedMemories = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
+      succeeded = true;
     } catch {
-      // Empty is safer than displaying the previous account's memories.
+      // Do not automatically write replacement memory during a failed read.
     }
     // Account switches and sign-outs invalidate any unfinished fetches.
     if (cachedUid !== uid || requestedEpoch !== cacheEpoch) return;
+    cacheLoadSucceeded = succeeded;
     // A newly-added memory may have been saved locally while Firestore
     // was still loading. Merge by id instead of erasing that new entry.
     const localIds = new Set(cachedBrain.map(m => m.id));
@@ -236,6 +244,7 @@ export const clearNovaBrainCache = () => {
   cachedBrain = [];
   cachedUid = null;
   initPromise = null;
+  cacheLoadSucceeded = false;
   announceNovaBrainUpdated();
 };
 
@@ -344,6 +353,14 @@ export const updateNovaMemoryBySourceAndType = (
   const existingIndex = cachedBrain.findIndex(m => m.source === source && m.type === type);
 
   if (existingIndex > -1) {
+    const previous = cachedBrain[existingIndex];
+    // This app synchronises several profile-derived memories on ordinary
+    // renders. Identical values are not new information: no Firestore write,
+    // updatedAt churn or changed-event should be generated.
+    const identical = previous.canonicalKey === canonicalKey &&
+      Object.entries(memoryParams).every(([key, value]) =>
+        (previous as unknown as Record<string, unknown>)[key] === value);
+    if (identical) return;
     const updated: NovaMemory = {
       ...cachedBrain[existingIndex],
       ...memoryParams,
