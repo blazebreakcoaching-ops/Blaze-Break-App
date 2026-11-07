@@ -103,7 +103,7 @@ describe('POST /api/admin/orgs — orgId validation', () => {
   });
 
   it('refuses to reassign an existing account to another company through provisioning', async () => {
-    h.getUserByEmail.mockResolvedValueOnce({ uid: 'existing_owner', email: 'owner@oldco.test' });
+    h.getUserByEmail.mockResolvedValueOnce({ uid: 'existing_owner', email: 'owner@oldco.test', emailVerified: true });
     seedDoc('users/existing_owner', { organisationId: 'existing-company' });
     seedDoc('organisations/existing-company', {
       name: 'Existing Company', memberUids: ['existing_owner'], adminUids: ['existing_owner'],
@@ -121,12 +121,12 @@ describe('POST /api/admin/orgs — orgId validation', () => {
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
       .send({ orgId: 'acme-corp-2', name: 'Acme Corp', initialAdminEmail: 'nobody@nowhere.dev' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/sign up for Blaze Break first/);
+    expect(res.body.error).toMatch(/register and verify their email first/);
     expect(getDocRaw('organisations/acme-corp-2')).toBeUndefined();
   });
 
   it('sets the resolved initialAdminEmail as the org\'s first admin and member', async () => {
-    h.getUserByEmail.mockImplementationOnce(async (email: string) => ({ uid: 'new_admin_uid', email }));
+    h.getUserByEmail.mockImplementationOnce(async (email: string) => ({ uid: 'new_admin_uid', email, emailVerified: true }));
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
       .send({ orgId: 'acme-corp-3', name: 'Acme Corp', initialAdminEmail: 'admin@acme.dev' });
     expect(res.status).toBe(200);
@@ -136,11 +136,22 @@ describe('POST /api/admin/orgs — orgId validation', () => {
     expect(getDocRaw('organisations/acme-corp-3/members/new_admin_uid')?.role).toBe('owner');
   });
 
+  it('requires a verified email before making a person the company owner', async () => {
+    h.getUserByEmail.mockResolvedValueOnce({
+      uid: 'not_yet_verified', email: 'unverified@acme.dev', emailVerified: false,
+    });
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
+      .send({ orgId: 'new-company', name: 'New', initialAdminEmail: 'unverified@acme.dev' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/verify their Blaze Break account email/i);
+    expect(getDocRaw('organisations/new-company')).toBeUndefined();
+  });
+
   it('allows an unclaimed company to receive its first owner safely', async () => {
     seedDoc('organisations/unclaimed', {
       name: 'Draft Company', joinCode: 'ABC123', memberUids: [], adminUids: [],
     });
-    h.getUserByEmail.mockResolvedValueOnce({ uid: 'new_owner', email: 'owner@unclaimed.dev' });
+    h.getUserByEmail.mockResolvedValueOnce({ uid: 'new_owner', email: 'owner@unclaimed.dev', emailVerified: true });
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
       .send({ orgId: 'unclaimed', name: 'Claimed Company', initialAdminEmail: 'owner@unclaimed.dev' });
     expect(res.status).toBe(200);
@@ -155,7 +166,7 @@ describe('POST /api/admin/orgs — orgId validation', () => {
   it('rejects competing first-owner assignments to an unclaimed company', async () => {
     seedDoc('organisations/unclaimed', { name: 'Draft', joinCode: 'ABC123', memberUids: [], adminUids: [] });
     h.getUserByEmail.mockImplementation(async (email: string) => ({
-      uid: email.startsWith('first') ? 'first_owner' : 'second_owner', email,
+      uid: email.startsWith('first') ? 'first_owner' : 'second_owner', email, emailVerified: true,
     }));
     const results = await Promise.all(['first@unclaimed.dev', 'second@unclaimed.dev'].map(initialAdminEmail =>
       request(app).post('/api/admin/orgs').set(auth(OWNER))
@@ -170,7 +181,7 @@ describe('POST /api/admin/orgs — orgId validation', () => {
 
   it('does not change an existing company owner through the normal edit endpoint', async () => {
     seedDoc('organisations/acme-corp-3', { name: 'Existing', joinCode: 'ABC123', memberUids: ['owner_uid'], adminUids: ['owner_uid'] });
-    h.getUserByEmail.mockResolvedValueOnce({ uid: 'new_admin_uid', email: 'new@acme.dev' });
+    h.getUserByEmail.mockResolvedValueOnce({ uid: 'new_admin_uid', email: 'new@acme.dev', emailVerified: true });
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
       .send({ orgId: 'acme-corp-3', name: 'Hijacked', initialAdminEmail: 'new@acme.dev' });
     expect(res.status).toBe(409);
@@ -192,7 +203,7 @@ describe('POST /api/admin/orgs — orgId validation', () => {
   });
 
   it('two simultaneous company creations cannot assign one person to two companies', async () => {
-    h.getUserByEmail.mockImplementation(async (email: string) => ({ uid: 'single_owner', email }));
+    h.getUserByEmail.mockImplementation(async (email: string) => ({ uid: 'single_owner', email, emailVerified: true }));
     const results = await Promise.all(['company-a', 'company-b'].map(orgId =>
       request(app).post('/api/admin/orgs').set(auth(OWNER)).send({
         orgId, name: orgId, initialAdminEmail: 'owner@acme.dev',
