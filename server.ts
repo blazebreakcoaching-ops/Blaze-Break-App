@@ -12143,31 +12143,38 @@ app.post("/api/org/:orgId/members/:memberUid/remove", verifyAppCheck, authentica
 app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { org } = await requireOrgAdmin(req, orgId);
-    if (!(org.memberUids || []).includes(memberUid)) {
-      return res.status(400).json({ error: "That person isn't a member of this organisation." });
-    }
+    await requireOrgAdmin(req, orgId);
     const { team } = req.body;
     if (team !== null && (typeof team !== 'string' || team.length > 60)) {
       return res.status(400).json({ error: "Team name must be text under 60 characters, or null to clear it." });
     }
-    const previousTeam: string | null = (org.memberTeams || {})[memberUid] || null;
     const trimmed = typeof team === 'string' ? team.trim() : null;
     const nextTeam = trimmed && trimmed.length > 0 ? trimmed : null;
     const db = getDb();
-    const fieldPath = `memberTeams.${memberUid}`;
-    await db.collection("organisations").doc(orgId).update({
-      [fieldPath]: nextTeam ?? FieldValue.delete(),
+    const orgRef = db.collection("organisations").doc(orgId);
+    const memberRef = orgRef.collection("members").doc(memberUid);
+    const outcome = await db.runTransaction(async (tx) => {
+      const [orgSnap, memberSnap] = await Promise.all([tx.get(orgRef), tx.get(memberRef)]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
+        return { status: 400, error: "That person isn't a member of this organisation." };
+      }
+      const member = memberSnap.exists ? memberSnap.data() : null;
+      if (member && (member.status !== undefined && member.status !== 'active' || !isOrgRole(member.role))) {
+        return { status: 409, error: "This membership is not active." };
+      }
+      const previousTeam: string | null = (orgSnap.data()?.memberTeams || {})[memberUid] || null;
+      if (previousTeam === nextTeam) return { status: 200 };
+      tx.update(orgRef, { [`memberTeams.${memberUid}`]: nextTeam ?? FieldValue.delete() });
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "assign_member_team", memberUid,
+        { team: previousTeam }, { team: nextTeam });
+      return { status: 200 };
     });
-    await logOrgAuditAction(req, orgId, "assign_member_team", "member", memberUid, { team: previousTeam }, { team: nextTeam });
-    res.json({ success: true });
+    if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
+    return res.json({ success: true });
   } catch (err: any) {
-    if (err.message?.includes("Forbidden")) {
-      res.status(403).json({ error: err.message });
-    } else {
-      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-      res.status(500).json({ error: GENERIC_SERVER_ERROR });
-    }
+    if (err.message?.includes("Forbidden")) return res.status(403).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    return res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
@@ -12184,33 +12191,37 @@ app.post("/api/org/:orgId/members/:memberUid/team", verifyAppCheck, authenticate
 app.post("/api/org/:orgId/members/:memberUid/manage-teams", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { org } = await requireOrgAdmin(req, orgId);
-    if (!(org.memberUids || []).includes(memberUid)) {
-      return res.status(400).json({ error: "That person isn't a member of this organisation." });
-    }
-    const existingTeams = Array.from(new Set(Object.values(org.memberTeams || {}) as string[]));
-    const validation = validateTeamAssignment(req.body, existingTeams);
-    if (!validation.valid) {
-      return res.status(400).json({ error: validation.error });
-    }
-    const { teams } = req.body;
+    await requireOrgAdmin(req, orgId);
     const db = getDb();
-    const before = { teams: managedTeamsFor(org.teamManagers, memberUid) };
-    const fieldPath = `teamManagers.${memberUid}`;
-    await db.collection("organisations").doc(orgId).update({
-      [fieldPath]: teams.length > 0 ? teams : FieldValue.delete(),
+    const orgRef = db.collection("organisations").doc(orgId);
+    const memberRef = orgRef.collection("members").doc(memberUid);
+    const outcome = await db.runTransaction(async (tx) => {
+      const [orgSnap, memberSnap] = await Promise.all([tx.get(orgRef), tx.get(memberRef)]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(memberUid)) {
+        return { status: 400, error: "That person isn't a member of this organisation." };
+      }
+      const member = memberSnap.exists ? memberSnap.data() : null;
+      if (member && (member.status !== undefined && member.status !== 'active' || !isOrgRole(member.role))) {
+        return { status: 409, error: "This membership is not active." };
+      }
+      const current = orgSnap.data()!;
+      const existingTeams = Array.from(new Set(Object.values(current.memberTeams || {}) as string[]));
+      const validation = validateTeamAssignment(req.body, existingTeams);
+      if (!validation.valid) return { status: 400, error: validation.error };
+      const teams: string[] = req.body.teams;
+      const previousTeams = managedTeamsFor(current.teamManagers, memberUid);
+      if (JSON.stringify(previousTeams) === JSON.stringify(teams)) return { status: 200, teams };
+      tx.update(orgRef, { [`teamManagers.${memberUid}`]: teams.length ? teams : FieldValue.delete() });
+      writeOrgMembershipAuditInTransaction(tx, db, req, orgId, "assign_team_manager", memberUid,
+        { teams: previousTeams }, { teams });
+      return { status: 200, teams };
     });
-    await logOrgAuditAction(req, orgId, "assign_team_manager", "team_manager", memberUid, before, { teams });
-    res.json({ success: true, teams });
+    if (outcome.status !== 200) return res.status(outcome.status).json({ error: outcome.error });
+    return res.json({ success: true, teams: outcome.teams });
   } catch (err: any) {
-    if (err.message?.includes("Forbidden")) {
-      res.status(403).json({ error: err.message });
-    } else if (err.message?.includes("not found")) {
-      res.status(404).json({ error: err.message });
-    } else {
-      logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
-      res.status(500).json({ error: GENERIC_SERVER_ERROR });
-    }
+    if (err.message?.includes("Forbidden")) return res.status(403).json({ error: err.message });
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    return res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
 
