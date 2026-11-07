@@ -14441,8 +14441,34 @@ app.post("/api/org/:orgId/devices/register", verifyAppCheck, authenticateFirebas
       lastCheckIn: now,
       registeredAt: now,
     };
-    const ref = await db.collection("organisations").doc(orgId).collection("devices").add(record);
-    await logOrgAuditAction(req, orgId, "register_device", "device", ref.id, null, { channel, appVersion });
+    const orgRef = db.collection("organisations").doc(orgId);
+    const ref = orgRef.collection("devices").doc();
+    await db.runTransaction(async (tx) => {
+      const [orgSnap, memberSnap, profileSnap] = await Promise.all([
+        tx.get(orgRef),
+        tx.get(orgRef.collection("members").doc(user.uid)),
+        tx.get(db.collection("users").doc(user.uid)),
+      ]);
+      if (!orgSnap.exists || !(orgSnap.data()?.memberUids || []).includes(user.uid) ||
+          (profileSnap.exists && profileSnap.data()?.organisationId &&
+            profileSnap.data()?.organisationId !== orgId)) {
+        throw new Error("Forbidden: company membership is no longer active.");
+      }
+      if (memberSnap.exists &&
+          (memberSnap.data()?.status !== undefined && memberSnap.data()?.status !== 'active' ||
+           !isOrgRole(memberSnap.data()?.role))) {
+        throw new Error("Forbidden: company membership is no longer active.");
+      }
+      tx.set(ref, record);
+      const auditRef = orgRef.collection("audit_logs").doc();
+      tx.set(auditRef, {
+        actorUid: user.uid, actorEmail: user.email || '',
+        orgId, action: 'register_device', targetResourceType: 'device', targetResourceId: ref.id,
+        before: null, after: { channel, appVersion },
+        createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+        userAgent: req.headers?.['user-agent'] || '',
+      });
+    });
     res.json({ success: true, device: { id: ref.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14482,13 +14508,22 @@ app.post("/api/org/:orgId/devices/:deviceId/revoke", verifyAppCheck, authenticat
     const { orgId, deviceId } = req.params;
     const { db } = await requireOrgPermission(req, orgId, 'org.devices.manage');
     const ref = db.collection("organisations").doc(orgId).collection("devices").doc(deviceId);
-    const doc = await ref.get();
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Device not found." });
-    }
-    const before = { status: doc.data().status };
-    await ref.update({ status: "revoked", revokedAt: new Date().toISOString() });
-    await logOrgAuditAction(req, orgId, "revoke_device", "device", deviceId, before, { status: "revoked" });
+    const result = await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists) return { status: 404 };
+      if (doc.data()?.status === 'revoked') return { status: 200 };
+      tx.update(ref, { status: 'revoked', revokedAt: new Date().toISOString() });
+      const auditRef = db.collection("organisations").doc(orgId).collection("audit_logs").doc();
+      tx.set(auditRef, {
+        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        orgId, action: 'revoke_device', targetResourceType: 'device', targetResourceId: deviceId,
+        before: { status: doc.data()?.status || null }, after: { status: 'revoked' },
+        createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+        userAgent: req.headers?.['user-agent'] || '',
+      });
+      return { status: 200 };
+    });
+    if (result.status === 404) return res.status(404).json({ error: 'Device not found.' });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14513,22 +14548,25 @@ app.post("/api/org/:orgId/devices/:deviceId/check-for-update", verifyAppCheck, a
       return res.status(403).json({ error: "Forbidden: not a member of this organisation." });
     }
     const ref = db.collection("organisations").doc(orgId).collection("devices").doc(deviceId);
-    const doc = await ref.get();
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Device not found." });
-    }
-    const device = doc.data();
-    const isOwner = device.ownerUid === user.uid;
-    if (!isOwner && !hasOrgPermission(role, 'org.devices.manage')) {
-      return res.status(403).json({ error: "Forbidden: you may only check updates for your own device." });
-    }
-    if (device.status === "revoked") {
-      return res.status(403).json({ error: "This device has been revoked and can no longer check for updates." });
-    }
-    await ref.update({ lastCheckIn: new Date().toISOString() });
+    const outcome = await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists) return { status: 404 as const };
+      const device = doc.data()!;
+      const isOwner = device.ownerUid === user.uid;
+      if (!isOwner && !hasOrgPermission(role, 'org.devices.manage')) {
+        return { status: 403 as const, error: "Forbidden: you may only check updates for your own device." };
+      }
+      if (device.status !== 'active') {
+        return { status: 403 as const, error: "This device is not active and cannot check for updates." };
+      }
+      tx.update(ref, { lastCheckIn: new Date().toISOString() });
+      return { status: 200 as const, device };
+    });
+    if (outcome.status === 404) return res.status(404).json({ error: 'Device not found.' });
+    if (outcome.status === 403) return res.status(403).json({ error: outcome.error });
     const configDoc = await db.collection("app_config").doc("release_channels").get();
-    const channelConfig = configDoc.exists ? (configDoc.data()?.[device.channel] || null) : null;
-    res.json(evaluateUpdateStatus(device.appVersion, channelConfig));
+    const channelConfig = configDoc.exists ? (configDoc.data()?.[outcome.device.channel] || null) : null;
+    res.json(evaluateUpdateStatus(outcome.device.appVersion, channelConfig));
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
       res.status(403).json({ error: err.message });
