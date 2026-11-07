@@ -9294,6 +9294,63 @@ app.delete("/api/admin/admin-users/:uid", verifyAppCheck, authenticateFirebaseUs
   }
 });
 
+// Scoped per-account operational audit history. Unlike the overview's first
+// page, this filters on the server before pagination and cannot mix accounts.
+// Requires the Firestore composite index committed with this route.
+const ADMIN_ACCOUNT_AUDIT_PAGE_SIZE = 25;
+app.get("/api/admin/accounts/:uid/audit-history", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requirePermission(req, "audit.read");
+    const uid = req.params.uid;
+    const cursor = req.query.cursor;
+    if (!/^[A-Za-z0-9_-]{1,160}$/.test(uid) ||
+        (cursor !== undefined && (typeof cursor !== "string" ||
+          !/^[A-Za-z0-9_-]{1,160}$/.test(cursor)))) {
+      return res.status(400).json({ error: "Invalid account or audit cursor." });
+    }
+    const db = getDb();
+    const audit = db.collection("admin_audit_logs");
+    let query = audit.where("targetUid", "==", uid).orderBy("createdAt", "desc");
+    if (typeof cursor === "string") {
+      const anchor = await audit.doc(cursor).get();
+      if (!anchor.exists || anchor.data()?.targetUid !== uid || !anchor.data()?.createdAt) {
+        return res.status(400).json({ error: "Invalid account audit cursor. Start again." });
+      }
+      query = query.startAfter(anchor);
+    }
+    const snapshot = await query.limit(ADMIN_ACCOUNT_AUDIT_PAGE_SIZE + 1).get();
+    const hasMore = snapshot.docs.length > ADMIN_ACCOUNT_AUDIT_PAGE_SIZE;
+    const page = snapshot.docs.slice(0, ADMIN_ACCOUNT_AUDIT_PAGE_SIZE);
+    const logs = page.map(doc => {
+      const data = doc.data();
+      const raw = data.metadata || {};
+      const metadata = Object.fromEntries(
+        ['role', 'plan', 'previousPlan', 'status', 'planChange', 'durationDays', 'suspend']
+          .filter(key => ['string', 'number', 'boolean'].includes(typeof raw[key]))
+          .map(key => [key, raw[key]]),
+      );
+      return {
+        id: doc.id, action: data.action || "unknown",
+        actorEmail: data.actorEmail || null, actorRole: data.actorRole || null,
+        targetUid: uid, createdAt: firestoreTimestampToIso(data.createdAt),
+        outcome: data.outcome === "succeeded" ? "succeeded" :
+          data.outcome === "failed" ? "failed" : "unrecorded",
+        metadata,
+      };
+    });
+    res.json({
+      logs, nextCursor: hasMore ? page[page.length - 1].id : null,
+      pageSize: ADMIN_ACCOUNT_AUDIT_PAGE_SIZE, complete: !hasMore,
+    });
+  } catch (err: any) {
+    if (err.message?.includes("Forbidden")) {
+      return res.status(403).json({ error: "Audit access is not permitted." });
+    }
+    logger.error("[ADMIN] Account audit history unavailable:", errorFields(err));
+    return res.status(500).json({ error: "Account history is temporarily unavailable." });
+  }
+});
+
 // Audit history is paginated by a Firestore document snapshot, not an
 // offset scan. Existing callers with no cursor still receive a logs array.
 const ADMIN_AUDIT_PAGE_SIZE = 50;
