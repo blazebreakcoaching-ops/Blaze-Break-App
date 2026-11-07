@@ -523,6 +523,54 @@ describe('membership record lifecycle', () => {
     expect(getDocRaw(`organisations/${ORG}/members/leaver`)).toBeUndefined();
   });
 
+  it('cleans former HR and manager privileges when a staff member leaves', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', 'leaver'],
+      teamManagers: { leaver: ['Engineering'] }, memberTeams: { leaver: 'Engineering' },
+      hrViewerUids: ['leaver'],
+    });
+    seedDoc('users/leaver', { organisationId: ORG, shareAnonymizedDataWithOrg: true });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'leaver', 'member');
+    const res = await request(app).post('/api/org/leave').set(auth('leaver'));
+    expect(res.status).toBe(200);
+    const org = getDocRaw(`organisations/${ORG}`);
+    expect(org?.memberUids).not.toContain('leaver');
+    expect(org?.hrViewerUids).not.toContain('leaver');
+    expect(org?.memberTeams?.leaver).toBeUndefined();
+    expect(org?.teamManagers?.leaver).toBeUndefined();
+    expect(getDocRaw('users/leaver')?.organisationId).toBeUndefined();
+  });
+
+  it('refuses to let the final active company owner leave', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc('users/owner_1', { organisationId: ORG });
+    const res = await request(app).post('/api/org/leave').set(auth('owner_1'));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/last owner/i);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('owner_1');
+    expect(getDocRaw('users/owner_1')?.organisationId).toBe(ORG);
+  });
+
+  it('cleans old HR/team grants when an admin removes a member', async () => {
+    seedDoc(`organisations/${ORG}`, {
+      name: 'Test Org', adminUids: ['owner_1'], memberUids: ['owner_1', 'leaver'],
+      teamManagers: { leaver: ['Engineering'] }, memberTeams: { leaver: 'Engineering' },
+      hrViewerUids: ['leaver'],
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'leaver', 'member');
+    seedDoc('users/leaver', { organisationId: ORG });
+    const res = await request(app).post(`/api/org/${ORG}/members/leaver/remove`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    const org = getDocRaw(`organisations/${ORG}`);
+    expect(org?.teamManagers?.leaver).toBeUndefined();
+    expect(org?.memberTeams?.leaver).toBeUndefined();
+    expect(org?.hrViewerUids).not.toContain('leaver');
+    expect(getDocRaw(`organisations/${ORG}/members/leaver`)).toBeUndefined();
+  });
+
   // The defensive catch block behind the happy path above.
   it('POST /api/org/leave: returns a generic 500 and logs the real error when the user profile read throws', async () => {
     seedDoc(`users/leaver2`, { organisationId: ORG });
