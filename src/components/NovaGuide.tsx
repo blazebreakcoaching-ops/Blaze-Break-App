@@ -56,11 +56,18 @@ export const NovaGuide = ({ isOpen, startPage, accountId, onClose, onNavigate, o
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      // Esc is another voluntary exit. Save the same progress that the
+      // visible Skip/Close controls retain, not a silent restart.
+      if (accountId) {
+        try { window.localStorage.setItem(progressKey(accountId), String(index)); }
+        catch { /* Storage is optional. */ }
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, accountId, index]);
 
   const savePosition = (position: number) => {
     if (!accountId) return;
