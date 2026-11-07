@@ -101,6 +101,35 @@ describe('GET /api/admin/users', () => {
     expect(res.body.users[0]).toMatchObject({ uid: 'demo_user', isAnonymous: true, email: null });
   });
 
+  it('never labels an email/password account as anonymous just because linked providerData is empty', async () => {
+    h.getUser.mockImplementationOnce(async (uid: string) => ({
+      uid, email: 'owner@example.test', displayName: 'Operations Lead',
+      emailVerified: true, phoneNumber: undefined, disabled: false,
+      providerData: [], customClaims: {},
+      metadata: { creationTime: '2026-02-02T10:30:00.000Z', lastSignInTime: '2026-11-07T09:15:00.000Z' },
+    }));
+    seedDoc('users/registered_user', { organisationId: 'acme' });
+    const res = await request(app).get('/api/admin/users').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.users[0]).toMatchObject({
+      uid: 'registered_user', email: 'owner@example.test',
+      displayName: 'Operations Lead', organisationId: 'acme',
+      isAnonymous: false, createdAt: '2026-02-02T10:30:00.000Z',
+      lastSignIn: '2026-11-07T09:15:00.000Z',
+    });
+  });
+
+  it('does not fabricate name, email or sign-in times for an orphaned record', async () => {
+    h.getUser.mockImplementationOnce(async () => { throw new Error('no such user'); });
+    seedDoc('users/orphan', { organisationId: 'acme' });
+    const res = await request(app).get('/api/admin/users').set(auth(OWNER));
+    expect(res.body.users[0]).toMatchObject({
+      uid: 'orphan', displayName: null, email: null,
+      organisationId: 'acme', createdAt: null, lastSignIn: null,
+      isAnonymous: false, accessStatus: 'unknown',
+    });
+  });
+
   it("surfaces the account's real role custom claim, defaulting to 'user' when none is set", async () => {
     h.getUser.mockImplementationOnce(async (uid: string) => ({
       uid, email: `${uid}@test.dev`, emailVerified: true, disabled: false, providerData: [{ providerId: 'password' }],
