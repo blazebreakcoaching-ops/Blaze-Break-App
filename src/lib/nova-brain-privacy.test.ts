@@ -22,7 +22,7 @@ vi.mock('../../nova-memory-governance', () => ({
 }));
 
 import {
-  initNovaBrain, clearNovaBrainCache, getNovaBrain,
+  initNovaBrain, clearNovaBrainCache, getNovaBrain, addNovaMemory,
   isNovaLearningAllowed, setNovaLearningAllowedForUid,
 } from './nova-brain';
 
@@ -63,6 +63,25 @@ describe('Nova local memory cache isolation', () => {
     readA.resolve(snap('A-secret'));
     await loadA;
     expect(getNovaBrain().map(m => m.id)).toEqual(['B-only']);
+  });
+
+  it('keeps newly-added same-account memories if Firestore finishes later', async () => {
+    const pending = deferred<ReturnType<typeof snap>>();
+    mocks.getDocs.mockImplementationOnce(() => pending.promise);
+    const loading = initNovaBrain('account-A');
+    await vi.waitFor(() => expect(mocks.getDocs).toHaveBeenCalledTimes(1));
+
+    setNovaLearningAllowedForUid('account-A', true);
+    addNovaMemory({
+      type: 'profile', content: 'Newly confirmed preference',
+      source: 'test', confidence: 'verified', canEdit: true,
+    });
+    expect(getNovaBrain().some(m => m.content === 'Newly confirmed preference')).toBe(true);
+
+    pending.resolve(snap('older-memory'));
+    await loading;
+    expect(getNovaBrain().map(m => m.content)).toContain('Newly confirmed preference');
+    expect(getNovaBrain().map(m => m.id)).toContain('older-memory');
   });
 
   it('invalidates an unfinished load when the account signs out', async () => {
