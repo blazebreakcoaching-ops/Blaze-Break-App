@@ -34,7 +34,7 @@ export function normaliseNudgePreferences(raw: unknown): NudgePreferences {
     quietHoursStart: validTime(item.quietHoursStart) ? item.quietHoursStart : defaults.quietHoursStart,
     quietHoursEnd: validTime(item.quietHoursEnd) ? item.quietHoursEnd : defaults.quietHoursEnd,
     allowedNudgeCategories: Array.isArray(item.allowedNudgeCategories)
-      ? item.allowedNudgeCategories.filter((v): v is string => typeof v === 'string').slice(0, 30)
+      ? item.allowedNudgeCategories.filter((v): v is string => typeof v === 'string').slice(0, 20)
       : defaults.allowedNudgeCategories,
   };
 }
