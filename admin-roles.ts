@@ -71,6 +71,30 @@ export const isOwnerBootstrapEmail = (
   return allowlist.some((e) => e.toLowerCase() === lower);
 };
 
+// SECURITY: an email string alone is NOT proof of identity. Firebase lets
+// anyone create an email/password account for an address they do not own
+// (unverified), and gmail.com/googlemail.com are distinct strings to
+// Firebase - so if only one of the bootstrap addresses was ever registered,
+// the other could be claimed by anyone. Every authorization decision must
+// use this helper, which only honours the bootstrap allowlist when the
+// identity provider has verified the address (ID token `email_verified`,
+// or the client SDK's `emailVerified`). isOwnerBootstrapEmail above is
+// kept only for non-authorization uses and its existing tests.
+export interface BootstrapIdentity {
+  email?: string | null;
+  email_verified?: boolean | null;
+  emailVerified?: boolean | null;
+}
+
+export const isVerifiedOwnerBootstrapIdentity = (
+  identity: BootstrapIdentity | null | undefined,
+  allowlist: readonly string[] = DEFAULT_OWNER_BOOTSTRAP_EMAILS,
+): boolean => {
+  if (!identity) return false;
+  const verified = identity.email_verified === true || identity.emailVerified === true;
+  return verified && isOwnerBootstrapEmail(identity.email, allowlist);
+};
+
 // The Evolution Engine (platform-governance control plane: feature
 // registry, change proposals, protected core, Nova context brain
 // governance, connector contracts) is deliberately narrower than every

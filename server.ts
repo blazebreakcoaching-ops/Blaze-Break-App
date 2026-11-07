@@ -87,7 +87,7 @@ import {
 } from './gad7';
 import { DEFAULT_LEGAL_DOCUMENTS, LegalDocumentType } from './legal-documents';
 import { OrgRole, isOrgRole, hasOrgPermission, canAssignRole, OrgPermission, ORG_ROLE_PERMISSIONS } from './org-rbac';
-import { PLATFORM_ADMIN_ROLES, isPlatformAdminRole, DEFAULT_OWNER_BOOTSTRAP_EMAILS, isOwnerBootstrapEmail as isOwnerBootstrapEmailFor, isEvolutionEngineRole } from './admin-roles';
+import { PLATFORM_ADMIN_ROLES, isPlatformAdminRole, DEFAULT_OWNER_BOOTSTRAP_EMAILS, isVerifiedOwnerBootstrapIdentity, BootstrapIdentity, isEvolutionEngineRole } from './admin-roles';
 import { validateFeatureRegistryUpsert, buildInitialRegistry, LegacyFeatureDefinition } from './feature-registry-v2';
 import { FEATURE_FLAG_IDS } from './feature-flag-ids';
 import { FEATURE_REGISTRY as LEGACY_FEATURE_REGISTRY } from './src/lib/feature-registry';
@@ -4228,8 +4228,11 @@ const OWNER_BOOTSTRAP_EMAILS = (process.env.OWNER_BOOTSTRAP_EMAILS || DEFAULT_OW
   .split(',')
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
-const isOwnerBootstrapEmail = (email: string | null | undefined) =>
-  isOwnerBootstrapEmailFor(email, OWNER_BOOTSTRAP_EMAILS);
+// Requires the ID token's email_verified claim - see
+// isVerifiedOwnerBootstrapIdentity in admin-roles.ts for why an unverified
+// address must never grant platform-owner access.
+const isOwnerBootstrapIdentity = (identity: BootstrapIdentity | null | undefined) =>
+  isVerifiedOwnerBootstrapIdentity(identity, OWNER_BOOTSTRAP_EMAILS);
 
 // Widened from a literal `user.role === 'platform_owner'` check to
 // isPlatformAdminRole(user.role) (all 8 platform-staff tiers, see
@@ -4243,7 +4246,7 @@ const isOwnerBootstrapEmail = (email: string | null | undefined) =>
 // backend actually honoured.
 const requireAdmin = (req: any) => {
   const user = requireAuth(req);
-  const isSuperAdmin = user.platform_admin === true || user.admin === true || isPlatformAdminRole(user.role) || isOwnerBootstrapEmail(user.email);
+  const isSuperAdmin = user.platform_admin === true || user.admin === true || isPlatformAdminRole(user.role) || isOwnerBootstrapIdentity(user);
   if (!isSuperAdmin) {
     throw new Error("Forbidden: Admin privileges required.");
   }
@@ -4258,7 +4261,7 @@ const requireAdmin = (req: any) => {
 // drift independently again.
 const requireEvolutionAccess = (req: any) => {
   const user = requireAuth(req);
-  const allowed = isEvolutionEngineRole(user.role) || isOwnerBootstrapEmail(user.email);
+  const allowed = isEvolutionEngineRole(user.role) || isOwnerBootstrapIdentity(user);
   if (!allowed) {
     throw new Error("Forbidden: Evolution Engine access required.");
   }
@@ -4267,7 +4270,7 @@ const requireEvolutionAccess = (req: any) => {
 
 const requireRole = (req: any, allowedRoles: string[]) => {
   const user = requireAuth(req);
-  const role = user.role || (isOwnerBootstrapEmail(user.email) ? 'platform_owner' : 'user');
+  const role = user.role || (isOwnerBootstrapIdentity(user) ? 'platform_owner' : 'user');
   if (!allowedRoles.includes(role) && !allowedRoles.includes(user.role)) {
     throw new Error(`Forbidden: Role in ${allowedRoles.join(', ')} required.`);
   }
@@ -4275,7 +4278,7 @@ const requireRole = (req: any, allowedRoles: string[]) => {
 };
 
 const isUserPlatformOwner = (user: any) =>
-  isOwnerBootstrapEmail(user.email) || user.role === 'platform_owner' ||
+  isOwnerBootstrapIdentity(user) || user.role === 'platform_owner' ||
   // Only role-less legacy owner records may rely on the older flag.
   // An explicit narrower role must not inherit an old owner boolean.
   (!user.role && user.platformOwner === true);
@@ -4432,7 +4435,7 @@ const requirePermission = (req: any, permission: string) => {
   // compatibility access until migrated.
   const isRolelessLegacyAdmin = !user.role &&
     (user.platform_admin === true || user.admin === true);
-  if (isOwnerBootstrapEmail(user.email) || isRolelessLegacyAdmin) {
+  if (isOwnerBootstrapIdentity(user) || isRolelessLegacyAdmin) {
     return user;
   }
   const perms = getPermissionsForRole(user.role);
@@ -4476,7 +4479,7 @@ const logAdminAction = async (
   const entry = {
     actorUid: actor?.uid || "system",
     actorEmail: actor?.email || "system",
-    actorRole: actor?.role || (isOwnerBootstrapEmail(actor?.email) ? "platform_owner" : "platform_admin"),
+    actorRole: actor?.role || (isOwnerBootstrapIdentity(actor) ? "platform_owner" : "platform_admin"),
     action, targetUid, targetEmail,
     createdAt: FieldValue.serverTimestamp(), metadata,
     ...(outcome ? { outcome } : {}),

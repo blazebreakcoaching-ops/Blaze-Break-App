@@ -54,7 +54,7 @@ import { SHIP_QUEST_IDS_BY_STAGE } from "./components/ShipJourney";
 import { cn, fireConfetti } from "./lib/utils.ts";
 import { useFocusTrap } from "./lib/useFocusTrap";
 import { auth, getDb } from "./lib/firebase.ts";
-import { isOwnerBootstrapEmail, EVOLUTION_ENGINE_ROLES, PLATFORM_ADMIN_ROLES, isPlatformAdminRole, isEvolutionEngineRole } from "../admin-roles";
+import { isVerifiedOwnerBootstrapIdentity, EVOLUTION_ENGINE_ROLES, PLATFORM_ADMIN_ROLES, isPlatformAdminRole, isEvolutionEngineRole } from "../admin-roles";
 import { resolveTabVisibility } from "../tab-visibility";
 const DiagnoseView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.DiagnoseView })));
 const ResultView = lazy(() => import("./components/DiagnoseSection.tsx").then(m => ({ default: m.ResultView })));
@@ -1094,7 +1094,7 @@ export default function App() {
   // the real owner account on .googlemail.com never saw any admin-gated
   // tab despite the server already recognising it as platform_owner for
   // every API call).
-  const isSuperAdminUser = isOwnerBootstrapEmail(user?.email) || (user as any)?.isAdmin === true;
+  const isSuperAdminUser = isVerifiedOwnerBootstrapIdentity(user) || (user as any)?.isAdmin === true;
   const effectiveRole = isSuperAdminUser ? 'platform_admin' : appRole;
 
   // Opportunistically build the real-signal data behind the Explainable
