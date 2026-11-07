@@ -757,3 +757,51 @@ describe('membership record lifecycle', () => {
     errorSpy.mockRestore();
   });
 });
+
+describe('durable organisation membership audit events', () => {
+  it('commits role grant and an attributed audit event together', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    const change = await request(app).post(`/api/org/${ORG}/members/target/role`)
+      .set(auth('owner_1')).send({ role: 'viewer' });
+    expect(change.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.role).toBe('viewer');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.status).toBe(200);
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'change_member_role', actorUid: 'owner_1',
+        targetResourceId: 'target', before: { role: 'member' }, after: { role: 'viewer' },
+      }),
+    ]));
+  });
+
+  it('commits suspension and a durable audit event together', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    const change = await request(app).post(`/api/org/${ORG}/members/target/suspend`)
+      .set(auth('owner_1'));
+    expect(change.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('suspended');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'suspend_member', actorUid: 'owner_1', targetResourceId: 'target' }),
+    ]));
+  });
+
+  it('commits reactivation and a durable audit event together', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const change = await request(app).post(`/api/org/${ORG}/members/target/reactivate`)
+      .set(auth('owner_1'));
+    expect(change.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('active');
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'reactivate_member', actorUid: 'owner_1', targetResourceId: 'target' }),
+    ]));
+  });
+});
