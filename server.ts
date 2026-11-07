@@ -10221,6 +10221,11 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
     if (!parsedOrgId.success) {
       return res.status(400).json({ error: 'orgId must be 1-100 characters: lowercase letters, numbers, and hyphens only.' });
     }
+    const parsedName = z.string().trim().min(1).max(100).safeParse(name);
+    const threshold = privacyThreshold === undefined ? 5 : privacyThreshold;
+    if (!parsedName.success || !Number.isInteger(threshold) || threshold < 3 || threshold > 100) {
+      return res.status(400).json({ error: 'Enter a company name (1-100 characters) and a whole-number privacy threshold (3-100).' });
+    }
     const db = getDb();
 
     let initialAdminUid: string | null = null;
@@ -10233,6 +10238,16 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
       }
     }
 
+    if (initialAdminUid) {
+      const existingAdminProfile = await db.collection("users").doc(initialAdminUid).get();
+      const currentOrg = existingAdminProfile.exists ? existingAdminProfile.data()?.organisationId : null;
+      if (currentOrg && currentOrg !== orgId) {
+        return res.status(400).json({
+          error: 'That account already belongs to another company. Use a verified, audited transfer process instead.',
+        });
+      }
+    }
+
     const existingOrgDoc = await db.collection("organisations").doc(orgId).get();
     // Join code is generated once, on first creation, and kept stable across
     // updates - regenerating it on every edit would silently invalidate any
@@ -10242,8 +10257,8 @@ app.post("/api/admin/orgs", verifyAppCheck, authenticateFirebaseUser, async (req
       : Math.random().toString(36).substring(2, 8).toUpperCase();
 
     const updatePayload: any = {
-      name,
-      privacyThreshold: privacyThreshold || 5,
+      name: parsedName.data,
+      privacyThreshold: threshold,
       joinCode,
       updatedAt: FieldValue.serverTimestamp(),
     };
