@@ -283,7 +283,8 @@ describe('GET /api/admin/users/:uid', () => {
 describe('POST /api/admin/users/:uid/role (app-level AuthRole)', () => {
   it('requires platform owner', async () => {
     const res = await request(app).post('/api/admin/users/target_uid/role').set(auth(NOT_OWNER)).send({ role: 'manager' });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/permission/i);
   });
 
   it('rejects an invalid role', async () => {
