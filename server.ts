@@ -17056,6 +17056,14 @@ app.post("/api/user/delete-account", verifyAppCheck, authenticateFirebaseUser, a
     const { authDeleted } = await eraseUserAccount(user.uid);
     res.json({ success: true, authDeleted });
   } catch (err: any) {
+    // Last-owner refusal is expected governance, not a partial erasure or
+    // server failure. Tell the owner how to complete a safe handover.
+    if (err.message?.includes("Cannot remove or downgrade the last owner of this organisation")) {
+      return res.status(409).json({
+        error: "Transfer company ownership to another active administrator before deleting this account.",
+        code: "last_organisation_owner",
+      });
+    }
     logger.error("[Delete] failed:", errorFields(err));
     res.status(500).json({ error: "The deletion did not complete. Some data may have been removed already - please try again, and contact support if this keeps happening." });
   }
