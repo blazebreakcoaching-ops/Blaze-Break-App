@@ -10572,8 +10572,8 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, async (req, 
   try {
     const user = requireAuth(req);
     const { joinCode } = req.body;
-    if (typeof joinCode !== 'string' || !/^[A-Z0-9]{6}$/.test(joinCode.trim().toUpperCase())) {
-      return res.status(400).json({ error: "Enter a valid six-character company joining code." });
+    if (typeof joinCode !== 'string' || !joinCode.trim() || joinCode.trim().length > 64) {
+      return res.status(400).json({ error: "Enter a valid company joining code." });
     }
     const normalizedCode = joinCode.trim().toUpperCase();
     const db = getDb();
