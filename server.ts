@@ -14442,6 +14442,9 @@ app.post("/api/org/:orgId/regenerate-join-code", verifyAppCheck, authenticateFir
       joinCode: newCode,
       updatedAt: FieldValue.serverTimestamp(),
     });
+    // Audit the rotation without ever recording old or new secret codes.
+    await logOrgAuditAction(req, orgId, "rotate_join_code", "organisation", orgId,
+      { sharedCodeValid: true }, { oldSharedCodeInvalidated: true });
     res.json({ success: true, joinCode: newCode });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
