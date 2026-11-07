@@ -147,7 +147,26 @@ Commits: `f73e56c` (Nova context trust boundary), `4b20f84` (module fixes).
 | Evolution Engine | 17 handlers hid the server's refusal reason | DONE (fixed) |
 | Intelligence Layer | Recalculation is server-side from the user's own records | DONE (verified) |
 | Intelligence Layer | False "Nova automatically marks invites low priority" claim | DONE (removed) |
-| Intelligence Layer | Personal-data module visible to platform staff only (since July) | BLOCKED — product decision |
+| Intelligence Layer | Customer access to own insights | DONE (approved; Batch 4) |
 
 Gate: `verify:integration:offline` on `4b20f84` → OFFLINE_CHECKS_PASS (vitest 5,341;
 components 138; emulator 52; Playwright preview 66, real app 38; mobile and Functions pass).
+
+## 8. Batch 4 — Customer Intelligence Layer (approved 2026-11-07)
+
+Commit: `80da89e`. Built by completing the existing customer Recovery
+Intelligence Hub; the legacy staff screen stays staff-only.
+
+| Item | Status |
+|---|---|
+| Trend explanations were fixed reassuring text ("stable", "working") regardless of data; Nova read them | DONE (fixed: generated from real result) |
+| GET /api/recovery/insights — own data only, enforced server-side; honest unavailable states | DONE |
+| POST /api/recovery/insights/explain — Nova uses only consented, available insights | DONE |
+| Company reporting never reads personal derived summaries | DONE (regression-locked) |
+| "Your insights" panel: plain English, simple bars, advanced tools collapsed | DONE (light/dark, desktop/mobile reviewed) |
+| Mobile two-factor sign-in (Expo) | NOT STARTED (next) |
+| Nova / NHEI integration readiness | NOT STARTED |
+| Ember customer-first redesign | NOT STARTED |
+
+Gate: `verify:integration:offline` on `80da89e` → OFFLINE_CHECKS_PASS (vitest 5,362;
+components 144; emulator 52; Playwright preview 66, real app 38; mobile and Functions pass).
