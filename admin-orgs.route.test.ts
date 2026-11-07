@@ -151,6 +151,25 @@ describe('GET /api/admin/orgs/:orgId', () => {
     expect(res.status).toBe(404);
   });
 
+  it('shows truthful company seats, pending invitations and suspended records without wellbeing content', async () => {
+    seedDoc('organisations/acme', {
+      name: 'Acme', memberUids: ['owner_1', 'staff_1'],
+      adminUids: ['owner_1'],
+      billing: { plan: 'business', status: 'active', seatCount: 3, billingContact: null },
+    });
+    seedDoc('organisations/acme/members/owner_1', { email: 'owner@acme.test', role: 'owner', status: 'active' });
+    seedDoc('organisations/acme/members/staff_1', { email: 'staff@acme.test', role: 'member', status: 'suspended' });
+    seedDoc('organisations/acme/pending_invites/invite@acme.test', { email: 'invite@acme.test' });
+    const res = await request(app).get('/api/admin/orgs/acme').set(auth(OWNER));
+    expect(res.status).toBe(200);
+    expect(res.body.seatSummary).toMatchObject({
+      allowance: 3, members: 2, pendingInvites: 1, remaining: 0,
+      overCapacity: false, roleRecords: 2, rosterMismatch: false, suspendedRecords: 1,
+    });
+    expect(res.body).not.toHaveProperty('journal');
+    expect(res.body).not.toHaveProperty('wellbeing');
+  });
+
   it('returns org metadata, billing state, and access-control-only member fields', async () => {
     seedDoc('organisations/acme', {
       name: 'Acme', joinCode: 'ABC123', privacyThreshold: 7,
