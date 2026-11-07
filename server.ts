@@ -16569,6 +16569,12 @@ app.post("/api/admin/legal/:docType/publish", verifyAppCheck, authenticateFireba
 // Dynamic enumeration means new collections are covered automatically.
 
 app.get("/api/user/export", exportLimiter, verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  // A data-access export can include sensitive personal wellbeing records.
+  // Never allow browsers, proxies or shared caches to retain HTTP copies,
+  // including on authentication or quota errors.
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   try {
     const user = requireAuth(req);
     // A daily cap here is abuse protection against scripted repeated
