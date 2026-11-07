@@ -23,7 +23,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceTransactionError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const OTHER_ORG = 'org_2';
@@ -490,6 +490,51 @@ describe('suspended membership must never grant organisation permissions', () =>
     const res = await request(app).post(`/api/org/${ORG}/members/owner_1/suspend`).set(auth('sec_1'));
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/last owner/i);
+  });
+});
+
+describe('atomic company departure and stale-roster protection', () => {
+  it('a failed transaction must leave BOTH profile and organisation access unchanged', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'leaver'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'leaver', 'member');
+    seedDoc('users/leaver', { organisationId: ORG });
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await request(app).post('/api/org/leave').set(auth('leaver'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw('users/leaver')?.organisationId).toBe(ORG);
+      expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('leaver');
+      expect(getDocRaw(`organisations/${ORG}/members/leaver`)?.role).toBe('member');
+    } finally {
+      restore();
+      spy.mockRestore();
+    }
+  });
+
+  it('a stale roster cannot cause the removal route to unlink a person from another company', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'other_employee'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'other_employee', 'member');
+    seedDoc('users/other_employee', { organisationId: OTHER_ORG });
+    const res = await request(app).post(`/api/org/${ORG}/members/other_employee/remove`).set(auth('owner_1'));
+    expect(res.status).toBe(409);
+    expect(getDocRaw('users/other_employee')?.organisationId).toBe(OTHER_ORG);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('other_employee');
+  });
+
+  it('two company owners cannot simultaneously leave and abandon their organisation', async () => {
+    seedOrg(ORG, { adminUids: ['owner_a', 'owner_b'], memberUids: ['owner_a', 'owner_b'] });
+    seedMember(ORG, 'owner_a', 'owner');
+    seedMember(ORG, 'owner_b', 'owner');
+    seedDoc('users/owner_a', { organisationId: ORG });
+    seedDoc('users/owner_b', { organisationId: ORG });
+    const results = await Promise.all(['owner_a', 'owner_b'].map(uid =>
+      request(app).post('/api/org/leave').set(auth(uid))
+    ));
+    expect(results.map(r => r.status).sort()).toEqual([200, 400]);
+    expect(getDocRaw(`organisations/${ORG}`)?.adminUids).toHaveLength(1);
   });
 });
 
