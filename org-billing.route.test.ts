@@ -15,6 +15,7 @@ vi.mock('firebase-admin/firestore', async () => {
 });
 vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) }));
 
+import crypto from 'crypto';
 import request from 'supertest';
 import { app } from './server';
 import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
@@ -232,6 +233,100 @@ describe('atomic company joins and invitation reservations', () => {
     seedDoc(`organisations/${ORG}/pending_invites/a@test.dev`, { email: 'a@test.dev' });
     const res = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1')).send({ emails: ['a@test.dev'] });
     expect(res.status).toBe(200);
+  });
+});
+
+describe('individual expiring company invitations', () => {
+  const personalCode = `BBI.${ORG}.${'A'.repeat(32)}`;
+  const tokenHash = crypto.createHash('sha256').update(personalCode.toUpperCase()).digest('hex');
+
+  const seedInvite = (email: string, expiry = new Date(Date.now() + 86_400_000).toISOString()) => {
+    seedDoc(`organisations/${ORG}/pending_invites/${email}`, {
+      email, emailSent: true, tokenHash, tokenExpiresAt: expiry,
+    });
+  };
+
+  it('stores only a hash, not the invitation code, and never reveals it in the invite list', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const sent = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1'))
+      .send({ emails: ['fresh@test.dev'] });
+    expect(sent.status).toBe(200);
+    const saved = getDocRaw(`organisations/${ORG}/pending_invites/fresh@test.dev`);
+    expect(saved?.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(new Date(saved!.tokenExpiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(saved).not.toHaveProperty('token');
+    const listed = await request(app).get(`/api/org/${ORG}/invites`).set(auth('owner_1'));
+    expect(listed.status).toBe(200);
+    expect(listed.body.invites[0].individualCode).toBe(true);
+    expect(listed.body.invites[0]).not.toHaveProperty('tokenHash');
+    expect(JSON.stringify(listed.body)).not.toContain(saved!.tokenHash);
+  });
+
+  it('redeems an individual invite only for its verified email, then deletes the credential', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'], billing: { plan: 'free', status: 'active', seatCount: 2 } });
+    seedInvite('invited@test.dev');
+    seedDoc('users/invited', {});
+    const result = await request(app).post('/api/org/join').set(auth('invited'))
+      .send({ joinCode: personalCode });
+    expect(result.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/invited@test.dev`)).toBeUndefined();
+    expect(getDocRaw(`organisations/${ORG}/members/invited`)?.invitedBy).toBe('email_invite');
+    const replay = await request(app).post('/api/org/join').set(auth('different_person'))
+      .send({ joinCode: personalCode });
+    expect(replay.status).not.toBe(200);
+  });
+
+  it('rejects a code entered by a different email, or an unverified recipient', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedInvite('invited@test.dev');
+    seedDoc('users/outsider', {});
+    seedDoc('users/unverified_invited', {});
+    const otherEmail = await request(app).post('/api/org/join').set(auth('outsider'))
+      .send({ joinCode: personalCode });
+    expect(otherEmail.status).toBe(403);
+    // The unverified user's address must match an invitation but still
+    // fail the Firebase token's email_verified gate.
+    seedInvite('unverified_invited@test.dev');
+    const unverified = await request(app).post('/api/org/join').set(auth('unverified_invited'))
+      .send({ joinCode: personalCode });
+    expect(unverified.status).toBe(403);
+  });
+
+  it('a cancelled invitation cannot be redeemed using its personal code', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedInvite('invited@test.dev');
+    seedDoc('users/invited', {});
+    const cancelled = await request(app).post(`/api/org/${ORG}/invites/invited@test.dev/cancel`).set(auth('owner_1'));
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.invitationTokenRevoked).toBe(true);
+    const useRevoked = await request(app).post('/api/org/join').set(auth('invited'))
+      .send({ joinCode: personalCode });
+    expect(useRevoked.status).toBe(403);
+  });
+
+  it('expires an invitation based on its stored expiry timestamp', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedInvite('invited@test.dev', new Date(Date.now() - 60_000).toISOString());
+    seedDoc('users/invited', {});
+    const expired = await request(app).post('/api/org/join').set(auth('invited'))
+      .send({ joinCode: personalCode });
+    expect(expired.status).toBe(410);
+  });
+
+  it('resending replaces the old personal code rather than keeping it redeemable', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedInvite('invited@test.dev');
+    seedDoc('users/invited', {});
+    const resent = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1'))
+      .send({ emails: ['invited@test.dev'] });
+    expect(resent.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/pending_invites/invited@test.dev`)?.tokenHash).not.toBe(tokenHash);
+    const oldCode = await request(app).post('/api/org/join').set(auth('invited'))
+      .send({ joinCode: personalCode });
+    expect(oldCode.status).toBe(403);
   });
 });
 
