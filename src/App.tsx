@@ -142,7 +142,7 @@ import { CommunicationGrid, CommunicationGridColumn } from "./components/layout/
 const EvolutionEngine = lazy(() => import("./components/EvolutionEngine.tsx").then(m => ({ default: m.EvolutionEngine })));
 const MicroInterventions = lazy(() => import("./components/MicroInterventions.tsx").then(m => ({ default: m.MicroInterventions })));
 const NovaOverloadShield = lazy(() => import("./components/NovaOverloadShield.tsx").then(m => ({ default: m.NovaOverloadShield })));
-import { updateNovaMemoryBySourceAndType, logJourney, initNovaPermissionsForNewUser } from "./lib/nova-brain.ts";
+import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts";
 import { saveVerifiedProfileSettings } from "./lib/profile-settings-save";
 import { buildDashboardGreeting } from "../dashboard-greeting.ts";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
@@ -2436,13 +2436,11 @@ export default function App() {
             // turn on personal memory if Firestore cannot persist the profile.
             const uid = user?.uid;
             if (!uid || auth.currentUser?.uid !== uid) throw new Error('Authentication is not ready');
-            const db = await getDb();
-            const { doc, setDoc } = await import("firebase/firestore");
-            await setDoc(doc(db, "users", uid, "user_stats", "core"), {
-              profile,
+            // Save the profile, changelog marker and consent as ONE atomic
+            // Firestore batch. A partial setup is never presented as done.
+            await saveVerifiedProfileSettings(uid, profile, {
               lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION,
-              updatedAt: new Date().toISOString(),
-            }, { merge: true });
+            });
             if (auth.currentUser?.uid !== uid) throw new Error('Account changed while saving');
 
             // Only a confirmed save may enter the customer dashboard.
@@ -2458,12 +2456,8 @@ export default function App() {
             setActiveTab("home");
             setPostOnboardingProfile(profile);
 
-            // Creates the users/{uid}/nova_permissions/current doc Nova's
-            // server-side context builder requires to have any context at
-            // all - without this, Nova stays blind until someone separately
-            // finds Settings > Nova Privacy Controls. Memory specifically
-            // carries through whatever the user chose on the consent step.
-            initNovaPermissionsForNewUser(uid, profile.letNovaLearn !== false);
+            // Nova permissions were committed in the same verified batch
+            // above, so no second background write can overwrite a choice.
 
             updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
               content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Work context: ${profile.pathway || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
