@@ -13,6 +13,7 @@
 ### Admin role/session governance
 - Admin creation, role change, removal, application-level role change and suspension/reactivation now invoke Firebase Auth revokeRefreshTokens immediately after changing their Auth state.
 - Existing authenticateFirebaseUser already calls verifyIdToken(token, true); revocation is intended to invalidate previously issued sessions, not merely future refreshed tokens.
+- The general account-role endpoint also checks last-platform-owner protection on downgrades and clears legacy admin/platform_owner boolean claims when assigning a non-platform role.
 - Note: partial failures can occur between the claim write, revocation, Firestore update and audit record. The routes are NOT yet transactional. End-to-end tests must verify no stale privilege, session reauthentication and last-owner protection; revocation failures are especially sensitive.
 
 ### Executive Overview counts
