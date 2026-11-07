@@ -96,6 +96,34 @@ describe('legacy fallback - orgs and members that predate the members/ subcollec
   });
 });
 
+describe('authoritative membership status cannot fall back to legacy grants', () => {
+  it.each(['suspended', 'removed', 'inactive', 'pending'])(
+    'denies a %s member even when both legacy arrays still contain their UID',
+    async (status) => {
+      seedOrg(ORG, { adminUids: ['owner_1', 'former_admin'], memberUids: ['owner_1', 'former_admin'] });
+      seedMember(ORG, 'owner_1', 'owner');
+      seedMember(ORG, 'former_admin', 'admin', status);
+      const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('former_admin'));
+      expect(res.status).toBe(403);
+    }
+  );
+
+  it('denies an invalid granular role instead of reviving a legacy owner grant', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'invalid_admin'], memberUids: ['owner_1', 'invalid_admin'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'invalid_admin', 'not_a_real_role');
+    const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('invalid_admin'));
+    expect(res.status).toBe(403);
+  });
+
+  it('still allows a valid active granular owner', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('RBAC matrix on role-management routes', () => {
   it('a viewer can never change a role, suspend, or reactivate anyone', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'viewer_1', 'member_1'] });
