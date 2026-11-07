@@ -45,12 +45,16 @@ export const NovaCoachMarks = ({ page, onClose }: NovaCoachMarksProps) => {
         setHighlight(null); // No false pointer to a hidden or collapsed tab.
         return;
       }
-      setHighlight({
-        top: Math.max(0, rect.top - 5),
-        left: Math.max(0, rect.left - 5),
-        width: Math.min(window.innerWidth - Math.max(0, rect.left - 5), rect.width + 10),
-        height: Math.min(window.innerHeight - Math.max(0, rect.top - 5), rect.height + 10),
-      });
+      const top = Math.max(0, rect.top - 5);
+      const left = Math.max(0, rect.left - 5);
+      const right = Math.min(window.innerWidth, rect.right + 5);
+      const bottom = Math.min(window.innerHeight, rect.bottom + 5);
+      // Never draw a marker in thin air when its control is off-screen.
+      if (right <= left || bottom <= top) {
+        setHighlight(null);
+        return;
+      }
+      setHighlight({ top, left, width: right - left, height: bottom - top });
     };
 
     // Only scroll once on an explicit step choice. The user can still
@@ -58,7 +62,11 @@ export const NovaCoachMarks = ({ page, onClose }: NovaCoachMarksProps) => {
     const settle = () => {
       const target = document.querySelector<HTMLElement>(`[data-nova-guide-target="${step.target}"]`);
       if (!target) return;
-      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
+      target.scrollIntoView({
+        block: window.innerWidth < 640 ? 'start' : 'center',
+        inline: 'nearest',
+        behavior: reducedMotion ? 'auto' : 'smooth',
+      });
     };
     position();
     settle();
@@ -117,14 +125,14 @@ export const NovaCoachMarks = ({ page, onClose }: NovaCoachMarksProps) => {
   const cardWidth = Math.min(360, Math.max(240, window.innerWidth - 24));
   const roomBelow = highlight ? window.innerHeight - (highlight.top + highlight.height) : 0;
   const roomAbove = highlight?.top ?? 0;
-  const cardTop = highlight && window.innerWidth >= 640
+  const cardTop = highlight && window.innerWidth >= 640 && window.innerHeight >= 560
     ? (roomBelow >= 280
       ? Math.min(window.innerHeight - 270, highlight.top + highlight.height + 12)
       : roomAbove >= 280
         ? Math.max(12, highlight.top - 275)
         : Math.max(12, window.innerHeight - 285))
     : null;
-  const cardLeft = highlight && window.innerWidth >= 640
+  const cardLeft = highlight && window.innerWidth >= 640 && window.innerHeight >= 560
     ? Math.max(12, Math.min(highlight.left, window.innerWidth - cardWidth - 12))
     : null;
 
