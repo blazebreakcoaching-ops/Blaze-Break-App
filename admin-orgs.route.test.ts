@@ -88,6 +88,35 @@ describe('POST /api/admin/orgs — orgId validation', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects invalid company name and unsafe privacy thresholds before writing', async () => {
+    for (const body of [
+      { orgId: 'bad-name', name: '' },
+      { orgId: 'bad-type', name: 123 },
+      { orgId: 'bad-threshold', name: 'Acme', privacyThreshold: 2 },
+      { orgId: 'bad-decimal', name: 'Acme', privacyThreshold: 3.5 },
+      { orgId: 'bad-large', name: 'Acme', privacyThreshold: 101 },
+    ]) {
+      const res = await request(app).post('/api/admin/orgs').set(auth(OWNER)).send(body);
+      expect(res.status).toBe(400);
+      expect(getDocRaw(`organisations/${body.orgId}`)).toBeUndefined();
+    }
+  });
+
+  it('refuses to reassign an existing account to another company through provisioning', async () => {
+    h.getUserByEmail.mockResolvedValueOnce({ uid: 'existing_owner', email: 'owner@oldco.test' });
+    seedDoc('users/existing_owner', { organisationId: 'existing-company' });
+    seedDoc('organisations/existing-company', {
+      name: 'Existing Company', memberUids: ['existing_owner'], adminUids: ['existing_owner'],
+    });
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER)).send({
+      orgId: 'new-company', name: 'New Company', initialAdminEmail: 'owner@oldco.test',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/another company/i);
+    expect(getDocRaw('organisations/new-company')).toBeUndefined();
+    expect(getDocRaw('users/existing_owner')?.organisationId).toBe('existing-company');
+  });
+
   it('rejects an initialAdminEmail with no matching account, rather than creating the org anyway', async () => {
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
       .send({ orgId: 'acme-corp-2', name: 'Acme Corp', initialAdminEmail: 'nobody@nowhere.dev' });
