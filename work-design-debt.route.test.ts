@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, forceTransactionError, getDocRaw } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -291,5 +291,46 @@ describe('defensive catch blocks', () => {
     expect(errorSpy).toHaveBeenCalled();
     restore();
     errorSpy.mockRestore();
+  });
+});
+
+
+describe('atomic work-design debt security audit', () => {
+  it('does not create a debt record if audited transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const restore = forceTransactionError(new Error('simulated transaction failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/work-design-debt`)
+        .set(auth('owner_1')).send(validBody);
+      expect(res.status).toBe(500);
+      const listed = await request(app).get(`/api/org/${ORG}/work-design-debt`).set(auth('owner_1'));
+      expect(listed.body.items).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it('commits creation and structured audit in the same transaction', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const res = await request(app).post(`/api/org/${ORG}/work-design-debt`)
+      .set(auth('owner_1')).send(validBody);
+    expect(res.status).toBe(200);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    const event = audit.body.logs.find((x: any) => x.action === 'create_work_design_debt');
+    expect(event).toBeDefined();
+    expect(event.targetResourceId).toBe(res.body.debt.id);
+    expect(JSON.stringify(event)).not.toContain(validBody.description);
+  });
+
+  it('does not change a debt owner if the transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'staff_1'] });
+    seedDoc(`organisations/${ORG}/work_design_debt/debt_1`, {
+      ...validBody, status: 'identified', ownerUid: null,
+    });
+    const restore = forceTransactionError(new Error('simulated transaction failure'));
+    try {
+      const res = await request(app).patch(`/api/org/${ORG}/work-design-debt/debt_1/owner`)
+        .set(auth('owner_1')).send({ ownerUid: 'staff_1' });
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/work_design_debt/debt_1`)?.ownerUid).toBeNull();
+    } finally { restore(); }
   });
 });
