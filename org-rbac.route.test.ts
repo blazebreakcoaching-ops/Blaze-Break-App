@@ -1397,3 +1397,55 @@ describe('cross-company owner records cannot defeat last-owner protection', () =
     expect(getDocRaw(`organisations/${ORG}/members/owner_1`)?.role).toBe('owner');
   });
 });
+
+
+describe('offboarding revokes device metadata in the membership transaction', () => {
+  it('removes the departing employee and their devices together', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'staff_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'staff_1', 'member');
+    seedDoc('users/staff_1', { organisationId: ORG });
+    seedDoc(`organisations/${ORG}/devices/removed_device`, {
+      ownerUid: 'staff_1', status: 'active', channel: 'stable',
+    });
+    seedDoc(`organisations/${ORG}/devices/other_device`, {
+      ownerUid: 'owner_1', status: 'active', channel: 'stable',
+    });
+    const res = await request(app).post(`/api/org/${ORG}/members/staff_1/remove`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/devices/removed_device`)).toBeUndefined();
+    expect(getDocRaw(`organisations/${ORG}/devices/other_device`)).toBeDefined();
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).not.toContain('staff_1');
+  });
+
+  it('leaves all devices untouched when offboarding transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'staff_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'staff_1', 'member');
+    seedDoc('users/staff_1', { organisationId: ORG });
+    seedDoc(`organisations/${ORG}/devices/staff_device`, {
+      ownerUid: 'staff_1', status: 'active',
+    });
+    const restore = forceTransactionError(new Error('simulated transaction failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/members/staff_1/remove`).set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}/devices/staff_device`)).toBeDefined();
+      expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('staff_1');
+    } finally { restore(); }
+  });
+
+  it('removes voluntarily departing members and device records in one transaction', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'leaver'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'leaver', 'member');
+    seedDoc('users/leaver', { organisationId: ORG });
+    seedDoc(`organisations/${ORG}/devices/leaver_device`, {
+      ownerUid: 'leaver', status: 'active',
+    });
+    const res = await request(app).post('/api/org/leave').set(auth('leaver'));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/devices/leaver_device`)).toBeUndefined();
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).not.toContain('leaver');
+  });
+});
