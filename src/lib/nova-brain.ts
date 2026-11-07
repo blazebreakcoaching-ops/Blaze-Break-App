@@ -168,14 +168,9 @@ export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boole
   }
 };
 
-// Gate for App.tsx's calendar-signal sync (src/lib/calendar-signals.ts),
-// which previously ran unconditionally for anyone signed in with a Google
-// access token - the DataPrivacyDashboard.tsx toggle for it referenced a
-// feature-flag name that didn't exist in the flag schema, so it had no
-// effect at all. Fails open (true) on a missing doc or a read error, same
-// default as every other category here - the real gate on whether this
-// even fires is still "did the user grant the Google Calendar OAuth scope
-// in the first place."
+// Calendar OAuth scope alone does not grant permission to aggregate it
+// for coaching. Missing/failed consent reads must fail closed. Onboarding
+// may create a permissions document, and the user can change it in Settings.
 export const isCalendarSignalConsentGranted = async (uid: string): Promise<boolean> => {
   try {
     const db = await getDb();
@@ -184,9 +179,9 @@ export const isCalendarSignalConsentGranted = async (uid: string): Promise<boole
     if (snap.exists() && typeof snap.data().allowCalendarSignals === 'boolean') {
       return snap.data().allowCalendarSignals;
     }
-    return true;
-  } catch (e) {
-    return true;
+    return false; // Unknown is not consent.
+  } catch {
+    return false;
   }
 };
 
