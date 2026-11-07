@@ -263,6 +263,24 @@ describe('atomic company joins and invitation reservations', () => {
   });
 });
 
+describe('invitation identifier validation', () => {
+  it('rejects an email containing a Firestore path separator', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/invite`).set(auth('owner_1'))
+      .send({ emails: ['a/b@example.test'] });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a malformed cancellation address rather than deriving a nested path', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/invites/a%2Fb@example.test/cancel`)
+      .set(auth('owner_1'));
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('individual expiring company invitations', () => {
   const personalCode = `BBI.${ORG}.${'A'.repeat(32)}`;
   const tokenHash = crypto.createHash('sha256').update(personalCode.toUpperCase()).digest('hex');
