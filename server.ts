@@ -10717,11 +10717,13 @@ app.post("/api/org/leave", verifyAppCheck, authenticateFirebaseUser, async (req,
 const getOrgMemberRole = async (db: any, orgId: string, org: any, uid: string): Promise<OrgRole | null> => {
   const memberDoc = await db.collection("organisations").doc(orgId).collection("members").doc(uid).get();
   if (memberDoc.exists) {
-    // A suspended member must never inherit a live role from the
-    // adminUids/memberUids legacy arrays. This is checked on every request.
-    if (memberDoc.data()?.status === 'suspended') return null;
-    const role = memberDoc.data()?.role;
-    if (isOrgRole(role)) return role;
+    // An existing membership document is authoritative. Never fall back
+    // to old adminUids/memberUids arrays when the document is disabled,
+    // removed, corrupted or has an unrecognised role: that would restore
+    // privileges the company has explicitly withdrawn.
+    const member = memberDoc.data();
+    if (member?.status !== undefined && member.status !== 'active') return null;
+    return isOrgRole(member?.role) ? member.role : null;
   }
   const adminUids: string[] = org.adminUids || [];
   const memberUids: string[] = org.memberUids || [];
