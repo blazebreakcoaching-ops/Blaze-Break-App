@@ -41,16 +41,16 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Deferred off the critical rendering path - this is a connectivity check,
-// not something any part of the first paint depends on, and calling it here
-// unconditionally used to force an immediate Firestore chunk fetch on every
-// load regardless of what page was showing. requestIdleCallback runs it once
-// the browser is actually idle; setTimeout is the fallback for Safari, which
-// doesn't implement it.
-if (typeof window.requestIdleCallback === "function") {
-  window.requestIdleCallback(() => testFirebaseConnection());
-} else {
-  setTimeout(() => testFirebaseConnection(), 2000);
+// This probe reads a test document from the Firestore server. It is useful
+// for development diagnostics, but is not a customer-facing feature and
+// must not cost a read/trigger security logs on every production page load.
+if (import.meta.env.DEV) {
+  const checkConnection = () => { void testFirebaseConnection(); };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(checkConnection);
+  } else {
+    setTimeout(checkConnection, 2000);
+  }
 }
 
 const allyTokenMatch = window.location.pathname.match(/^\/ally\/([a-zA-Z0-9]+)$/);
