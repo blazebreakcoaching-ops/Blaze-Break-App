@@ -14313,8 +14313,19 @@ app.post("/api/org/:orgId/connectors", verifyAppCheck, authenticateFirebaseUser,
       createdAt: now,
       updatedAt: now,
     };
-    const ref = await db.collection("organisations").doc(orgId).collection("connectors").add(record);
-    await logOrgAuditAction(req, orgId, "create_connector", "connector", ref.id, null, { type, displayName });
+    const orgRef = db.collection("organisations").doc(orgId);
+    const ref = orgRef.collection("connectors").doc();
+    await db.runTransaction(async (tx) => {
+      const current = await tx.get(orgRef);
+      if (!current.exists) throw new Error("Organisation not found.");
+      tx.set(ref, record);
+      tx.set(orgRef.collection("audit_logs").doc(), {
+        actorUid: user.uid, actorEmail: user.email || '',
+        orgId, action: 'create_connector', targetResourceType: 'connector', targetResourceId: ref.id,
+        before: null, after: { type, displayName }, createdAt: FieldValue.serverTimestamp(),
+        ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
+      });
+    });
     res.json({ success: true, connector: redactConnector(ref.id, record, true) });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14337,14 +14348,43 @@ const loadOrgConnector = async (db: any, orgId: string, connectorId: string) => 
   return { ref, data: doc.data() };
 };
 
+// Every administrative connector mutation and its audit event must commit
+// together. Reading the current document inside the transaction also avoids
+// overwriting or auditing a stale connector state from a prior request.
+const mutateOrgConnectorWithAudit = async (
+  db: any, req: any, orgId: string, connectorId: string, action: string,
+  change: (current: Record<string, any>) => {
+    update: Record<string, unknown>;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown>;
+  },
+) => {
+  const orgRef = db.collection("organisations").doc(orgId);
+  const connectorRef = orgRef.collection("connectors").doc(connectorId);
+  return db.runTransaction(async (tx: any) => {
+    const snapshot = await tx.get(connectorRef);
+    if (!snapshot.exists) throw new Error('Connector not found.');
+    const mutation = change(snapshot.data()!);
+    tx.update(connectorRef, mutation.update);
+    tx.set(orgRef.collection('audit_logs').doc(), {
+      actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+      orgId, action, targetResourceType: 'connector', targetResourceId: connectorId,
+      before: mutation.before, after: mutation.after,
+      createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+      userAgent: req.headers?.['user-agent'] || '',
+    });
+  });
+};
+
 app.post("/api/org/:orgId/connectors/:connectorId/enable", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, connectorId } = req.params;
     const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
-    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
-    const before = { status: data.status, enabled: data.enabled };
-    await ref.update({ status: "active", enabled: true, updatedAt: new Date().toISOString() });
-    await logOrgAuditAction(req, orgId, "enable_connector", "connector", connectorId, before, { status: "active", enabled: true });
+    await mutateOrgConnectorWithAudit(db, req, orgId, connectorId, 'enable_connector', (data) => ({
+      update: { status: 'active', enabled: true, updatedAt: new Date().toISOString() },
+      before: { status: data.status, enabled: data.enabled },
+      after: { status: 'active', enabled: true },
+    }));
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14362,10 +14402,11 @@ app.post("/api/org/:orgId/connectors/:connectorId/disable", verifyAppCheck, auth
   try {
     const { orgId, connectorId } = req.params;
     const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
-    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
-    const before = { status: data.status, enabled: data.enabled };
-    await ref.update({ status: "disabled", enabled: false, updatedAt: new Date().toISOString() });
-    await logOrgAuditAction(req, orgId, "disable_connector", "connector", connectorId, before, { status: "disabled", enabled: false });
+    await mutateOrgConnectorWithAudit(db, req, orgId, connectorId, 'disable_connector', (data) => ({
+      update: { status: 'disabled', enabled: false, updatedAt: new Date().toISOString() },
+      before: { status: data.status, enabled: data.enabled },
+      after: { status: 'disabled', enabled: false },
+    }));
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14386,11 +14427,14 @@ app.post("/api/org/:orgId/connectors/:connectorId/revoke", verifyAppCheck, authe
   try {
     const { orgId, connectorId } = req.params;
     const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
-    const { ref, data } = await loadOrgConnector(db, orgId, connectorId);
-    const before = { status: data.status, enabled: data.enabled, authStatus: data.authStatus };
-    const after = { status: "revoked", enabled: false, authStatus: initialAuthStatus(data.type) };
-    await ref.update({ ...after, updatedAt: new Date().toISOString() });
-    await logOrgAuditAction(req, orgId, "revoke_connector", "connector", connectorId, before, after);
+    await mutateOrgConnectorWithAudit(db, req, orgId, connectorId, 'revoke_connector', (data) => {
+      const after = { status: 'revoked', enabled: false, authStatus: initialAuthStatus(data.type) };
+      return {
+        update: { ...after, updatedAt: new Date().toISOString() },
+        before: { status: data.status, enabled: data.enabled, authStatus: data.authStatus },
+        after,
+      };
+    });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14411,10 +14455,11 @@ app.post("/api/org/:orgId/connectors/:connectorId/reindex", verifyAppCheck, auth
   try {
     const { orgId, connectorId } = req.params;
     const { db } = await requireOrgPermission(req, orgId, 'org.connectors.manage');
-    const { ref } = await loadOrgConnector(db, orgId, connectorId);
-    const now = new Date().toISOString();
-    await ref.update({ reindexStatus: "pending", lastReindexRequestedAt: now });
-    await logOrgAuditAction(req, orgId, "request_connector_reindex", "connector", connectorId, null, { reindexStatus: "pending" });
+    await mutateOrgConnectorWithAudit(db, req, orgId, connectorId, 'request_connector_reindex', (data) => ({
+      update: { reindexStatus: 'pending', lastReindexRequestedAt: new Date().toISOString() },
+      before: { reindexStatus: data.reindexStatus || null },
+      after: { reindexStatus: 'pending' },
+    }));
     res.json({ success: true, reindexStatus: "pending", note: "No background indexing worker is wired up yet - this request is recorded but not yet processed." });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
