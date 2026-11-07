@@ -11490,7 +11490,7 @@ app.post("/api/org/:orgId/suggestions", verifyAppCheck, authenticateFirebaseUser
 // Atomically couple organisation mutations with their audit evidence.
 const withOrgAuditedWrite = async <T>(
   db: any, req: any, orgId: string,
-  work: (tx: any, orgRef: any) => Promise<{ result: T; audit: {
+  work: (tx: any, orgRef: any, actorRole: OrgRole) => Promise<{ result: T; audit: {
     action: string; resourceType: string; resourceId: string;
     before: Record<string, unknown> | null; after: Record<string, unknown> | null;
   } | null }>,
@@ -11522,7 +11522,7 @@ const withOrgAuditedWrite = async <T>(
       : (role === 'owner' || role === 'admin' ||
          managedTeamsFor(org.teamManagers, actorUid).length > 0);
   if (!hasAccess) throw new Error('Forbidden: company permissions changed.');
-  const { result, audit } = await work(tx, orgRef);
+  const { result, audit } = await work(tx, orgRef, role);
   if (audit) tx.set(orgRef.collection('audit_logs').doc(), {
     actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
     orgId, action: audit.action, targetResourceType: audit.resourceType,
@@ -12630,19 +12630,26 @@ app.post("/api/org/:orgId/work-design-interventions", verifyAppCheck, authentica
       updatedAt: nowIso,
     };
     const newRef = interventionsRef.doc();
-    const budgetCheck = await db.runTransaction(async (tx) => {
+    const budgetCheck = await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef, actorRole) => {
+      const orgNow = await tx.get(orgRef);
+      if (!(actorRole === 'owner' || actorRole === 'admin' ||
+            isTeamManager(orgNow.data()?.teamManagers, user.uid, team))) {
+        throw new Error("Forbidden: you no longer manage this team.");
+      }
       const activeSnap = await tx.get(interventionsRef);
       const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
-      const check = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
-      if (check.allowed) {
-        tx.set(newRef, record);
-      }
-      return check;
-    });
+      const activeLimit = getEffectiveActionBudget(orgNow.data()?.actionBudget?.maxConcurrentActiveInterventions);
+      const check = canStartNewIntervention(currentActiveCount, activeLimit);
+      if (!check.allowed) return { result: check, audit: null };
+      tx.set(newRef, record);
+      return { result: check, audit: {
+        action: 'create_work_design_intervention', resourceType: 'work_design_intervention',
+        resourceId: newRef.id, before: null, after: { team, signalKey, status: record.status },
+      } };
+    }, 'team_manager');
     if (!budgetCheck.allowed) {
       return res.status(400).json({ error: budgetCheck.reason });
     }
-    await logOrgAuditAction(req, orgId, "create_work_design_intervention", "work_design_intervention", newRef.id, null, { team, signalKey, status: record.status });
     res.json({ success: true, intervention: { id: newRef.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -12798,21 +12805,34 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/status", verifyAppCheck
     // reactivations can't both read a count just under the ceiling and
     // both write, exceeding it the same way the creation route could.
     const interventionsRef = db.collection("organisations").doc(orgId).collection("work_design_interventions");
-    const budgetCheck = await db.runTransaction(async (tx) => {
-      if (ACTIVE_INTERVENTION_STATUSES.has(status) && !ACTIVE_INTERVENTION_STATUSES.has(existing.status)) {
-        const maxConcurrentActive = getEffectiveActionBudget(org.actionBudget?.maxConcurrentActiveInterventions);
-        const activeSnap = await tx.get(interventionsRef);
+    const budgetCheck = await withOrgAuditedWrite(db, req, orgId, async (tx, orgRef, actorRole) => {
+      const [current, orgNow, activeSnap] = await Promise.all([
+        tx.get(ref), tx.get(orgRef), tx.get(interventionsRef),
+      ]);
+      if (!current.exists) return { result: { allowed: false, reason: 'Intervention not found.', httpStatus: 404 }, audit: null };
+      const currentData = current.data()!;
+      if (!(actorRole === 'owner' || actorRole === 'admin' ||
+            isTeamManager(orgNow.data()?.teamManagers, user.uid, currentData.team))) {
+        throw new Error("Forbidden: you no longer manage this team.");
+      }
+      if (currentData.status !== existing.status) {
+        return { result: { allowed: false, reason: 'Intervention status changed. Reload and retry.', httpStatus: 409 }, audit: null };
+      }
+      if (ACTIVE_INTERVENTION_STATUSES.has(status) && !ACTIVE_INTERVENTION_STATUSES.has(currentData.status)) {
+        const maxConcurrentActive = getEffectiveActionBudget(orgNow.data()?.actionBudget?.maxConcurrentActiveInterventions);
         const currentActiveCount = activeSnap.docs.filter((d: any) => ACTIVE_INTERVENTION_STATUSES.has(d.data().status)).length;
         const check = canStartNewIntervention(currentActiveCount, maxConcurrentActive);
-        if (!check.allowed) return check;
+        if (!check.allowed) return { result: { ...check, httpStatus: 400 }, audit: null };
       }
       tx.set(ref, { status, updatedAt: new Date().toISOString() }, { merge: true });
-      return { allowed: true };
-    });
+      return { result: { allowed: true, reason: '', httpStatus: 200 }, audit: {
+        action: 'update_work_design_intervention_status', resourceType: 'work_design_intervention',
+        resourceId: id, before: { status: currentData.status }, after: { status },
+      } };
+    }, 'team_manager');
     if (!budgetCheck.allowed) {
-      return res.status(400).json({ error: budgetCheck.reason });
+      return res.status(budgetCheck.httpStatus || 400).json({ error: budgetCheck.reason });
     }
-    await logOrgAuditAction(req, orgId, "update_work_design_intervention_status", "work_design_intervention", id, { status: existing.status }, { status });
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
