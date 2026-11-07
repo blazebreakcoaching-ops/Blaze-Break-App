@@ -14198,7 +14198,6 @@ app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser
   try {
     const { orgId } = req.params;
     const { db, org } = await requireOrgPermission(req, orgId, 'org.data_policy.manage');
-    const before = getEffectiveDataPolicy(org.dataPolicy);
     // The caller sends the full intended policy (never a partial patch -
     // see org-data-policy.ts for why), validated as a whole object before
     // anything is written.
@@ -14207,8 +14206,19 @@ app.post("/api/org/:orgId/data-policy", verifyAppCheck, authenticateFirebaseUser
       return res.status(400).json({ error: validation.error });
     }
     const after = getEffectiveDataPolicy(req.body);
-    await db.collection("organisations").doc(orgId).update({ dataPolicy: after });
-    await logOrgAuditAction(req, orgId, "update_data_policy", "data_policy", orgId, { ...before }, { ...after });
+    const orgRef = db.collection("organisations").doc(orgId);
+    await db.runTransaction(async (tx) => {
+      const current = await tx.get(orgRef);
+      if (!current.exists) throw new Error("Organisation not found.");
+      const before = getEffectiveDataPolicy(current.data()?.dataPolicy);
+      tx.update(orgRef, { dataPolicy: after });
+      tx.set(orgRef.collection("audit_logs").doc(), {
+        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        orgId, action: 'update_data_policy', targetResourceType: 'data_policy', targetResourceId: orgId,
+        before: { ...before }, after: { ...after }, createdAt: FieldValue.serverTimestamp(),
+        ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
+      });
+    });
     res.json({ success: true, policy: after });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -14689,7 +14699,6 @@ app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, as
   try {
     const { orgId } = req.params;
     const { db, org } = await requireOrgPermission(req, orgId, 'org.billing.manage');
-    const before = getEffectiveBillingState(org.billing);
     const validation = validateBillingUpdate(req.body);
     if (!validation.valid) {
       return res.status(400).json({ error: validation.error });
@@ -14697,13 +14706,27 @@ app.post("/api/org/:orgId/billing", verifyAppCheck, authenticateFirebaseUser, as
     // Provider identifiers are never accepted from the request body (see
     // billing-adapter.ts) - only a real provider integration would ever
     // set those, and none exists yet, so they're carried over unchanged.
-    const after = {
-      ...getEffectiveBillingState(req.body),
-      providerCustomerId: before.providerCustomerId,
-      providerSubscriptionId: before.providerSubscriptionId,
-    };
-    await db.collection("organisations").doc(orgId).update({ billing: after });
-    await logOrgAuditAction(req, orgId, "update_billing", "billing", orgId, { ...before }, { ...after });
+    const orgRef = db.collection("organisations").doc(orgId);
+    const after = await db.runTransaction(async (tx) => {
+      const current = await tx.get(orgRef);
+      if (!current.exists) throw new Error("Organisation not found.");
+      const before = getEffectiveBillingState(current.data()?.billing);
+      // Preserve actual provider IDs from the locked transaction snapshot,
+      // never from an earlier request read or a user-supplied payload.
+      const next = {
+        ...getEffectiveBillingState(req.body),
+        providerCustomerId: before.providerCustomerId,
+        providerSubscriptionId: before.providerSubscriptionId,
+      };
+      tx.update(orgRef, { billing: next });
+      tx.set(orgRef.collection("audit_logs").doc(), {
+        actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+        orgId, action: 'update_billing', targetResourceType: 'billing', targetResourceId: orgId,
+        before: { ...before }, after: { ...next }, createdAt: FieldValue.serverTimestamp(),
+        ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
+      });
+      return next;
+    });
     res.json({ success: true, billing: after });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
