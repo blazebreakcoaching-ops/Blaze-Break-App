@@ -74,11 +74,33 @@ Legend: DONE / IN PROGRESS / BLOCKED / NOT STARTED
 | Quality | TypeScript / ESLint / unit+route tests | DONE (0 / 0 errors / 5,265 passing) |
 | Quality | Firebase emulator stage | DONE (passes) |
 | Quality | Mobile (Expo) TS, lint, Jest; Functions build + tests | DONE (pass) |
-| Quality | Playwright real-app + preview suites | IN PROGRESS |
-| Recovery Report | "PDF" export downloads HTML behind fake progress | NOT STARTED (next) |
-| Recovery Report | "Sync" awards points without saving anything | NOT STARTED (next) |
+| Quality | Playwright real-app (38) + preview (66) suites | DONE (all pass) |
+| Recovery Report | "PDF" export downloaded HTML behind fake progress; AI text unescaped | DONE (real Save-as-PDF, escaped, sandboxed) |
+| Recovery Report | Fake "Save Locally" (+15 pts per click, fabricated audit entries) | DONE (removed) |
+| Mobile | Nova Send button covered by nav toggle on phones | DONE |
 | Mobile | Native 2FA challenge (2FA accounts are currently blocked on mobile) | NOT STARTED |
 | Mobile | Capacitor | N/A — app uses Expo/React Native; not adding a second stack |
 | Nova | Agentic journey off unless `NOVA_AGENTIC_JOURNEY_ENABLED=true` | DONE (verified fail-closed) |
 | Design | Ember design consolidation / progressive disclosure | NOT STARTED (after gates pass) |
 | Release | Merge, deploy, store submission | BLOCKED — requires your approval |
+
+## 5. Verified gate result
+
+`EXPECTED_RELEASE_SHA=c0182822488092898beca4e5bad43367e711c9cf npm run verify:integration:offline`
+→ **OFFLINE_CHECKS_PASS__NOT_PRODUCTION_APPROVAL** (exit 0), run in a cloud
+container on 2026-11-07:
+
+| Stage | Result |
+|---|---|
+| Clean install, npm audit (high) | Pass — 0 high/critical, 19 moderate |
+| TypeScript, ESLint, production build | Pass — 0 errors |
+| Vitest (unit + route) | 396 files, 5,272 tests pass |
+| Component tests | 23 files, 130 tests pass |
+| Firebase emulator (rules + MFA gate) | 4 files, 52 tests pass |
+| Playwright preview | 66 pass |
+| Playwright real app (Auth + Firestore emulators) | 38 pass |
+| Mobile (Expo): install, TypeScript, lint, Jest | Pass — 9 suites, 45 tests |
+| Cloud Functions: install, build, tests | Pass — 22 tests |
+
+Not covered by this gate (by design): production deployment, real
+Firebase project, real devices/app stores, live AI providers, Stripe.
