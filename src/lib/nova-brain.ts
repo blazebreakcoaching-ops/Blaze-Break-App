@@ -1,3 +1,4 @@
+import { hasExplicitCalendarSignalConsent } from './calendar-signal-consent';
 import { auth, getDb } from './firebase';
 import { NOVA_MEMORY_DATA_ZONE, deriveCanonicalKey } from '../../nova-memory-governance';
 
@@ -168,10 +169,7 @@ export const isCalendarSignalConsentGranted = async (uid: string): Promise<boole
     const db = await getDb();
     const { doc, getDoc } = await import('firebase/firestore');
     const snap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
-    if (snap.exists() && typeof snap.data().allowCalendarSignals === 'boolean') {
-      return snap.data().allowCalendarSignals;
-    }
-    return false; // Unknown is not consent.
+    return snap.exists() && hasExplicitCalendarSignalConsent(snap.data());
   } catch {
     return false;
   }
@@ -188,9 +186,11 @@ export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): 
   await runTransaction(db, async (transaction) => {
     const snap = await transaction.get(ref);
     if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+    const explicitOptInAt = enabled === true ? new Date().toISOString() : null;
     if (snap.exists()) {
       transaction.update(ref, {
         allowCalendarSignals: enabled === true,
+        calendarSignalsExplicitConsentAt: explicitOptInAt,
         updatedAt: new Date().toISOString(),
       });
     } else {
@@ -201,6 +201,7 @@ export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): 
         allowNovaMemory: false,
         allowNovaUseSavedMemories: false,
         allowCalendarSignals: enabled === true,
+        calendarSignalsExplicitConsentAt: explicitOptInAt,
         updatedAt: new Date().toISOString(),
       });
     }
