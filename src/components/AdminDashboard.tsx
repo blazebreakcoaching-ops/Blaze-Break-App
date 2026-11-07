@@ -12,6 +12,7 @@ import { useAuth } from '../lib/auth';
 import { ConfirmDialog } from './ConfirmDialog';
 import { AdminPeopleDirectory, type DirectoryUser } from './AdminPeopleDirectory';
 import { AdminAuditHistory } from './AdminAuditHistory';
+import { AdminAccountAuditHistory } from './AdminAccountAuditHistory';
 import { formatFeedbackCategory } from '../lib/feedback-format';
 import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole } from '../../admin-roles';
 import { DEVICE_CHANNELS } from '../../desktop-deployment';
@@ -2050,7 +2051,7 @@ export const AdminDashboard = () => {
               onAccountsChange={receiveDirectoryPage}
               onManageAccount={(account: DirectoryUser) => openAccountDrawer(account as unknown as AdminUser)}
             />
-            <p className="text-xs text-text-muted">The access timeline uses a separately limited audit-log query and may omit older events. A zero count here does not prove that no prior grants exist.</p>
+            <p className="text-xs text-text-muted">Account history now loads independently for the selected UID, page by page. Older missing audit writes cannot be reconstructed from this view.</p>
             {loading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-4">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -2074,7 +2075,6 @@ export const AdminDashboard = () => {
                     <tbody className="text-sm">
                       {filteredUsers.map((u) => {
                         const effective = entitlementEffectiveState(u);
-                        const timeline = auditLogs.filter((log) => log.action === 'grant_entitlement' && log.targetUid === u.uid);
                         return (
                           <React.Fragment key={u.uid}>
                             <tr className="border-b border-white/[0.02] hover:bg-white/5 transition-colors">
@@ -2113,10 +2113,9 @@ export const AdminDashboard = () => {
                                 <div className="flex items-center justify-end gap-2">
                                   <button
                                     onClick={() => setExpandedTimelineUid(expandedTimelineUid === u.uid ? null : u.uid)}
-                                    disabled={timeline.length === 0}
-                                    className="px-3 py-1.5 bg-surface hover:bg-border text-text-muted text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40"
+                                    className="px-3 py-1.5 bg-surface hover:bg-border text-text-muted text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                                   >
-                                    Timeline ({timeline.length})
+                                    {expandedTimelineUid === u.uid ? 'Hide history' : 'Account history'}
                                   </button>
                                   <button
                                     onClick={() => openAccountDrawer(u)}
@@ -2127,23 +2126,10 @@ export const AdminDashboard = () => {
                                 </div>
                               </td>
                             </tr>
-                            {expandedTimelineUid === u.uid && timeline.length > 0 && (
-                              <tr className="border-b border-white/[0.02] bg-background/40">
-                                <td colSpan={7} className="py-3 px-2">
-                                  <div className="space-y-2 pl-2 border-l-2 border-primary/30">
-                                    {timeline.map((log) => (
-                                      <div key={log.id} className="text-xs text-text-muted">
-                                        <span className="font-mono text-[10px] text-text-muted">{new Date(log.createdAt).toLocaleString()}</span>
-                                        {' — '}
-                                        <span className="text-text-main font-semibold">{log.actorEmail}</span> granted{' '}
-                                        <span className="text-text-main">{PLAN_LABELS[log.metadata?.plan] || log.metadata?.plan}</span>
-                                        {log.metadata?.previousPlan && (
-                                          <span> (from {PLAN_LABELS[log.metadata.previousPlan] || log.metadata.previousPlan}, {log.metadata.planChange})</span>
-                                        )}
-                                        {log.metadata?.durationDays && <span> for {log.metadata.durationDays} day{log.metadata.durationDays === 1 ? '' : 's'}</span>}
-                                      </div>
-                                    ))}
-                                  </div>
+                            {expandedTimelineUid === u.uid && (
+                              <tr className="border-b border-border">
+                                <td colSpan={7} className="p-3">
+                                  <AdminAccountAuditHistory key={u.uid} uid={u.uid} revision={directoryRefreshRevision} />
                                 </td>
                               </tr>
                             )}
