@@ -313,7 +313,7 @@ export const DiagnoseView = ({
 
   if (mode === 'choice') {
     return (
-      <div className="max-w-2xl mx-auto py-12 space-y-10 text-center">
+      <div data-nova-guide-target="checkin-content" tabIndex={-1} className="max-w-2xl mx-auto py-12 space-y-10 text-center">
         <div className="space-y-3">
           <h2 className="text-3xl font-light text-text-main">How much time do you have right now?</h2>
           <p className="text-text-muted">Either way gets you a real result — the difference is how much of the picture it covers.</p>
@@ -374,7 +374,7 @@ export const DiagnoseView = ({
   }
 
   return (
-    <div ref={questionContainerRef} className="max-w-2xl mx-auto py-12">
+    <div ref={questionContainerRef} data-nova-guide-target="checkin-content" tabIndex={-1} className="max-w-2xl mx-auto py-12">
       <div className="mb-12">
         <div className="flex justify-between items-end mb-4 text-xs uppercase tracking-widest font-black text-text-muted" role="status" aria-live="polite" aria-atomic="true">
           <span>
@@ -1522,7 +1522,7 @@ export const ResultView = ({
   return (
     <div className="max-w-5xl mx-auto space-y-12 py-12 px-4">
       {/* Archetype Card */}
-      <div className="text-center space-y-6 bg-card p-8 rounded-xl border border-border">
+      <div data-nova-guide-target="checkin-content" tabIndex={-1} className="text-center space-y-6 bg-card p-8 rounded-xl border border-border">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-light text-[#9a3412] dark:text-primary rounded-lg text-xs uppercase tracking-widest font-medium">
           <User className="w-3 h-3" /> Your burnout fingerprint
         </span>
