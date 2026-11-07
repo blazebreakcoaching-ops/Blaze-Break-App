@@ -18,7 +18,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 import crypto from 'crypto';
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceTransactionError } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -460,5 +460,39 @@ describe('POST /api/org/:orgId/invites/:email/cancel', () => {
     expect(errorSpy).toHaveBeenCalled();
     restore();
     errorSpy.mockRestore();
+  });
+});
+
+
+describe('billing changes are transactionally audited', () => {
+  it('does not alter billing state if its audit transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const restore = forceTransactionError(new Error('simulated transaction outage'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/billing`)
+        .set(auth('owner_1')).send({ plan: 'business', status: 'active', seatCount: 50, billingContact: null });
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}`)?.billing).toBeUndefined();
+    } finally { restore(); }
+  });
+
+  it('preserves provider identifiers regardless of submitted values', async () => {
+    seedOrg(ORG, {
+      adminUids: ['owner_1'], memberUids: ['owner_1'],
+      billing: {
+        plan: 'starter', status: 'active', seatCount: 7,
+        providerCustomerId: 'existing_customer', providerSubscriptionId: 'existing_subscription',
+      },
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    const res = await request(app).post(`/api/org/${ORG}/billing`)
+      .set(auth('owner_1')).send({
+        plan: 'business', status: 'active', seatCount: 8, billingContact: null,
+        providerCustomerId: 'forged_customer', providerSubscriptionId: 'forged_subscription',
+      });
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}`)?.billing?.providerCustomerId).toBe('existing_customer');
+    expect(getDocRaw(`organisations/${ORG}`)?.billing?.providerSubscriptionId).toBe('existing_subscription');
   });
 });
