@@ -4432,6 +4432,10 @@ const requirePermission = (req: any, permission: string) => {
   return user;
 };
 
+// Idempotent operational audit events. A stable Firestore-generated ID lets
+// the recovery path replay without inventing a second event for one action.
+// A completely unavailable Firestore service cannot provide durable audit
+// persistence: in that case auditRecorded remains false.
 const logAdminAction = async (
   req: any, action: string, targetUid: string, targetEmail: string, metadata: any,
   outcome?: 'succeeded' | 'failed',
@@ -4441,31 +4445,78 @@ const logAdminAction = async (
     actorUid: actor?.uid || "system",
     actorEmail: actor?.email || "system",
     actorRole: actor?.role || (isOwnerBootstrapEmail(actor?.email) ? "platform_owner" : "platform_admin"),
-    action,
-    targetUid,
-    targetEmail,
-    createdAt: FieldValue.serverTimestamp(),
-    metadata,
+    action, targetUid, targetEmail,
+    createdAt: FieldValue.serverTimestamp(), metadata,
     ...(outcome ? { outcome } : {}),
-    ipAddress: req.ip || "",
-    userAgent: req.headers["user-agent"] || ""
+    ipAddress: req.ip || "", userAgent: req.headers["user-agent"] || "",
   };
-  try {
-    const db = getDb();
-    await db.collection("admin_audit_logs").add(entry);
-    return true;
-  } catch (err: any) {
-    // The admin action this logs already happened by the time we get here -
-    // we can't roll it back, and blocking the response on a retry would
-    // punish the admin for an audit-log outage they can't fix. But a
-    // swallowed failure here means an admin mutation (including entitlement
-    // grants and role changes) leaves zero trace, so log the full entry
-    // inline - not just the error - so it's recoverable from Cloud Run logs
-    // even though it never reached Firestore.
-    logger.error("Failed to write admin audit log", { ...errorFields(err), entry });
-    return false;
+  const db = getDb();
+  const eventRef = db.collection("admin_audit_logs").doc();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await eventRef.set(entry);
+      return true;
+    } catch (err: any) {
+      if (attempt === 0) continue;
+      // The mutation has ALREADY succeeded. Make a best-effort durable
+      // recovery entry, using the SAME event ID for idempotent replay.
+      try {
+        await db.collection("admin_audit_recovery").doc(eventRef.id).set({
+          entry, failedAt: FieldValue.serverTimestamp(), attempts: 0,
+        });
+        logger.error("Primary audit persistence failed; event placed in recovery queue", {
+          eventId: eventRef.id, action, ...errorFields(err),
+        });
+      } catch (queueError: any) {
+        logger.error("AUDIT LOSS RISK: primary and recovery writes both failed", {
+          eventId: eventRef.id, action, entry, ...errorFields(queueError),
+        });
+      }
+      return false;
+    }
   }
+  return false;
 };
+
+// Deliberate manual, bounded recovery, not an unattended timer/job.
+// Requires an explicit platform owner operation and audit.read access.
+// Replays are idempotent by original ID; failures remain in the queue.
+app.post("/api/admin/audit-recovery/replay", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    requirePlatformOwner(req);
+    if (req.body && Object.keys(req.body).length !== 0) {
+      return res.status(400).json({ error: "No request body is accepted." });
+    }
+    const db = getDb();
+    const pending = await db.collection("admin_audit_recovery").limit(25).get();
+    let recovered = 0;
+    let failed = 0;
+    for (const doc of pending.docs) {
+      try {
+        const entry = doc.data().entry;
+        if (!entry || typeof entry.action !== "string" || !entry.createdAt) {
+          failed++;
+          continue;
+        }
+        const original = db.collection("admin_audit_logs").doc(doc.id);
+        const existing = await original.get();
+        if (!existing.exists) await original.set(entry);
+        await doc.ref.delete();
+        recovered++;
+      } catch (error: any) {
+        failed++;
+        logger.error("Audit recovery replay failed", { eventId: doc.id, ...errorFields(error) });
+      }
+    }
+    res.json({ recovered, failed, inspected: pending.size, mayHaveMore: pending.size === 25 });
+  } catch (error: any) {
+    if (error.message?.includes("Forbidden")) {
+      return res.status(403).json({ error: "Platform owner access required." });
+    }
+    logger.error("Audit recovery endpoint failed", errorFields(error));
+    res.status(500).json({ error: "Audit recovery unavailable." });
+  }
+});
 
 // ============================================================================
 // Account security: email verification, password reset (Brevo-routed), TOTP 2FA
