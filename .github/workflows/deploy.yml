@@ -19,8 +19,6 @@ name: Deploy
 # (Settings -> Secrets and variables -> Actions).
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 env:
