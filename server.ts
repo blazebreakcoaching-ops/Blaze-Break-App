@@ -11494,8 +11494,34 @@ const withOrgAuditedWrite = async <T>(
     action: string; resourceType: string; resourceId: string;
     before: Record<string, unknown> | null; after: Record<string, unknown> | null;
   } | null }>,
+  requiredAccess: 'admin' | 'connector' | 'team_manager',
 ): Promise<T> => db.runTransaction(async (tx: any) => {
   const orgRef = db.collection('organisations').doc(orgId);
+  const actorUid = req.user?.uid;
+  if (!actorUid) throw new Error('Forbidden: no authenticated company actor.');
+  const [orgSnap, actorSnap, profileSnap] = await Promise.all([
+    tx.get(orgRef),
+    tx.get(orgRef.collection('members').doc(actorUid)),
+    tx.get(db.collection('users').doc(actorUid)),
+  ]);
+  const org = orgSnap.exists ? orgSnap.data()! : null;
+  if (!org || !(org.memberUids || []).includes(actorUid) ||
+      (profileSnap.exists && profileSnap.data()?.organisationId &&
+        profileSnap.data()?.organisationId !== orgId)) {
+    throw new Error('Forbidden: current company membership is required.');
+  }
+  const role: OrgRole | null = actorSnap.exists
+    ? ((actorSnap.data()?.status === undefined || actorSnap.data()?.status === 'active') &&
+       isOrgRole(actorSnap.data()?.role) ? actorSnap.data()?.role : null)
+    : ((org.adminUids || []).includes(actorUid) ? 'owner' : 'member');
+  if (!role) throw new Error('Forbidden: current company membership is inactive.');
+  const hasAccess = requiredAccess === 'admin'
+    ? (role === 'owner' || role === 'admin')
+    : requiredAccess === 'connector'
+      ? hasOrgPermission(role, 'org.connectors.manage')
+      : (role === 'owner' || role === 'admin' ||
+         managedTeamsFor(org.teamManagers, actorUid).length > 0);
+  if (!hasAccess) throw new Error('Forbidden: company permissions changed.');
   const { result, audit } = await work(tx, orgRef);
   if (audit) tx.set(orgRef.collection('audit_logs').doc(), {
     actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
@@ -11537,7 +11563,7 @@ app.patch("/api/org/:orgId/suggestions/:id/respond", verifyAppCheck, authenticat
         before: { linkedInterventionId: snap.data()?.linkedInterventionId || null, hasNote: !!snap.data()?.responseNote },
         after: { linkedInterventionId: linkedInterventionId || null, hasNote: !linkedInterventionId && !!note },
       } };
-    });
+    }, 'admin');
     if (outcome === 404) return res.status(404).json({ error: 'Suggestion not found.' });
     if (outcome === 400) return res.status(400).json({ error: "That intervention doesn't exist in this organisation." });
     res.json({ success: true });
@@ -11632,7 +11658,7 @@ app.post("/api/org/:orgId/cost-inputs", verifyAppCheck, authenticateFirebaseUser
       tx.set(orgRef.collection('cost_input_history').doc(), {
         annualSicknessDays, avgDailyCostPerEmployee, headcount,
         enteredAt: new Date().toISOString(),
-      });
+      }, 'admin');
       return { result: null, audit: {
         action: 'update_cost_inputs', resourceType: 'organisation', resourceId: orgId,
         before: current.data()?.costInputs || null, after: costInputs,
@@ -12517,7 +12543,7 @@ app.post("/api/org/:orgId/team-dashboard/:team/acknowledge", verifyAppCheck, aut
         action: 'acknowledge_team_signal', resourceType: 'team_escalation_ack',
         resourceId: team, before: null, after: { notePresent: !!note },
       } };
-    });
+    }, 'team_manager');
     res.json({ success: true, ack: record });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -12870,7 +12896,7 @@ app.patch("/api/org/:orgId/work-design-interventions/:id/outcome", verifyAppChec
         resourceId: id, before: { status: current.data()?.status || null },
         after: { status: update.status, outcomeRating },
       } };
-    });
+    }, 'team_manager');
     if (outcome === 404) return res.status(404).json({ error: 'Intervention not found.' });
     if (outcome === 403) return res.status(403).json({ error: 'Forbidden: you no longer manage this team.' });
     res.json({ success: true, pressureTransferCheck });
@@ -12922,7 +12948,7 @@ app.post("/api/org/:orgId/work-design-debt", verifyAppCheck, authenticateFirebas
         action: 'create_work_design_debt', resourceType: 'work_design_debt', resourceId: ref.id,
         before: null, after: { team, signalKey, status: record.status },
       } };
-    });
+    }, 'team_manager');
     res.json({ success: true, debt: { id: ref.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13014,7 +13040,7 @@ app.patch("/api/org/:orgId/work-design-debt/:id/owner", verifyAppCheck, authenti
         action: 'assign_work_design_debt_owner', resourceType: 'work_design_debt', resourceId: id,
         before: { ownerUid: current.data()?.ownerUid || null }, after: { ownerUid },
       } };
-    });
+    }, 'team_manager');
     if (assigned === 404) return res.status(404).json({ error: 'Work design debt item not found.' });
     if (assigned === 409) return res.status(409).json({ error: 'Assigned owner is no longer on the company roster.' });
     if (assigned === 403) return res.status(403).json({ error: 'Forbidden: you no longer manage this team.' });
@@ -13083,7 +13109,7 @@ app.patch("/api/org/:orgId/work-design-debt/:id/status", verifyAppCheck, authent
         action: 'update_work_design_debt_status', resourceType: 'work_design_debt', resourceId: id,
         before: { status: current.data()?.status || null }, after: { status },
       } };
-    });
+    }, 'team_manager');
     if (changed === 404) return res.status(404).json({ error: 'Work design debt item not found.' });
     if (changed === 403) return res.status(403).json({ error: 'Forbidden: you no longer manage this team.' });
     if (changed === 409) return res.status(409).json({ error: 'Work design debt changed. Reload and retry.' });
@@ -13128,7 +13154,7 @@ app.post("/api/org/:orgId/workplace-policies", verifyAppCheck, authenticateFireb
         action: 'create_workplace_policy', resourceType: 'workplace_policy', resourceId: ref.id,
         before: null, after: { type, label },
       } };
-    });
+    }, 'admin');
     res.json({ success: true, policy: { id: ref.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -13210,7 +13236,7 @@ app.delete("/api/org/:orgId/workplace-policies/:id", verifyAppCheck, authenticat
         action: 'delete_workplace_policy', resourceType: 'workplace_policy', resourceId: id,
         before: { type: previous.type, label: previous.label }, after: null,
       } };
-    });
+    }, 'admin');
     if (!removed) return res.status(404).json({ error: 'Workplace policy not found.' });
     res.json({ success: true });
   } catch (err: any) {
@@ -13313,7 +13339,7 @@ app.post("/api/org/:orgId/what-works-here/:signalKey/promote", verifyAppCheck, a
         promotedBy: user.uid,
         promotedByEmail: user.email || null,
         promotedAt: new Date().toISOString(),
-      });
+      }, 'admin');
       return { result: null, audit: {
         action: 'promote_local_operating_principle', resourceType: 'local_operating_principle',
         resourceId: signalKey, before: null, after: { signalKey },
@@ -15164,7 +15190,7 @@ app.post("/api/org/:orgId/search/resources", verifyAppCheck, authenticateFirebas
         action: 'register_search_resource', resourceType: 'searchable_resource', resourceId: ref.id,
         before: null, after: { title, contentType },
       } };
-    });
+    }, 'connector');
     res.json({ success: true, resource: { id: ref.id, ...record } });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -15210,7 +15236,7 @@ app.post("/api/org/:orgId/search/resources/:resourceId/remove", verifyAppCheck, 
         action: 'remove_search_resource', resourceType: 'searchable_resource', resourceId,
         before: { title: doc.data()?.title || null }, after: null,
       } };
-    });
+    }, 'connector');
     if (!removed) return res.status(404).json({ error: 'Searchable resource not found.' });
     res.json({ success: true });
   } catch (err: any) {
