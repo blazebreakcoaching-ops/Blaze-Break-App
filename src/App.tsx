@@ -1676,13 +1676,12 @@ export default function App() {
     (window as any).__ACTIVE_USER_EMAIL__ = email;
 
     const loadStats = async () => {
+      // Never fetch/use personal Nova memories with a stale learning choice
+      // before confirming the active account's saved profile and consent.
+      clearNovaBrainCache();
+      if (user) setNovaLearningAllowedForUid(user.uid, false);
       // The old browser-global fingerprint key has no provable owner.
       // Importing it into a signed-in account risks leaking personal data.
-      if (user) {
-        initNovaBrain(user.uid); // Fire-and-forget - populates the cache; callers just see an empty brain until it resolves.
-      } else {
-        clearNovaBrainCache();
-      }
 
       // A single, honest default for everyone - previously anonymous users
       // (the vast majority, since anonymous auth signs everyone in
@@ -1776,7 +1775,11 @@ export default function App() {
         }
         // A missing/failed Firestore profile read cannot opt Nova into
         // learning. Only a verified account profile may restore consent.
-        setNovaLearningAllowedForUid(user.uid, persistedProfileVerified && loadedStats.profile?.letNovaLearn !== false);
+        const verifiedConsent = persistedProfileVerified && loadedStats.profile?.letNovaLearn !== false;
+        setNovaLearningAllowedForUid(user.uid, verifiedConsent);
+        // Load the current account's saved memory only after a successful
+        // Firestore identity/profile read. Memory edits stay consent-gated.
+        if (persistedProfileVerified) initNovaBrain(user.uid);
       }
       setStats(loadedStats);
       setStatsLoadError(false);
@@ -2243,6 +2246,11 @@ export default function App() {
   }, [activeTab]);
 
   useEffect(() => {
+    // This effect writes multiple personal Nova memories. During an
+    // account switch or failed Firestore load, stats can still contain
+    // the prior account's React values. Never sync them across UIDs.
+    if (authLoading || !user?.uid || statsOwnerUid !== user.uid || !statsLoadedRef.current) return;
+
     // Sync Profile
     if (stats.profile) {
       updateNovaMemoryBySourceAndType("User Setup", "profile", {
@@ -2342,7 +2350,7 @@ export default function App() {
       confidence: "verified",
       canEdit: false,
     });
-  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle]);
+  }, [stats.profile, shipStage, energyLevel, burnoutRisk, fingerprint, stats.debts, stats.supportCircle, user?.uid, statsOwnerUid, authLoading]);
 
   // Blocks app access (not Firebase auth itself, which already fully
   // succeeded by this point) whenever the signed-in account has 2FA
@@ -2419,7 +2427,10 @@ export default function App() {
             // Do not queue an extra "What's New" announcement for them.
             setStats((prev) => ({ ...prev, profile, lastSeenChangelogVersion: CURRENT_CHANGELOG_VERSION }));
             writeAccountProfile(user?.uid, profile);
-            if (user) setNovaLearningAllowedForUid(user.uid, profile.letNovaLearn !== false);
+            if (user) {
+              setNovaLearningAllowedForUid(user.uid, profile.letNovaLearn !== false);
+              initNovaBrain(user.uid);
+            }
             setFlow("app");
             setActiveTab("home");
             setPostOnboardingProfile(profile);
