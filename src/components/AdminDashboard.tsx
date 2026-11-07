@@ -1511,10 +1511,11 @@ export const AdminDashboard = () => {
   useEffect(() => {
     const currentUid = authUser?.uid ?? null;
     if (previousAdminUid.current !== undefined && previousAdminUid.current !== currentUid) {
-      // Do not display the previous administrator's selected identity when
-      // another account signs into the same browser.
+      // Clear all person-specific display state on shared-browser changes.
+      // The new directory remounts by UID; never retain the prior page.
       setSelectedUser(null);
       setPendingAction(null);
+      setDirectoryPageUsers([]);
     }
     previousAdminUid.current = currentUid;
   }, [authUser?.uid]);
