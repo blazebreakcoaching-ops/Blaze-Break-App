@@ -4383,12 +4383,12 @@ const getPermissionsForRole = (role: string): string[] => {
       return [
         "admin.full_access", "users.read", "users.manage", "content.manage", 
         "nova.manage", "b2b.manage", "billing.manage", "safety.read", 
-        "audit.read", "settings.manage"
+        "audit.read", "settings.manage", "safety.manage"
       ];
     case 'platform_admin':
       return [
         "users.read", "users.manage", "content.manage", "nova.manage", 
-        "b2b.manage", "billing.manage", "safety.read", "audit.read"
+        "b2b.manage", "billing.manage", "safety.read", "safety.manage", "audit.read"
       ];
     case 'security_admin':
       return ["users.read", "safety.read", "audit.read"];
@@ -8957,7 +8957,7 @@ const NovaCalendarPilotEligibilitySchema = z.object({ eligible: z.boolean() }).s
 
 app.post("/api/admin/users/:uid/calendar-protection-pilot-eligibility", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    const admin = requireAdmin(req);
+    const admin = requirePlatformOwner(req);
     const targetUid = req.params.uid;
     const parsed = NovaCalendarPilotEligibilitySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -9558,7 +9558,7 @@ const IncidentUpdateSchema = z.object({
 
 app.post("/api/admin/incidents", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    const user = requireAdmin(req);
+    const user = requirePermission(req, "safety.manage");
     const parsed = IncidentCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid incident payload.", details: (parsed as any).error?.errors || [] });
@@ -9602,7 +9602,7 @@ app.get("/api/admin/incidents", verifyAppCheck, authenticateFirebaseUser, async 
 
 app.post("/api/admin/incidents/:id/update", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
-    const user = requireAdmin(req);
+    const user = requirePermission(req, "safety.manage");
     const parsed = IncidentUpdateSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid update payload.", details: (parsed as any).error?.errors || [] });
@@ -16524,7 +16524,7 @@ app.post("/api/admin/legal/:docType/publish", verifyAppCheck, authenticateFireba
     if (!isLegalDocumentType(docType)) {
       return res.status(404).json({ error: "Unknown document type." });
     }
-    requireAdmin(req);
+    requirePermission(req, "settings.manage");
     const parsed = LegalPublishSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid document payload.", details: (parsed as any).error?.errors || [] });
