@@ -14447,33 +14447,57 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, asy
     }
 
     const db = getDb();
+    const orgRef = db.collection("organisations").doc(orgId);
+    const pendingRef = orgRef.collection("pending_invites");
 
-    // Enforced seat limit: this org's plan (billing-adapter.ts) allows only
-    // so many seats, counting both active members and people already
-    // invited but not yet joined. A real billing provider would report the
-    // allowance itself; the null provider reports back the org's own
-    // stored seatCount.
-    const pendingInvitesSnap = await db.collection("organisations").doc(orgId).collection("pending_invites").get();
-    const seatAllowance = billingProvider.getSeatAllowance(getEffectiveBillingState(org.billing));
-    const seatCheck = checkSeatLimit((org.memberUids || []).length, pendingInvitesSnap.size, cleaned.length, seatAllowance);
-    if (!seatCheck.allowed) {
-      return res.status(400).json({ error: seatCheck.error });
+    // Reserve invitation seats BEFORE sending any email. Every invitation
+    // transaction updates the same organisation document as joining does.
+    // Two simultaneous invites or an invite racing a join must therefore
+    // retry against the latest roster and invitation count.
+    const reservation = await db.runTransaction(async (tx) => {
+      const currentOrg = await tx.get(orgRef);
+      const pending = await tx.get(pendingRef);
+      if (!currentOrg.exists) return { allowed: false, error: "Organisation not found." };
+      const data = currentOrg.data()!;
+      const pendingEmails = new Set(pending.docs.map((d: any) => d.id));
+      const addedSeats = cleaned.filter(email => !pendingEmails.has(email)).length;
+      const allowance = billingProvider.getSeatAllowance(getEffectiveBillingState(data.billing));
+      const members = new Set<string>(Array.isArray(data.memberUids) ? data.memberUids : []);
+      const seatCheck = checkSeatLimit(members.size, pending.size, addedSeats, allowance);
+      if (!seatCheck.allowed) return { allowed: false, error: seatCheck.error || "No free staff seats." };
+      tx.update(orgRef, { updatedAt: FieldValue.serverTimestamp() });
+      cleaned.forEach(email => tx.set(pendingRef.doc(email), {
+        email, invitedAt: FieldValue.serverTimestamp(), emailSent: false,
+      }, { merge: true }));
+      return { allowed: true, name: data.name, joinCode: data.joinCode };
+    });
+    if (!reservation.allowed) {
+      return res.status(400).json({ error: reservation.error });
     }
 
     const results: { email: string; sent: boolean }[] = [];
-
+    // Provider calls never run inside a Firestore transaction. Failed
+    // delivery retains a visible pending row with emailSent=false so an
+    // administrator can retry without silently losing the reserved seat.
     for (const email of cleaned) {
-      const sent = await sendBrevoEmail(
-        email,
-        `You're invited to ${org.name} on Blaze Break`,
-        `${org.name} has set up Blaze Break, a burnout recovery tool, for their team.\n\nTo join, sign in to Blaze Break and enter this code in your Privacy Centre under "Organisation Participation":\n\n${org.joinCode}\n\nJoining is entirely optional, and any data sharing with ${org.name} is off by default and fully within your control.`
-      );
+      let sent = false;
+      try {
+        sent = await sendBrevoEmail(
+          email,
+          `You're invited to ${reservation.name} on Blaze Break`,
+          `${reservation.name} has set up Blaze Break, a burnout recovery tool, for their team.\n\nTo join, sign in to Blaze Break and enter this code in your Privacy Centre under "Organisation Participation":\n\n${reservation.joinCode}\n\nJoining is entirely optional, and any data sharing with ${reservation.name} is off by default and fully within your control.`
+        );
+      } catch (e) {
+        logger.error("Company invitation delivery failed", errorFields(e));
+      }
       results.push({ email, sent });
-      await db.collection("organisations").doc(orgId).collection("pending_invites").doc(email).set({
-        email,
-        invitedAt: FieldValue.serverTimestamp(),
-        emailSent: sent,
-      });
+      // Do not recreate an invitation cancelled while delivery was
+      // underway. A joined employee's resolved invite stays resolved.
+      const inviteDoc = pendingRef.doc(email);
+      const pendingNow = await inviteDoc.get();
+      if (pendingNow.exists) {
+        await inviteDoc.update({ emailSent: sent });
+      }
     }
 
     res.json({ success: true, results });
