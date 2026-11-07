@@ -11172,14 +11172,31 @@ app.get("/api/admin/orgs/:orgId", verifyAppCheck, authenticateFirebaseUser, asyn
         joinedAt: firestoreTimestampToIso(md.joinedAt),
       };
     });
+    const pendingInvitesSnap = await db.collection("organisations").doc(orgId).collection("pending_invites").get();
+    const billingState = getEffectiveBillingState(data.billing);
+    const seatAllowance = billingProvider.getSeatAllowance(billingState);
+    const memberCount = new Set<string>(Array.isArray(data.memberUids) ? data.memberUids : []).size;
+    const seatsUsed = memberCount + pendingInvitesSnap.size;
+    // Account-management metadata only. Never return private coaching,
+    // health, app engagement or staff-level wellbeing information.
     res.json({
       id: orgDoc.id,
       name: data.name,
       joinCode: data.joinCode,
       privacyThreshold: data.privacyThreshold || 5,
       createdAt: firestoreTimestampToIso(data.createdAt),
-      billing: getEffectiveBillingState(data.billing),
+      billing: billingState,
       billingProvider: billingProvider.name,
+      seatSummary: {
+        allowance: seatAllowance,
+        members: memberCount,
+        pendingInvites: pendingInvitesSnap.size,
+        remaining: Math.max(0, seatAllowance - seatsUsed),
+        overCapacity: seatsUsed > seatAllowance,
+        roleRecords: members.length,
+        rosterMismatch: memberCount !== members.length,
+        suspendedRecords: members.filter((m) => m.status === 'suspended').length,
+      },
       members,
     });
   } catch (err: any) {
