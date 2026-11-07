@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { Activity, Calendar, ChevronDown, Settings } from 'lucide-react';
 import { UserProfileData } from '../types.ts';
 import { cn } from '../lib/utils.ts';
@@ -8,6 +8,8 @@ import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-fla
 import { logAuditAction } from '../lib/audit-logger.ts';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
+import { useAuth } from '../lib/auth';
+import { saveCalendarSignalConsent } from '../lib/nova-brain';
 
 // Two toggle mechanisms exist side by side here, deliberately:
 // - flagId (localStorage, src/lib/feature-flags.ts) for UI-only display
@@ -37,23 +39,38 @@ export const DataPrivacyDashboard = ({
   profile: UserProfileData
 }) => {
   const flags = useFeatureFlags();
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  // Defaults to true, matching NOVA_PERMISSION_DEFAULTS.allowCalendarSignals
-  // (src/lib/nova-brain.ts) until the real doc loads.
-  const [allowCalendarSignals, setAllowCalendarSignals] = useState(true);
+  const [allowCalendarSignals, setAllowCalendarSignals] = useState(false);
+  const [calendarOwnerUid, setCalendarOwnerUid] = useState<string | null>(null);
+  const [calendarStatus, setCalendarStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [calendarSaving, setCalendarSaving] = useState(false);
+  const [calendarSaveError, setCalendarSaveError] = useState(false);
+  const [calendarRetry, setCalendarRetry] = useState(0);
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
+    let cancelled = false;
+    setAllowCalendarSignals(false);
+    setCalendarOwnerUid(null);
+    setCalendarStatus('loading');
+    setCalendarSaveError(false);
+    if (!uid) {
+      setCalendarStatus('error');
+      return () => { cancelled = true; };
+    }
     getDoc(doc(db, 'users', uid, 'nova_permissions', 'current')).then((snap) => {
-      if (snap.exists() && typeof snap.data().allowCalendarSignals === 'boolean') {
-        setAllowCalendarSignals(snap.data().allowCalendarSignals);
-      }
+      if (cancelled || auth.currentUser?.uid !== uid) return;
+      setAllowCalendarSignals(snap.exists() && snap.data().allowCalendarSignals === true);
+      setCalendarOwnerUid(uid);
+      setCalendarStatus('ready');
     }).catch(() => {
-      // Non-fatal - stays at the true default, same as every other
-      // category in this doc when it can't be read.
+      if (cancelled || auth.currentUser?.uid !== uid) return;
+      // A failed consent read must never look like consent or permit writes.
+      setCalendarStatus('error');
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [uid, calendarRetry]);
 
   const dataPoints: DataPoint[] = [
     {
@@ -88,24 +105,29 @@ export const DataPrivacyDashboard = ({
     if (point.required) return;
 
     if (point.permissionKey) {
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
+      const requestUid = uid;
+      if (!requestUid || auth.currentUser?.uid !== requestUid ||
+          calendarOwnerUid !== requestUid || calendarStatus !== 'ready' || calendarSaving) return;
       const newState = !allowCalendarSignals;
-      setAllowCalendarSignals(newState);
-      await logAuditAction({
-        userId: profile.fullName || 'anonymous',
-        action: `Toggled Data Privacy Category: ${point.label}`,
-        target: point.id,
-        status: newState ? 'authorised' : 'revoked' as any,
-        details: `User set ${point.label} sharing to ${newState}`
-      });
+      setCalendarSaving(true);
+      setCalendarSaveError(false);
       try {
-        await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
-          [point.permissionKey]: newState,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      } catch (err) {
-        setAllowCalendarSignals(!newState); // Revert the optimistic update on a real save failure.
+        await saveCalendarSignalConsent(requestUid, newState);
+        if (auth.currentUser?.uid !== requestUid) return;
+        setAllowCalendarSignals(newState);
+        // Only log consent after Firestore has confirmed the actual change.
+        // Audit unavailability must never turn a saved setting into an error.
+        void logAuditAction({
+          userId: requestUid,
+          action: `Changed Calendar signal aggregation to ${newState ? 'on' : 'off'}`,
+          target: point.id,
+          status: newState ? 'authorised' : 'denied',
+          details: 'Explicit Calendar signal aggregation preference saved.',
+        }).catch(() => {});
+      } catch {
+        if (auth.currentUser?.uid === requestUid) setCalendarSaveError(true);
+      } finally {
+        if (auth.currentUser?.uid === requestUid) setCalendarSaving(false);
       }
       return;
     }
@@ -137,10 +159,22 @@ export const DataPrivacyDashboard = ({
         </div>
       </div>
 
+      {calendarStatus === 'error' && (
+        <div role="alert" className="rounded-xl border border-border p-3 text-sm text-text-main">
+          Calendar privacy settings could not be loaded. Calendar signal sharing remains off.
+          <button type="button" className="ml-2 underline font-semibold"
+            onClick={() => setCalendarRetry(n => n + 1)}>Try again</button>
+        </div>
+      )}
+      {calendarSaveError && (
+        <p role="alert" className="text-sm text-destructive">Calendar sharing could not be saved. Your previous choice remains in place.</p>
+      )}
       <div className="space-y-3">
         {dataPoints.map((point) => {
+          const calendarReady = calendarStatus === 'ready' &&
+            !!uid && calendarOwnerUid === uid && auth.currentUser?.uid === uid;
           const isEnabled = point.required
-            || (point.permissionKey ? allowCalendarSignals : (point.flagId ? flags[point.flagId] !== false : true));
+            || (point.permissionKey ? calendarReady && allowCalendarSignals : (point.flagId ? flags[point.flagId] !== false : true));
           const isExpanded = expandedId === point.id;
           
           return (
@@ -194,6 +228,7 @@ export const DataPrivacyDashboard = ({
                       onClick={(e) => handleToggle(point, e)}
                       role="switch"
                       aria-checked={isEnabled}
+                      disabled={!!point.permissionKey && (!calendarReady || calendarSaving)}
                       aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${point.label}`}
                       className={cn(
                         "w-12 h-6 rounded-full flex items-center p-1 transition-colors relative",
