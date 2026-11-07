@@ -10,6 +10,7 @@ import { secureApiFetch } from '../lib/secure-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { ConfirmDialog } from './ConfirmDialog';
+import { AdminPeopleDirectory } from './AdminPeopleDirectory';
 import { formatFeedbackCategory } from '../lib/feedback-format';
 import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole } from '../../admin-roles';
 import { DEVICE_CHANNELS } from '../../desktop-deployment';
@@ -1785,6 +1786,7 @@ export const AdminDashboard = () => {
         {/* Tab 1: Users & Role Assignment */}
         {activeTab === 'users' && (
           <div className="space-y-6">
+            <AdminPeopleDirectory />
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
               <div className="flex flex-col sm:flex-row gap-3 w-full flex-wrap">
                 <div className="relative flex-1 min-w-[200px]">
