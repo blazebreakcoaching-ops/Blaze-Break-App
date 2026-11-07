@@ -32,7 +32,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { getDocRaw, resetStore, seedDoc, forceDocError } from './test/fake-firestore';
+import { getDocRaw, resetStore, seedDoc, forceTransactionError } from './test/fake-firestore';
 
 const OWNER = 'owner_1';
 const NOT_ADMIN = 'random_person';
@@ -111,7 +111,7 @@ describe('POST /api/admin/orgs — orgId validation', () => {
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER)).send({
       orgId: 'new-company', name: 'New Company', initialAdminEmail: 'owner@oldco.test',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/another company/i);
     expect(getDocRaw('organisations/new-company')).toBeUndefined();
     expect(getDocRaw('users/existing_owner')?.organisationId).toBe('existing-company');
@@ -136,10 +136,47 @@ describe('POST /api/admin/orgs — orgId validation', () => {
     expect(getDocRaw('organisations/acme-corp-3/members/new_admin_uid')?.role).toBe('owner');
   });
 
+  it('does not change an existing company owner through the normal edit endpoint', async () => {
+    seedDoc('organisations/acme-corp-3', { name: 'Existing', joinCode: 'ABC123', memberUids: ['owner_uid'], adminUids: ['owner_uid'] });
+    h.getUserByEmail.mockResolvedValueOnce({ uid: 'new_admin_uid', email: 'new@acme.dev' });
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
+      .send({ orgId: 'acme-corp-3', name: 'Hijacked', initialAdminEmail: 'new@acme.dev' });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/ownership/i);
+    expect(getDocRaw('organisations/acme-corp-3')?.name).toBe('Existing');
+    expect(getDocRaw('users/new_admin_uid')).toBeUndefined();
+  });
+
+  it('updates an existing company without silently changing its owner', async () => {
+    seedDoc('organisations/acme-corp-3', { name: 'Existing', joinCode: 'ABC123', memberUids: ['owner_uid'], adminUids: ['owner_uid'] });
+    const res = await request(app).post('/api/admin/orgs').set(auth(OWNER))
+      .send({ orgId: 'acme-corp-3', name: 'Updated Company', privacyThreshold: 7 });
+    expect(res.status).toBe(200);
+    const updated = getDocRaw('organisations/acme-corp-3');
+    expect(updated?.name).toBe('Updated Company');
+    expect(updated?.privacyThreshold).toBe(7);
+    expect(updated?.joinCode).toBe('ABC123');
+    expect(updated?.adminUids).toEqual(['owner_uid']);
+  });
+
+  it('two simultaneous company creations cannot assign one person to two companies', async () => {
+    h.getUserByEmail.mockImplementation(async (email: string) => ({ uid: 'single_owner', email }));
+    const results = await Promise.all(['company-a', 'company-b'].map(orgId =>
+      request(app).post('/api/admin/orgs').set(auth(OWNER)).send({
+        orgId, name: orgId, initialAdminEmail: 'owner@acme.dev',
+      })
+    ));
+    expect(results.map(r => r.status).sort()).toEqual([200, 409]);
+    const profile = getDocRaw('users/single_owner');
+    expect(['company-a', 'company-b']).toContain(profile?.organisationId);
+    const linkedOrgs = ['company-a', 'company-b'].filter(orgId => !!getDocRaw(`organisations/${orgId}`));
+    expect(linkedOrgs).toHaveLength(1);
+  });
+
   // The defensive catch block behind the happy path above.
-  it('returns a generic 500 and logs the real error when the existing-org read throws', async () => {
+  it('returns a generic 500 and logs the real error when the provisioning transaction fails', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const restore = forceDocError('organisations/acme-corp-1', 'get', new Error('simulated Firestore outage'));
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
     const res = await request(app).post('/api/admin/orgs').set(auth(OWNER)).send({ orgId: 'acme-corp-1', name: 'Acme Corp' });
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: 'Something went wrong on our end. Please try again.' });
