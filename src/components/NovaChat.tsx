@@ -91,6 +91,7 @@ export const NovaChat = ({
   temporaryBeforeWordsContext,
   onTemporaryBeforeWordsContextConsumed,
   onRequestPracticalAssistance,
+  onShowMeHow,
 }: {
   systemInstruction?: string;
   initialMessage?: string;
@@ -138,6 +139,8 @@ export const NovaChat = ({
   // card simply never renders at all, same as onNavigate being absent for
   // suggest_feature.
   onRequestPracticalAssistance?: () => void;
+  // Fixed, user-invoked UI help; never sends a message to the model.
+  onShowMeHow?: () => void;
 }) => {
   // How Nova should sound, re-tunable at any time. Source of truth for the
   // chat's own context is localStorage's blaze_profile (what getDynamicContext
@@ -961,6 +964,16 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {onShowMeHow && (
+            <button
+              type="button"
+              data-nova-guide-target="nova-show-how"
+              onClick={onShowMeHow}
+              className="min-h-10 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              Show me how
+            </button>
+          )}
           <details className="text-sm text-text-muted">
             <summary className="cursor-pointer px-2 py-2 rounded-lg hover:text-text-main focus-visible:outline-2 focus-visible:outline-primary">
               Preferences
@@ -1503,6 +1516,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSend()}
                 aria-label="Message Nova"
+                data-nova-guide-target="nova-message-input"
                 placeholder={
                   dictationError
                     ? dictationError
