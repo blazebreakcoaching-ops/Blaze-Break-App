@@ -1066,3 +1066,83 @@ describe('team access writes are auditable and require current membership', () =
     }
   });
 });
+
+
+describe('membership teardown and reactivation are audit-safe', () => {
+  it('commits member removal and its audit evidence in the same transaction', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    seedDoc('users/target', { organisationId: ORG });
+    const res = await request(app).post(`/api/org/${ORG}/members/target/remove`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)).toBeUndefined();
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'remove_member', actorUid: 'owner_1', targetResourceId: 'target',
+        after: { accessRemoved: true },
+      }),
+    ]));
+  });
+
+  it('commits a member voluntary departure and its audit evidence together', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'leaver'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'leaver', 'member');
+    seedDoc('users/leaver', { organisationId: ORG });
+    const res = await request(app).post('/api/org/leave').set(auth('leaver'));
+    expect(res.status).toBe(200);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(audit.body.logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'leave_organisation', actorUid: 'leaver', targetResourceId: 'leaver',
+        after: { accessRemoved: true },
+      }),
+    ]));
+  });
+
+  it('does not remove membership when its transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member');
+    seedDoc('users/target', { organisationId: ORG });
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/members/target/remove`).set(auth('owner_1'));
+      expect(res.status).toBe(500);
+      expect(getDocRaw(`organisations/${ORG}`)?.memberUids).toContain('target');
+      expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('active');
+      expect(getDocRaw('users/target')?.organisationId).toBe(ORG);
+    } finally { restore(); }
+  });
+
+  it('prevents changing the role of suspended employees', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/role`)
+      .set(auth('owner_1')).send({ role: 'admin' });
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.role).toBe('member');
+  });
+
+  it('prevents reactivation if the target profile now belongs to another company', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'target'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    seedDoc('users/target', { organisationId: OTHER_ORG });
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('suspended');
+  });
+
+  it('refuses reactivation when the member record exists but roster entry is gone', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'target', 'member', 'suspended');
+    const res = await request(app).post(`/api/org/${ORG}/members/target/reactivate`).set(auth('owner_1'));
+    expect(res.status).toBe(400);
+    expect(getDocRaw(`organisations/${ORG}/members/target`)?.status).toBe('suspended');
+  });
+});
