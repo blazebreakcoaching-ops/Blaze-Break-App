@@ -11079,6 +11079,18 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
         invitedBy: inviteMatch ? 'email_invite' : 'join_code',
       }, { merge: true });
       if (reservedInvite) tx.delete(reservedInvite.ref);
+      // Joining creates a real security principal. Record who joined and
+      // whether by individual invitation or shared code in the SAME commit,
+      // never include the secret token or shared company code in the log.
+      tx.set(orgRef.collection("audit_logs").doc(), {
+        actorUid: user.uid, actorEmail: email,
+        orgId: orgRef.id, action: 'join_organisation',
+        targetResourceType: 'member', targetResourceId: user.uid,
+        before: { membership: null },
+        after: { role: 'member', status: 'active', method: inviteMatch ? 'email_invite' : 'join_code' },
+        createdAt: FieldValue.serverTimestamp(),
+        ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
+      });
       return { status: 200, organisationId: orgRef.id, organisationName: org.name };
     });
 
@@ -15302,6 +15314,15 @@ app.post("/api/org/:orgId/invite", verifyAppCheck, authenticateFirebaseUser, org
           tokenHash: credentials.tokenHash,
           tokenExpiresAt: credentials.tokenExpiresAt,
         }, { merge: true });
+        tx.set(orgRef.collection("audit_logs").doc(), {
+          actorUid: req.user?.uid || 'system', actorEmail: req.user?.email || 'system',
+          orgId, action: pendingEmails.has(email) ? 'resend_invitation' : 'create_invitation',
+          targetResourceType: 'invitation', targetResourceId: email,
+          before: { pending: pendingEmails.has(email) },
+          after: { pending: true, tokenReplaced: pendingEmails.has(email) },
+          createdAt: FieldValue.serverTimestamp(),
+          ipAddress: req.ip || '', userAgent: req.headers?.['user-agent'] || '',
+        });
       });
       return { allowed: true, name: data.name };
     });
