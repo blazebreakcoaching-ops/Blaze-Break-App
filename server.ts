@@ -14784,29 +14784,36 @@ app.post("/api/org/:orgId/sso", verifyAppCheck, authenticateFirebaseUser, async 
     if (!validation.valid) {
       return res.status(400).json({ error: validation.error });
     }
-    const existingDoc = await getSsoConfigDoc(db, orgId).get();
-    const existing = existingDoc.exists ? (existingDoc.data() as StoredSsoConfig) : null;
     const { providerType, issuer, clientId, metadataUrl, allowedDomains, jitProvisioning, defaultRole, clientSecret, secretRef } = req.body;
-
-    const record: StoredSsoConfig = {
-      providerType,
-      issuer,
-      clientId,
-      metadataUrl: metadataUrl || null,
-      allowedDomains: allowedDomains || [],
-      enforceSso: existing?.enforceSso === true, // never set here - preserved as-is
-      jitProvisioning: jitProvisioning === true,
-      defaultRole: defaultRole || 'member',
-      encryptedSecret: clientSecret ? encryptSecret(clientSecret, encryptionKey as string) : (secretRef ? null : existing?.encryptedSecret || null),
-      secretRef: secretRef || (clientSecret ? null : existing?.secretRef || null),
-      updatedAt: new Date().toISOString(),
-      updatedBy: user.uid,
-    };
-    await getSsoConfigDoc(db, orgId).set(record);
-    await logOrgAuditAction(req, orgId, "update_sso_config", "sso_config", orgId,
-      existing ? { providerType: existing.providerType, issuer: existing.issuer } : null,
-      { providerType: record.providerType, issuer: record.issuer }
-    );
+    const configRef = getSsoConfigDoc(db, orgId);
+    const record = await db.runTransaction(async (tx) => {
+      const existingDoc = await tx.get(configRef);
+      const existing = existingDoc.exists ? (existingDoc.data() as StoredSsoConfig) : null;
+      const nextRecord: StoredSsoConfig = {
+        providerType,
+        issuer,
+        clientId,
+        metadataUrl: metadataUrl || null,
+        allowedDomains: allowedDomains || [],
+        enforceSso: existing?.enforceSso === true, // cannot enable through config save
+        jitProvisioning: jitProvisioning === true,
+        defaultRole: defaultRole || 'member',
+        encryptedSecret: clientSecret ? encryptSecret(clientSecret, encryptionKey as string) : (secretRef ? null : existing?.encryptedSecret || null),
+        secretRef: secretRef || (clientSecret ? null : existing?.secretRef || null),
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.uid,
+      };
+      tx.set(configRef, nextRecord);
+      tx.set(db.collection("organisations").doc(orgId).collection("audit_logs").doc(), {
+        actorUid: user.uid, actorEmail: user.email || '',
+        orgId, action: 'update_sso_config', targetResourceType: 'sso_config', targetResourceId: orgId,
+        before: existing ? { providerType: existing.providerType, issuer: existing.issuer } : null,
+        after: { providerType: nextRecord.providerType, issuer: nextRecord.issuer },
+        createdAt: FieldValue.serverTimestamp(), ipAddress: req.ip || '',
+        userAgent: req.headers?.['user-agent'] || '',
+      });
+      return nextRecord;
+    });
     res.json({ success: true, config: redactSsoConfig(record) });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
