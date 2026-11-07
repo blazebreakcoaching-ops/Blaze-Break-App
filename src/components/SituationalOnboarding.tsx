@@ -21,12 +21,14 @@ import { logAuditAction } from "../lib/audit-logger";
 import { useAuth } from "../lib/auth";
 
 interface OnboardingProps {
-  onComplete: (profile: UserProfileData) => void;
+  onComplete: (profile: UserProfileData) => Promise<void> | void;
 }
 
 export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
   const { logOut, user } = useAuth();
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const [profile, setProfile] = useState<UserProfileData>({
     fullName: "",
@@ -260,12 +262,22 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     }
   };
 
-  const next = () => {
+  const next = async () => {
+    if (saving) return;
     if (step < steps.length - 1) {
       setStep(step + 1);
     } else {
       if (!profile.fullName.trim()) return;
-      onComplete(profile);
+      setSaving(true);
+      setSaveError(false);
+      try {
+        await onComplete(profile);
+      } catch {
+        // The user stays on this screen with their answers intact.
+        setSaveError(true);
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
@@ -451,6 +463,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
               ) : null}
             </div>
 
+            {saveError && (
+              <p role="alert" className="w-full mt-5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
+                Your details couldn't be saved. Nothing has been lost from this form. Check your connection and try again.
+              </p>
+            )}
             <div className="w-full flex flex-col sm:flex-row items-center justify-between pt-8 border-t border-white/[0.05] gap-6">
               <div className="flex gap-2 w-full sm:w-auto justify-center">
                 {steps.map((_, i) => (
@@ -471,16 +488,16 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
               <button
                 onClick={next}
                 disabled={
-                  steps[step].id === "profile" && !profile.fullName.trim()
+                  saving || (steps[step].id === "profile" && !profile.fullName.trim())
                 }
                 className={cn(
                   "w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-lg",
-                  steps[step].id === "profile" && !profile.fullName.trim()
+                  (saving || (steps[step].id === "profile" && !profile.fullName.trim()))
                     ? "bg-background border border-white/[0.05] text-text-muted cursor-not-allowed"
                     : "bg-card text-foreground hover:bg-surface shadow-black/5 dark:shadow-white/10 hover:shadow-black/10 dark:hover:shadow-white/20",
                 )}
               >
-                {step === steps.length - 1 ? "Get started" : "Continue"}{" "}
+                {saving ? "Saving…" : step === steps.length - 1 ? "Get started" : "Continue"}{" "}
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
