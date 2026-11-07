@@ -28,6 +28,10 @@ This document is a **working technical register**, not a release certificate. Th
 | Feedback | Accepted report remains successful if secondary audit fails; testimonial publication consent explicit | Rejected server POST, accepted POST + failed audit, no sensitive data in reports |
 | Audit trail | Old browser-global fallback removed; UID-scoped cache and stale-fetch protection | A and B account switch with offline audit endpoint and corrupt local storage |
 
+## P0 — Company & Staff Admin (added after targeted 7 November source audit)
+
+See `docs/PR155_COMPANY_STAFF_ADMIN_AUDIT_20261107.md`. The full company staff journey was **not covered** by earlier release sign-off plans. Confirmed source risks include suspended org members retaining role resolution; join-code entry bypassing invite-only seat checks; member removal/leave retaining team-manager and HR viewer grants; cross-org reassignment via platform provisioning; and cancelled email invitations not revoking a shared code. Treat these as **release blockers for any B2B/company beta** until safely fixed and retested. Existing admin/enterprise route tests were authored previously; no current-SHA test execution or staging verification was performed for this audit.
+
 ## P1 — simple customer experience (source changes/tests drafted; browser evidence pending)
 | Area | Acceptance criteria |
 | --- | --- |
