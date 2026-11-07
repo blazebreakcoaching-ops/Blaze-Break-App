@@ -4,59 +4,78 @@ import { useAuth } from '../lib/auth';
 import { cn } from '../lib/utils';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firestore';
-
-export interface NudgePreferences {
-  notificationsEnabled: boolean;
-  nudgeFrequency: 'low' | 'medium' | 'high';
-  quietHoursStart: string;
-  quietHoursEnd: string;
-  allowedNudgeCategories: string[];
-}
+import { auth } from '../lib/firebase';
+import {
+  defaultNudgePreferences, isLivePreferenceOwner,
+  normaliseNudgePreferences, type NudgePreferences,
+} from '../lib/notification-preferences';
+export type { NudgePreferences } from '../lib/notification-preferences';
 
 export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: () => void }) => {
   const { user } = useAuth();
-  const [prefs, setPrefs] = useState<NudgePreferences>({
-    notificationsEnabled: false,
-    nudgeFrequency: 'low',
-    quietHoursStart: '20:00',
-    quietHoursEnd: '08:00',
-    allowedNudgeCategories: [
-      'check_in_reminder', 'recovery_action_reminder', 'energy_budget_reflection',
-      'boundary_practice_reminder', 'weekly_review_reminder', 'memory_review_reminder', 'goal_follow_up',
-      'fuel_pattern_reminder'
-    ]
-  });
+  const [prefs, setPrefs] = useState<NudgePreferences>(defaultNudgePreferences);
+  const [prefsOwnerUid, setPrefsOwnerUid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [retryNumber, setRetryNumber] = useState(0);
   const [saving, setSaving] = useState(false);
 
+  // Always capture the account UID. An old response must not update a new
+  // user's toggles, and a failed read must never authorize default writes.
   useEffect(() => {
-    if (user) loadPrefs();
-  }, [user]);
-
-  const getPrefsRef = () => doc(db, 'users', user!.uid, 'preferences', 'notifications');
-
-  const loadPrefs = async () => {
-    try {
-      const snap = await getDoc(getPrefsRef());
-      if (snap.exists()) {
-        setPrefs(p => ({ ...p, ...snap.data() }));
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
+    const uid = user?.uid;
+    let cancelled = false;
+    setPrefs(defaultNudgePreferences());
+    setPrefsOwnerUid(null);
+    setLoading(true);
+    setLoadError(false);
+    setSaveError(false);
+    setSaved(false);
+    setSaving(false);
+    if (!uid) {
       setLoading(false);
+      return () => { cancelled = true; };
     }
-  };
+
+    (async () => {
+      try {
+        const ref = doc(db, 'users', uid, 'preferences', 'notifications');
+        const snap = await getDoc(ref);
+        if (!isLivePreferenceOwner(uid, auth.currentUser?.uid ?? null, cancelled)) return;
+        setPrefs(normaliseNudgePreferences(snap.exists() ? snap.data() : null));
+        setPrefsOwnerUid(uid);
+      } catch {
+        if (isLivePreferenceOwner(uid, auth.currentUser?.uid ?? null, cancelled)) {
+          setLoadError(true);
+        }
+      } finally {
+        if (isLivePreferenceOwner(uid, auth.currentUser?.uid ?? null, cancelled)) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.uid, retryNumber]);
 
   const handleSave = async () => {
+    const uid = user?.uid;
+    if (!uid || prefsOwnerUid !== uid || auth.currentUser?.uid !== uid || loading || saving) return;
     setSaving(true);
+    setSaveError(false);
+    setSaved(false);
     try {
-      await setDoc(getPrefsRef(), { ...prefs, updatedAt: new Date().toISOString() }, { merge: true });
-      if (onSaveSuccess) onSaveSuccess();
-    } catch (e) {
-      console.error(e);
+      await setDoc(doc(db, 'users', uid, 'preferences', 'notifications'),
+        { ...prefs, updatedAt: new Date().toISOString() }, { merge: true });
+      if (auth.currentUser?.uid === uid) {
+        setSaved(true);
+        onSaveSuccess?.();
+      }
+    } catch {
+      if (auth.currentUser?.uid === uid) setSaveError(true);
     } finally {
-      setSaving(false);
+      if (auth.currentUser?.uid === uid) setSaving(false);
     }
   };
 
@@ -69,10 +88,21 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
     });
   };
 
-  if (loading) return <div className="p-4 text-center text-text-muted">Loading preferences...</div>;
+  if (loading) return <div role="status" className="p-4 text-center text-text-muted">Loading your preferences…</div>;
+  if (loadError) return (
+    <div role="alert" className="p-4 space-y-3 text-text-main">
+      <p>We couldn't load your notification preferences. Nothing has been changed.</p>
+      <button type="button" className="btn-primary px-4 py-2 rounded-xl" onClick={() => setRetryNumber(n => n + 1)}>Try again</button>
+    </div>
+  );
+  if (!user || prefsOwnerUid !== user.uid || auth.currentUser?.uid !== user.uid) {
+    return <div role="status" className="p-4 text-text-muted">Checking your account…</div>;
+  }
 
   return (
     <div className="space-y-6 text-text-main pb-8">
+      {saveError && <p role="alert" className="text-xs text-destructive">We couldn't save your changes. Please try again.</p>}
+      {saved && <p role="status" className="text-xs text-success">Notification preferences saved.</p>}
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h3 className="text-lg font-bold flex items-center gap-2 text-text-main">
@@ -84,7 +114,7 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
         </div>
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || prefsOwnerUid !== user.uid}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-50"
         >
           {saving ? "Saving..." : "Save Changes"}
