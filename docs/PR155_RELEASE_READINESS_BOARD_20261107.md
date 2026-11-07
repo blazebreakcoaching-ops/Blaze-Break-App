@@ -62,6 +62,15 @@ npm run verify:integration:offline
 
 Capture the process exit code, test summary, precise SHA, log/report paths and any failing cases. Investigate failures before running again. When the branch changes, the exact-SHA gate must run again. Do not consume GitHub Actions credits.
 
+## Production deployment guard — 7 November source correction
+
+- Candidate `.github/workflows/deploy.yml` is manual-only, with `auth_only: true` by default.
+- A production deployment (`auth_only: false`) now fails unless the selected workflow ref is `refs/heads/main`, `confirm_production` is explicitly true, and `approved_sha` is a 40-character lowercase commit SHA exactly matching `GITHUB_SHA`.
+- Approval fields are passed as environment variables rather than interpolated directly into shell commands.
+- This guard exists only on the draft release branch today. **Do not merge until the main push-triggered workflow and exact merged version are reviewed.** A typed SHA is an accident-prevention check, not independent authorization or proof of test success.
+- The guard was reviewed at source level; it was **not executed in GitHub Actions** and does not substitute for a protected GitHub production environment, independent approval, verified staging, or rollback.
+- No GitHub Actions run, Cloud Run deployment, Firestore mutation or merge was performed for this change.
+
 ## Private staging, after offline QA is green
 1. Verify legal/auth/privacy text and production-like domain redirects, email verification, sign-in/out, password reset, MFA, App Check and server-side role checks.
 2. Use **two non-sensitive test accounts on the same browser**; deliberately delay account A's Firestore, Nova Chat, memory and notification reads before switching to B. Confirm neither A data nor an A response appears for B.
