@@ -13536,7 +13536,7 @@ app.get("/api/org/:orgId/members/roles", verifyAppCheck, authenticateFirebaseUse
 app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const { orgId, memberUid } = req.params;
-    const { user, org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
+    const { org, role: actorRole } = await requireOrgRole(req, orgId, ['owner', 'admin', 'security_admin']);
     const parsed = MemberRoleChangeSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "A valid role is required." });
@@ -13557,6 +13557,14 @@ app.post("/api/org/:orgId/members/:memberUid/role", verifyAppCheck, authenticate
         throw new Error("Forbidden: Membership no longer active.");
       }
       const beforeRole = memberSnap.exists ? memberSnap.data()?.role : null;
+      // Protected roles cannot be REVOKED by a lesser administrator,
+      // even when that administrator is allowed to assign the destination
+      // role. Check the real existing role, not just the requested one.
+      if (actorRole !== 'owner' &&
+          (beforeRole === 'owner' || beforeRole === 'security_admin' ||
+           (!memberSnap.exists && (orgSnap.data()?.adminUids || []).includes(memberUid)))) {
+        throw new Error("Forbidden: only a company owner can change an owner or security administrator.");
+      }
       const effectiveBeforeRole = memberSnap.exists
         ? (memberSnap.data()?.status !== undefined && memberSnap.data()?.status !== 'active'
             ? null : (isOrgRole(beforeRole) ? beforeRole : null))
