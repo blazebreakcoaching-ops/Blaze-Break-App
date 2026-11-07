@@ -76,6 +76,7 @@ Capture the process exit code, test summary, precise SHA, log/report paths and a
 - `POST /api/signals/calendar` already checked explicit opt-in atomically with its write. The `GET` endpoint now reads consent and stored Calendar aggregates inside one Firestore transaction rather than two separate fetches.
 - `isCalendarSignalConsentGranted(uid)` now rejects a UID that is not the active Firebase account and rechecks UID after asynchronous database setup and after Firestore responds. A former account's delayed consent read cannot authorise the next account's sync.
 - Added source-boundary assertions for transactional Calendar reads and expanded client tests for different UID, mid-read sign-out, and mid-read switching. **These tests were written but NOT run.**
+- Explicit Calendar opt-in now accepts only canonical UTC ISO timestamps, rejecting permissive `Date.parse` formats such as year-only dates and overflow days; additional regression cases were authored but NOT run.
 - Remaining gate: real Auth/Firestore emulator transaction tests and two-account browser integration, including a consent revocation racing a GET or POST. Confirm historical signal deletion/retention policy before launch.
 - Do not claim these source changes prove an end-to-end privacy PASS.
 
