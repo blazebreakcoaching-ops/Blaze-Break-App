@@ -39,6 +39,10 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   // Rapid consent-toggle changes must be committed in order. A slow older
   // response must not overwrite the last choice the customer made.
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const lastConfirmedProfileRef = useRef<UserProfileData>(profile || {
+    fullName: '', role: '', organization: '', managerEmail: '',
+  });
+  const latestPreferenceRequestRef = useRef(0);
   const [errors, setErrors] = useState<{ fullName?: string; email?: string }>({});
   const [deletionRequestStatus, setDeletionRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [marketingChoice, setMarketingChoice] = useState<boolean | null>(null);
@@ -157,12 +161,26 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
   };
 
   const savePreference = (next: UserProfileData) => {
+    if (savingProfile) return;
+    const request = ++latestPreferenceRequestRef.current;
     setFormData(next);
     setSaved(false);
     setProfileSaveError(false);
-    void queueSave(next).then(() => setSaved(true)).catch(() => {
-      setSaved(false);
-      setProfileSaveError(true);
+    void queueSave(next).then(() => {
+      // Every successfully committed value becomes the new rollback point,
+      // even if a more recent choice is already queued.
+      lastConfirmedProfileRef.current = next;
+      if (request === latestPreferenceRequestRef.current) {
+        setSaved(true);
+        setProfileSaveError(false);
+      }
+    }).catch(() => {
+      if (request === latestPreferenceRequestRef.current) {
+        // Display the actually saved choice, not a failed privacy toggle.
+        setFormData(lastConfirmedProfileRef.current);
+        setSaved(false);
+        setProfileSaveError(true);
+      }
     });
   };
 
@@ -173,7 +191,10 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
     setSaved(false);
     setProfileSaveError(false);
     try {
+      const request = ++latestPreferenceRequestRef.current;
       await queueSave(formData);
+      lastConfirmedProfileRef.current = formData;
+      if (request !== latestPreferenceRequestRef.current) return;
       setSaved(true);
       window.setTimeout(() => {
         setSaved(false);
