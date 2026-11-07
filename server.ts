@@ -16975,6 +16975,10 @@ async function eraseUserAccount(uid: string): Promise<{ authDeleted: boolean }> 
     await db.runTransaction(async (tx) => {
       const orgSnap = await tx.get(orgRef);
       if (!orgSnap.exists) return;
+      // Account erasure must obey the same last-active-owner protection as
+      // voluntary departure and administrator removal. Check inside the
+      // transaction, before any irreversible personal-data deletion.
+      await assertNotLastOrgOwner(db, linkedOrgId, orgSnap.data()!, uid, tx);
       tx.update(orgRef, {
         memberUids: FieldValue.arrayRemove(uid),
         adminUids: FieldValue.arrayRemove(uid),
