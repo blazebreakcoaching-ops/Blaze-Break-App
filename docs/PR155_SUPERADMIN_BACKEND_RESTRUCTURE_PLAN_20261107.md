@@ -14,7 +14,7 @@
 2. [x] **Source-fixed — Last active owner.** Owner guard now excludes suspended owner records; org suspension checks the last-owner invariant. Run new route/emulator tests.
 3. [ ] **Open — Atomic seat enforcement for join codes.** `/api/org/join` must check active + pending against allowance transactionally; concurrent joins and previously invited emails must not double-count.
 4. [ ] **Open — Revocable invitations.** Cancelling a pending invite cannot revoke a shared join code. Use per-invite expiring/cancellable tokens or explicitly distinguish invite cancellation from code rotation; test expired/replayed/wrong-company invites.
-5. [ ] **Open — Cross-company reassignment.** Platform `/api/admin/orgs` must reject an initial owner already assigned to another company until a safe audited transfer exists; avoid stale member/role/device records.
+5. [x] **Source-fixed — Cross-company reassignment.** Platform `/api/admin/orgs` now rejects an initial owner already linked to another company; dedicated transfer and cleanup remain open. New route regression authored, not executed.
 6. [ ] **Open — Full leave/remove cleanup.** Remove UID from `memberUids`, `adminUids`, `memberTeams`, `teamManagers`, `hrViewerUids`, role records, devices and dependent grants; test rejoin cannot inherit old HR/manager access.
 7. [ ] **Open — Company membership consistency.** Prevent ownerless companies, duplicate UIDs, orphaned documents, unapproved role escalations and residual access on company deletion/archive.
 8. [ ] **Open — Token/claim revocation.** Verify suspended platform admins, downgraded claims, expired escalations and removed staff are denied in a previously signed-in browser, not only after relogin. MFA/App Check on every sensitive endpoint.
@@ -36,7 +36,7 @@
 
 19. [x] **Source-fixed — Read-only company overview.** Platform company detail now includes staff count, pending invites, available seats, over-capacity flag, suspended records and roster mismatch warning without viewing wellbeing content. Company details are guarded against stale responses from another selected company.
 20. [ ] **Open — Dedicated company detail workspace.** Replace cramped inline panel with a clear company page: identity, account owner, billing status, contacts, staff roster, invitations, seat utilisation, security policy, status and chronological operational audit.
-21. [ ] **Open — Company lifecycle controls.** Create, edit, validate, pause, archive and safely transfer ownership; disallow accidental duplicate company IDs, incomplete owner setup, silent cross-company moves.
+21. [ ] **Partially source-fixed — Company lifecycle controls.** Company name and minimum cohort size are now server-validated; creation/edit, archive, authenticated owner transfer and duplicate handling still need dedicated acceptance.
 22. [ ] **Open — Staff onboarding workflow.** Invite by email/CSV, delivery status, resend/cancel, join, role assignment, team assignment, HR access and seat allocation in one guided flow. Verify actual Brevo delivery, not only saved pending records.
 23. [ ] **Open — Staff removal workflow.** Suspend versus remove versus leave must be explicit, reversible where safe and auditable, with immediate permission loss.
 24. [ ] **Open — Role and team manager controls.** Grouped role matrix, manager/HR designations, last-owner safeguards, pending approvals, and exact access overview. Separate platform support from company-owner permissions; never impersonate private employee accounts.
