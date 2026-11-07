@@ -12248,10 +12248,42 @@ app.post("/api/org/:orgId/hr-viewers", verifyAppCheck, authenticateFirebaseUser,
       return res.status(400).json({ error: `"${unknownUid}" isn't a member of this organisation.` });
     }
     const db = getDb();
-    const beforeUids: string[] = org.hrViewerUids || [];
-    const before = { uids: beforeUids };
-    await db.collection("organisations").doc(orgId).update({ hrViewerUids: uids });
-    await logOrgAuditAction(req, orgId, "update_hr_viewers", "hr_viewers", orgId, before, { uids });
+    const orgRef = db.collection("organisations").doc(orgId);
+    const result = await db.runTransaction(async (tx) => {
+      const [orgSnap, ...memberSnaps] = await Promise.all([
+        tx.get(orgRef),
+        ...uids.map((uid: string) => tx.get(orgRef.collection("members").doc(uid))),
+      ]);
+      if (!orgSnap.exists) return { status: 404, beforeUids: [] as string[] };
+      const current = orgSnap.data()!;
+      if (uids.some((uid: string) => !(current.memberUids || []).includes(uid))) {
+        return { status: 409, beforeUids: [] as string[] };
+      }
+      // Existing granular records are authoritative. Never grant HR access
+      // to suspended or invalid members; legacy members without a
+      // granular record remain compatible.
+      if (memberSnaps.some((snap: any) => snap.exists &&
+          ((snap.data()?.status !== undefined && snap.data()?.status !== 'active') ||
+           !isOrgRole(snap.data()?.role)))) {
+        return { status: 409, beforeUids: [] as string[] };
+      }
+      const beforeUids: string[] = current.hrViewerUids || [];
+      tx.update(orgRef, { hrViewerUids: uids });
+      const actor = req.user;
+      tx.set(orgRef.collection("audit_logs").doc(), {
+        actorUid: actor?.uid || "system", actorEmail: actor?.email || "system",
+        orgId, action: "update_hr_viewers",
+        targetResourceType: "hr_viewers", targetResourceId: orgId,
+        before: { uids: beforeUids }, after: { uids },
+        createdAt: FieldValue.serverTimestamp(),
+        ipAddress: req.ip || "", userAgent: req.headers?.["user-agent"] || "",
+      });
+      return { status: 200, beforeUids };
+    });
+    if (result.status !== 200) {
+      return res.status(result.status).json({ error: 'Company membership changed. Reload and try again.' });
+    }
+    const beforeUids = result.beforeUids;
     const added = uids.filter((uid: string) => !beforeUids.includes(uid)).length;
     const removed = beforeUids.filter((uid) => !uids.includes(uid)).length;
     if (added > 0 || removed > 0) {
