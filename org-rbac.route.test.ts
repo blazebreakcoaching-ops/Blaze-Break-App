@@ -151,6 +151,32 @@ describe('last-owner safety uses only effective active ownership', () => {
   });
 });
 
+describe('cross-company profile membership consistency', () => {
+  it('rejects a stale granular administrator after the account moves to another company', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1', 'moved_admin'], memberUids: ['owner_1', 'moved_admin'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedMember(ORG, 'moved_admin', 'admin');
+    seedDoc('users/moved_admin', { organisationId: OTHER_ORG });
+    const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('moved_admin'));
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects stale legacy array-only ownership when profile links to a different organisation', async () => {
+    seedOrg(ORG, { adminUids: ['legacy_owner'], memberUids: ['legacy_owner'] });
+    seedDoc('users/legacy_owner', { organisationId: OTHER_ORG });
+    const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('legacy_owner'));
+    expect(res.status).toBe(403);
+  });
+
+  it('continues to permit an active member whose profile matches their company', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc('users/owner_1', { organisationId: ORG });
+    const res = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('RBAC matrix on role-management routes', () => {
   it('a viewer can never change a role, suspend, or reactivate anyone', async () => {
     seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1', 'viewer_1', 'member_1'] });
