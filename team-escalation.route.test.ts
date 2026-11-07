@@ -17,7 +17,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, resetStore, forceDocError, forceTransactionError, getDocRaw, fakeDb } from './test/fake-firestore';
 
 const ORG = 'org_1';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
@@ -104,5 +104,21 @@ describe('POST /api/org/:orgId/team-dashboard/:team/acknowledge', () => {
     expect(errorSpy).toHaveBeenCalled();
     restore();
     errorSpy.mockRestore();
+  });
+});
+
+
+describe('team acknowledgements roll back on audit failure', () => {
+  it('does not retain an acknowledgment if the transaction fails', async () => {
+    seedOrg(ORG, { adminUids: ['owner_1'], memberUids: ['owner_1'] });
+    const restore = forceTransactionError(new Error('simulated audit failure'));
+    try {
+      const res = await request(app).post(`/api/org/${ORG}/team-dashboard/Team A/acknowledge`)
+        .set(auth('owner_1')).send({ note: 'Sensitive HR context' });
+      expect(res.status).toBe(500);
+      const records = await fakeDb.collection('organisations').doc(ORG)
+        .collection('team_escalation_acks').get();
+      expect(records.empty).toBe(true);
+    } finally { restore(); }
   });
 });
