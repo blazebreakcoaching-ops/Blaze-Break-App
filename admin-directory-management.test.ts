@@ -9,7 +9,7 @@ const api = readFileSync('server.ts', 'utf8');
 
 describe('People Directory account management integration — source checks', () => {
   it('reuses the existing account drawer and existing role, plan, suspend actions', () => {
-    expect(dashboard).toContain('onManageAccount={(account: DirectoryUser) => openAccountDrawer(account as AdminUser)}');
+    expect(dashboard).toContain('onManageAccount={(account: DirectoryUser) => openAccountDrawer(account as unknown as AdminUser)}');
     expect(dashboard).toContain('const openAccountDrawer = (u: AdminUser) =>');
     expect(dashboard).toContain('handleUpdateRole(selectedUser.uid)');
     expect(dashboard).toContain('handleGrantEntitlement(selectedUser.uid');
@@ -40,7 +40,9 @@ describe('People Directory account management integration — source checks', ()
     expect(dashboard).toContain('onAccountsChange={receiveDirectoryPage}');
     expect(dashboard).toContain('of {directoryPageUsers.length} current-page accounts');
     expect(dashboard).toContain('Current Firebase page:');
-    expect(dashboard).toContain('The access timeline uses a separately limited audit-log query');
+    // The capped timeline was replaced by per-account paginated history
+    // (GET /api/admin/users/:uid/audit-history), refreshed after each action.
+    expect(dashboard).toContain('<AdminAccountAuditHistory key={u.uid} uid={u.uid} revision={directoryRefreshRevision} />');
     expect(directory).toContain('onAccountsChange?.(data.users)');
     expect(directory).toContain('compact = false');
   });

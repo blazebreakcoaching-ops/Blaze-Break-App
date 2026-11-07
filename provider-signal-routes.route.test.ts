@@ -36,7 +36,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { seedDoc, getDocRaw, resetStore, forceDocError } from './test/fake-firestore';
+import { seedDoc, getDocRaw, resetStore, forceDocError, forceTransactionError } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -348,6 +348,26 @@ describe('POST/GET /api/signals/calendar (client-computed, no OAuth)', () => {
     windowDays: 7,
   };
 
+  // Storing or reading calendar signals requires the account's own
+  // explicit, timestamped calendar consent (checked in the same
+  // transaction as the write/read).
+  beforeEach(() => {
+    seedDoc('users/cal_user/nova_permissions/current', {
+      allowCalendarSignals: true, calendarSignalsExplicitConsentAt: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
+  it('refuses to store, and reads back nothing, without explicit calendar consent', async () => {
+    seedDoc('users/cal_user/nova_permissions/current', { allowCalendarSignals: true });
+    const write = await request(app).post('/api/signals/calendar').set(auth('cal_user')).send(validPayload);
+    expect(write.status).toBe(403);
+    expect(getDocRaw('users/cal_user/live_signals/calendar')).toBeUndefined();
+    seedDoc('users/cal_user/live_signals/calendar', validPayload);
+    const read = await request(app).get('/api/signals/calendar').set(auth('cal_user'));
+    expect(read.status).toBe(200);
+    expect(read.body.state).toBeNull();
+  });
+
   it('stores a valid client-submitted payload', async () => {
     const res = await request(app).post('/api/signals/calendar').set(auth('cal_user')).send(validPayload);
     expect(res.status).toBe(200);
@@ -380,7 +400,8 @@ describe('POST/GET /api/signals/calendar (client-computed, no OAuth)', () => {
 
   it('write: returns a generic 500 and logs the real error when the Firestore write throws', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const restore = forceDocError('users/cal_user/live_signals/calendar', 'set', new Error('simulated Firestore outage'));
+    // The route reads consent and the signal inside one transaction.
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
 
     const res = await request(app).post('/api/signals/calendar').set(auth('cal_user')).send(validPayload);
 
@@ -396,7 +417,8 @@ describe('POST/GET /api/signals/calendar (client-computed, no OAuth)', () => {
 
   it('read: returns a generic 500 and logs the real error when the Firestore read throws', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const restore = forceDocError('users/cal_user/live_signals/calendar', 'get', new Error('simulated Firestore outage'));
+    // The route reads consent and the signal inside one transaction.
+    const restore = forceTransactionError(new Error('simulated Firestore outage'));
 
     const res = await request(app).get('/api/signals/calendar').set(auth('cal_user'));
 

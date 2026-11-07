@@ -38,45 +38,70 @@ vi.mock("firebase/firestore", () => ({
   query: vi.fn(),
   orderBy: vi.fn(),
 }));
-vi.mock("./src/lib/firebase", () => ({ auth: { currentUser: null }, db: {} }));
+// A switchable signed-in user, so account switching can be exercised.
+const fakeAuth = vi.hoisted(() => ({ currentUser: null as null | { uid: string } }));
+vi.mock("./src/lib/firebase", () => ({ auth: fakeAuth, db: {} }));
 
-const { isNovaLearningAllowed, getNovaBrain, addNovaMemory, logJourney, updateNovaMemoryBySourceAndType } =
-  await import("./src/lib/nova-brain");
+const {
+  isNovaLearningAllowed, setNovaLearningAllowedForUid, novaLearningConsentKey,
+  initNovaBrain, getNovaBrain, addNovaMemory, logJourney, updateNovaMemoryBySourceAndType,
+} = await import("./src/lib/nova-brain");
 
+const signIn = async (uid: string | null) => {
+  fakeAuth.currentUser = uid ? { uid } : null;
+  if (uid) await initNovaBrain(uid);
+};
+
+// Nova memory learning is OPT-IN per account (privacy by default). Consent
+// is stored per Firebase UID, so one account's choice can never authorise
+// learning for another account on the same browser.
 describe("isNovaLearningAllowed", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     (globalThis as any).localStorage.clear();
+    await signIn(null);
   });
 
-  it("defaults to true when no profile has been saved yet", () => {
-    expect(isNovaLearningAllowed()).toBe(true);
-  });
-
-  it("is true when letNovaLearn is unset on a saved profile", () => {
-    localStorage.setItem("blaze_profile", JSON.stringify({ fullName: "A" }));
-    expect(isNovaLearningAllowed()).toBe(true);
-  });
-
-  it("is true when letNovaLearn is explicitly true", () => {
-    localStorage.setItem("blaze_profile", JSON.stringify({ letNovaLearn: true }));
-    expect(isNovaLearningAllowed()).toBe(true);
-  });
-
-  it("is false when letNovaLearn is explicitly false", () => {
-    localStorage.setItem("blaze_profile", JSON.stringify({ letNovaLearn: false }));
+  it("is false when nobody is signed in", () => {
     expect(isNovaLearningAllowed()).toBe(false);
   });
 
-  it("defaults to true if the saved profile is corrupted JSON", () => {
-    localStorage.setItem("blaze_profile", "{not json");
+  it("defaults to false for a signed-in account that has not opted in", async () => {
+    await signIn("user_a");
+    expect(isNovaLearningAllowed()).toBe(false);
+  });
+
+  it("is true only after this account explicitly opts in", async () => {
+    await signIn("user_a");
+    setNovaLearningAllowedForUid("user_a", true);
     expect(isNovaLearningAllowed()).toBe(true);
+    setNovaLearningAllowedForUid("user_a", false);
+    expect(isNovaLearningAllowed()).toBe(false);
+  });
+
+  it("ignores the legacy shared blaze_profile flag", async () => {
+    await signIn("user_a");
+    localStorage.setItem("blaze_profile", JSON.stringify({ letNovaLearn: true }));
+    expect(isNovaLearningAllowed()).toBe(false);
+  });
+
+  it("treats a corrupted consent value as no consent", async () => {
+    await signIn("user_a");
+    localStorage.setItem(novaLearningConsentKey("user_a"), "{not json");
+    expect(isNovaLearningAllowed()).toBe(false);
+  });
+
+  it("does not carry one account's consent over to the next account", async () => {
+    await signIn("user_a");
+    setNovaLearningAllowedForUid("user_a", true);
+    await signIn("user_b");
+    expect(isNovaLearningAllowed()).toBe(false);
   });
 });
 
 describe("memory writes respect the consent gate", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     (globalThis as any).localStorage.clear();
-    localStorage.setItem("blaze_profile", JSON.stringify({ letNovaLearn: false }));
+    await signIn("user_a");
   });
 
   it("addNovaMemory no-ops when consent is off", () => {
@@ -97,10 +122,18 @@ describe("memory writes respect the consent gate", () => {
     expect(getNovaBrain().length).toBe(before);
   });
 
-  it("addNovaMemory writes normally once consent is on", () => {
-    localStorage.setItem("blaze_profile", JSON.stringify({ letNovaLearn: true }));
+  it("addNovaMemory writes normally once this account has opted in", () => {
+    setNovaLearningAllowedForUid("user_a", true);
     const before = getNovaBrain().length;
     addNovaMemory({ type: "state", content: "allowed", source: "test", confidence: "high", canEdit: true });
     expect(getNovaBrain().length).toBe(before + 1);
+  });
+
+  it("never shows the previous account's memories after switching accounts", async () => {
+    setNovaLearningAllowedForUid("user_a", true);
+    addNovaMemory({ type: "state", content: "private to A", source: "test", confidence: "high", canEdit: true });
+    expect(getNovaBrain().some((m) => m.content === "private to A")).toBe(true);
+    await signIn("user_b");
+    expect(getNovaBrain().some((m) => m.content === "private to A")).toBe(false);
   });
 });

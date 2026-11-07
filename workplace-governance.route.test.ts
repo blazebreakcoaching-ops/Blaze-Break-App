@@ -214,7 +214,7 @@ describe('POST /api/org/:orgId/regenerate-join-code', () => {
     seedOrg();
     const res = await request(app).post(`/api/org/${ORG}/regenerate-join-code`).set(auth(OWNER));
     expect(res.status).toBe(200);
-    expect(res.body.joinCode).toMatch(/^[A-Z0-9]{6}$/);
+    expect(res.body.joinCode).toMatch(/^[A-Z0-9]{12}$/);
   });
 
   it('refuses a non-admin', async () => {

@@ -9,6 +9,7 @@ import { describe, it, expect, vi } from 'vitest';
 const h = vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
+  return { revokeRefreshTokens: vi.fn(async () => {}) };
 });
 
 vi.mock('express-rate-limit', () => ({ default: () => (_req: any, _res: any, next: any) => next() }));
@@ -18,6 +19,7 @@ vi.mock('firebase-admin/auth', () => ({
   getAuth: () => ({
     verifyIdToken: async (t: string) => ({ uid: t, email: `${t}@test.dev`, role: 'platform_owner' }),
     updateUser: vi.fn(async () => {}),
+    revokeRefreshTokens: h.revokeRefreshTokens,
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {
@@ -28,33 +30,37 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, fakeDb } from './test/fake-firestore';
+import { resetStore, fakeDb, getDocRaw } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
 describe('logAdminAction resilience: an audit-log write failure must not fail the admin action', () => {
-  it('suspend still succeeds, and is still logged to Cloud Logging, when admin_audit_logs.add() throws', async () => {
+  it('suspend still succeeds, revokes sessions, and queues the audit event for recovery when admin_audit_logs writes fail', async () => {
     resetStore();
+    h.revokeRefreshTokens.mockClear();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const originalCollection = fakeDb.collection.bind(fakeDb);
     const collectionSpy = vi.spyOn(fakeDb, 'collection').mockImplementation((id: string) => {
       if (id === 'admin_audit_logs') {
-        return { add: () => Promise.reject(new Error('simulated audit-log outage')) } as any;
+        return {
+          doc: () => ({ id: 'evt_outage', set: () => Promise.reject(new Error('simulated audit-log outage')) }),
+        } as any;
       }
       return originalCollection(id);
     });
 
     const res = await request(app).post('/api/admin/users/target_uid/suspend').set(auth('owner_1')).send({ suspend: true });
 
+    // The suspension itself already happened, so it must not be reported
+    // as failed - but the response is honest that the audit is not yet durable.
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true });
-    // The failure must still be observable somewhere (Cloud Logging), not
-    // silently dropped - this is what makes "swallow it" an acceptable
-    // tradeoff instead of a real gap.
-    expect(errorSpy).toHaveBeenCalled();
-    const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
-    expect(logged).toMatchObject({ severity: 'ERROR', message: 'Failed to write admin audit log' });
-    expect(logged.entry).toMatchObject({ action: 'suspend_user', targetUid: 'target_uid' });
+    expect(res.body).toEqual({ success: true, auditRecorded: false });
+    expect(h.revokeRefreshTokens).toHaveBeenCalledWith('target_uid');
+    // Same event ID is queued for idempotent replay.
+    const queued = getDocRaw('admin_audit_recovery/evt_outage');
+    expect(queued?.entry).toMatchObject({ action: 'suspend_user', targetUid: 'target_uid', outcome: 'succeeded' });
+    const messages = errorSpy.mock.calls.map((c) => JSON.parse(c[0] as string).message);
+    expect(messages).toContain('Primary audit persistence failed; event placed in recovery queue');
 
     collectionSpy.mockRestore();
     errorSpy.mockRestore();

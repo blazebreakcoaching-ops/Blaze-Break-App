@@ -12349,6 +12349,7 @@ app.post("/api/org/:orgId/members/:memberUid/manage-teams", verifyAppCheck, auth
     return res.json({ success: true, teams: outcome.teams });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) return res.status(403).json({ error: err.message });
+    if (err.message === "Organisation not found.") return res.status(404).json({ error: err.message });
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
     return res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }

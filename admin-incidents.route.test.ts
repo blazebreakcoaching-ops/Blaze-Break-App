@@ -37,7 +37,7 @@ beforeEach(() => resetStore());
 describe('POST /api/admin/incidents', () => {
   it('requires admin', async () => {
     const res = await request(app).post('/api/admin/incidents').set(auth(NOT_ADMIN)).send({ title: 'Something broke', description: 'Details', severity: 'high' });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
   });
 
   it('rejects a missing title/description or an invalid severity', async () => {
@@ -81,7 +81,7 @@ describe('POST /api/admin/incidents/:id/update', () => {
   it('requires admin', async () => {
     const created = await request(app).post('/api/admin/incidents').set(auth(OWNER)).send({ title: 'Test incident', description: 'Y', severity: 'low' });
     const res = await request(app).post(`/api/admin/incidents/${created.body.id}/update`).set(auth(NOT_ADMIN)).send({ note: 'Looking into it' });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
   });
 
   it('404s for a nonexistent incident', async () => {

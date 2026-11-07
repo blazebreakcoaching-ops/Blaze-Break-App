@@ -299,7 +299,9 @@ describe('action-budget transactions also commit their audit events', () => {
     const restore = forceTransactionError(new Error('simulated transaction failure'));
     try {
       const res = await request(app).patch(`/api/org/${ORG}/work-design-interventions/one/status`)
-        .set(auth('owner_1')).send({ status: 'paused' });
+        // Must be a VALID status so the request reaches the audited
+        // transaction ('paused' was rejected by input validation first).
+        .set(auth('owner_1')).send({ status: 'stopped' });
       expect(res.status).toBe(500);
       expect(getDocRaw(`organisations/${ORG}/work_design_interventions/one`)?.status).toBe('trialling');
     } finally { restore(); }

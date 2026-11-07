@@ -30,7 +30,7 @@ const ADMIN = 'admin_uid';
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
 function seedOrg(threshold: number, memberUids: string[], consenting: string[]) {
-  seedDoc(`organisations/${ORG}`, { adminUids: [ADMIN], memberUids, privacyThreshold: threshold });
+  seedDoc(`organisations/${ORG}`, { adminUids: [ADMIN], memberUids: [ADMIN, ...memberUids], privacyThreshold: threshold });
   for (const uid of memberUids) {
     seedDoc(`users/${uid}`, { shareAnonymizedDataWithOrg: consenting.includes(uid) });
   }

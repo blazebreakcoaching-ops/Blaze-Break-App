@@ -14,6 +14,8 @@ const h = vi.hoisted(() => {
     getUser: vi.fn(async (uid: string) => ({ uid, email: `${uid}@test.dev`, customClaims: {} })),
     updateUser: vi.fn(async () => {}),
     listUsers: vi.fn(async () => ({ users: [], pageToken: undefined })),
+    // Suspension also revokes the target's refresh tokens.
+    revokeRefreshTokens: vi.fn(async () => {}),
   };
 });
 
@@ -42,6 +44,7 @@ vi.mock('firebase-admin/auth', () => ({
     getUser: h.getUser,
     updateUser: h.updateUser,
     listUsers: h.listUsers,
+    revokeRefreshTokens: h.revokeRefreshTokens,
   }),
 }));
 vi.mock('firebase-admin/firestore', async () => {

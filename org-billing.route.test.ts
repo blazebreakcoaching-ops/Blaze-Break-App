@@ -201,7 +201,9 @@ describe('atomic company joins and invitation reservations', () => {
     seedDoc(`organisations/${ORG}/pending_invites/unverified_claim@test.dev`, { email: 'unverified_claim@test.dev' });
     seedDoc('users/unverified_claim', {});
     const res = await request(app).post('/api/org/join').set(auth('unverified_claim')).send({ joinCode: 'ABC123' });
-    expect(res.status).toBe(400);
+    // Refused before any seat logic: joining a company needs a verified email.
+    expect(res.status).toBe(403);
+    expect(getDocRaw(`organisations/${ORG}`)?.memberUids).not.toContain('unverified_claim');
     expect(getDocRaw(`organisations/${ORG}/pending_invites/unverified_claim@test.dev`)).toBeDefined();
   });
 
