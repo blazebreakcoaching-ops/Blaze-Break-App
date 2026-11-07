@@ -242,7 +242,7 @@ export const AdminDashboard = () => {
 
   const [activeTab, setActiveTab] = useState<AdminTabId>('overview');
   const activeSection = ADMIN_SECTIONS.find((section) => section.tabs.some((tab) => tab === activeTab)) || ADMIN_SECTIONS[0];
-  const [accountCategory, setAccountCategory] = useState<'all' | 'registered' | 'demo' | 'orphan'>('all');
+  const [accountCategory, setAccountCategory] = useState<'all' | 'registered' | 'demo' | 'orphan'>('registered');
   // Which account's Access Timeline is expanded in the Plans &
   // Entitlements tab - at most one open at a time, same pattern as other
   // single-item expand/collapse state in this file.
@@ -291,6 +291,7 @@ export const AdminDashboard = () => {
   // fetched detail itself - fetched lazily on expand, not preloaded for
   // every org in the list.
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
+  const orgDetailRequestId = useRef(0);
   const [orgDetail, setOrgDetail] = useState<{
     billing: { plan: string; status: string; seatCount: number; billingContact: string | null };
     billingProvider: string;
@@ -423,7 +424,7 @@ export const AdminDashboard = () => {
   // need to see), so localStorage is the right home for it rather than a
   // Firestore collection. Each view is just a snapshot of the three filter
   // fields above under a name the admin picked.
-  const [savedViews, setSavedViews] = useState<{ name: string; searchQuery: string; verifiedFilter: typeof verifiedFilter; roleFilter: string; planFilter: string }[]>(() => {
+  const [savedViews, setSavedViews] = useState<{ name: string; searchQuery: string; verifiedFilter: typeof verifiedFilter; roleFilter: string; planFilter: string; accountCategory?: typeof accountCategory }[]>(() => {
     try {
       const raw = localStorage.getItem('blaze_admin_people_views');
       return raw ? JSON.parse(raw) : [];
@@ -752,9 +753,12 @@ export const AdminDashboard = () => {
   // info only - uid/email/role/status, never wellbeing content) on first
   // expand, rather than preloading detail for every org in the list.
   const toggleOrgDetail = async (orgId: string) => {
+    // A slow response for company A must never populate the panel for B.
+    const requestId = ++orgDetailRequestId.current;
     if (expandedOrgId === orgId) {
       setExpandedOrgId(null);
       setOrgDetail(null);
+      setIsLoadingOrgDetail(false);
       return;
     }
     setExpandedOrgId(orgId);
@@ -762,14 +766,14 @@ export const AdminDashboard = () => {
     setIsLoadingOrgDetail(true);
     try {
       const res = await secureApiFetch(`/api/admin/orgs/${orgId}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json();
+      if (requestId === orgDetailRequestId.current) {
         setOrgDetail({ billing: data.billing, billingProvider: data.billingProvider, members: data.members || [] });
       }
     } catch (e) {
-      // Non-fatal - the detail panel just shows its own "couldn't load" state.
+      // A missing or inaccessible company must not be shown as an empty one.
     } finally {
-      setIsLoadingOrgDetail(false);
+      if (requestId === orgDetailRequestId.current) setIsLoadingOrgDetail(false);
     }
   };
 
@@ -1428,12 +1432,13 @@ export const AdminDashboard = () => {
     setVerifiedFilter(view.verifiedFilter);
     setRoleFilter(view.roleFilter);
     setPlanFilter(view.planFilter);
+    setAccountCategory(view.accountCategory || 'registered');
   };
 
   const saveCurrentView = () => {
     const name = newViewName.trim();
     if (!name) return;
-    const next = [...savedViews.filter((v) => v.name !== name), { name, searchQuery, verifiedFilter, roleFilter, planFilter }];
+    const next = [...savedViews.filter((v) => v.name !== name), { name, searchQuery, verifiedFilter, roleFilter, planFilter, accountCategory }];
     setSavedViews(next);
     try { localStorage.setItem('blaze_admin_people_views', JSON.stringify(next)); } catch { /* per-viewer convenience only - fine to silently skip if storage is unavailable */ }
     setNewViewName('');
@@ -1825,7 +1830,7 @@ export const AdminDashboard = () => {
 
             <div className="text-xs text-text-muted rounded-xl bg-surface border border-border px-4 py-3 space-y-1">
               <p><strong className="text-text-main">Account directory:</strong> {users.filter(u => !u.isAnonymous && u.accessStatus !== 'unknown').length} registered, {users.filter(u => u.isAnonymous).length} demo sessions and {users.filter(u => u.accessStatus === 'unknown').length} orphaned records in the loaded page.</p>
-              <p>Identifiable people appear first. Joined and last sign-in times come from Firebase Authentication, shown in your device's time zone. Last sign-in is not a full activity or session history.</p>
+              <p>Registered accounts are shown by default; use Account Category to inspect demos or orphaned records. Dates come from Firebase Authentication in your device's time zone. Last sign-in is not a full activity history.</p>
             </div>
 
             {/* Saved Views - a per-browser convenience for quickly re-
@@ -2505,12 +2510,16 @@ export const AdminDashboard = () => {
                                 )}
                               </div>
                               <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-2">Members ({orgDetail.members.length}) - access level only, never wellbeing content</p>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-2">Staff with role records ({orgDetail.members.length}) — account access only</p>
+                                <p className="text-[11px] text-text-muted mb-2">Owners: {orgDetail.members.filter(m => m.role === 'owner').map(m => m.email || m.uid).join(', ') || 'No owner record listed'} · Seats remaining: {Math.max(0, orgDetail.billing.seatCount - org.memberCount)}</p>
+                                {org.memberCount !== orgDetail.members.length && (
+                                  <p role="alert" className="text-xs text-warning mb-2">Membership count and detailed staff records differ. Some older members may not have role records; review before changing access.</p>
+                                )}
                                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                                   {orgDetail.members.map((m) => (
                                     <div key={m.uid} className="flex items-center justify-between text-xs py-1.5 px-2.5 bg-background rounded-lg">
                                       <span className="text-text-main font-mono truncate max-w-[200px]" title={m.email || m.uid}>{m.email || m.uid}</span>
-                                      <span className="text-text-muted uppercase text-[10px] font-bold">{m.role} - {m.status}</span>
+                                      <span className="text-text-muted uppercase text-[10px] font-bold">{m.role} · {m.status} · joined {formatAdminDateTime(m.joinedAt)}</span>
                                     </div>
                                   ))}
                                   {orgDetail.members.length === 0 && (
