@@ -10951,6 +10951,12 @@ app.post("/api/org/join", verifyAppCheck, authenticateFirebaseUser, orgJoinLimit
     if (typeof joinCode !== 'string' || !joinCode.trim() || joinCode.trim().length > 180) {
       return res.status(400).json({ error: "Enter a valid company joining or invitation code." });
     }
+    // Even the legacy shared company code must only enrol accounts with
+    // verified email ownership. Otherwise disposable/unverified accounts
+    // can claim staff seats using a leaked or guessed short shared code.
+    if (user.email_verified !== true || typeof user.email !== 'string' || !user.email.trim()) {
+      return res.status(403).json({ error: "Verify your email address before joining a company." });
+    }
     const normalizedCode = joinCode.trim().toUpperCase();
     // Each new email invitation has its own unpredictable token; the
     // existing shared joining code remains a separate manual fallback.
