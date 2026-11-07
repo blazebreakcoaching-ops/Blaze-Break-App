@@ -496,3 +496,42 @@ describe('billing changes are transactionally audited', () => {
     expect(getDocRaw(`organisations/${ORG}`)?.billing?.providerSubscriptionId).toBe('existing_subscription');
   });
 });
+
+
+describe('new organisation membership and invitation audit evidence', () => {
+  it('records staff joining without exposing the shared company code', async () => {
+    seedOrg(ORG, {
+      memberUids: ['owner_1'], adminUids: ['owner_1'], joinCode: 'ABC123',
+    });
+    seedMember(ORG, 'owner_1', 'owner');
+    seedDoc('users/new_employee', {});
+    const joined = await request(app).post('/api/org/join')
+      .set(auth('new_employee')).send({ joinCode: 'ABC123' });
+    expect(joined.status).toBe(200);
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    const entry = audit.body.logs.find((item: any) => item.action === 'join_organisation');
+    expect(entry).toMatchObject({
+      actorUid: 'new_employee', targetResourceId: 'new_employee',
+      after: { role: 'member', status: 'active', method: 'join_code' },
+    });
+    expect(JSON.stringify(entry)).not.toContain('ABC123');
+  });
+
+  it('audits each new and resent invitation without storing invitation tokens', async () => {
+    seedOrg(ORG, { memberUids: ['owner_1'], adminUids: ['owner_1'] });
+    seedMember(ORG, 'owner_1', 'owner');
+    const email = 'new.employee@example.com';
+    const first = await request(app).post(`/api/org/${ORG}/invite`)
+      .set(auth('owner_1')).send({ emails: [email] });
+    expect(first.status).toBe(200);
+    const second = await request(app).post(`/api/org/${ORG}/invite`)
+      .set(auth('owner_1')).send({ emails: [email] });
+    expect(second.status).toBe(200);
+    const tokenHash = getDocRaw(`organisations/${ORG}/pending_invites/${email}`)?.tokenHash;
+    const audit = await request(app).get(`/api/org/${ORG}/audit-logs`).set(auth('owner_1'));
+    const actions = audit.body.logs.filter((item: any) => item.targetResourceId === email);
+    expect(actions.map((item: any) => item.action)).toContain('create_invitation');
+    expect(actions.map((item: any) => item.action)).toContain('resend_invitation');
+    expect(JSON.stringify(actions)).not.toContain(tokenHash);
+  });
+});
