@@ -8539,6 +8539,10 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
         return {
           uid: doc.id,
           email: authUser.email || null,
+          displayName: authUser.displayName || null,
+          // This is account membership metadata, not wellbeing content.
+          organisationId: typeof doc.data()?.organisationId === 'string'
+            ? doc.data()!.organisationId : null,
           // Firebase Auth's own record, not a self-reported flag - true
           // automatically for Google/Microsoft/Facebook sign-ins (those
           // providers already vouch for the address), and only becomes
@@ -8552,7 +8556,9 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
           // linked) - previously the admin table just rendered a blank
           // email cell for these accounts with nothing to explain why,
           // indistinguishable from a data problem.
-          isAnonymous: authUser.providerData.length === 0,
+          // A linked email or phone identity means this is not anonymous,
+          // even if providerData is empty (possible for password accounts).
+          isAnonymous: !authUser.email && !authUser.phoneNumber && authUser.providerData.length === 0,
           createdAt: authUser.metadata.creationTime,
           lastSignIn: authUser.metadata.lastSignInTime,
           accessStatus: authUser.disabled ? "disabled" : "active",
@@ -8581,7 +8587,9 @@ app.get("/api/admin/users", verifyAppCheck, authenticateFirebaseUser, async (req
         // deleted directly in the Auth console) - surfaced honestly
         // rather than papered over with a fabricated email/date.
         return {
-          uid: doc.id, email: null, emailVerified: false, isAnonymous: false, createdAt: null, lastSignIn: null,
+          uid: doc.id, email: null, displayName: null,
+          organisationId: typeof doc.data()?.organisationId === 'string' ? doc.data()!.organisationId : null,
+          emailVerified: false, isAnonymous: false, createdAt: null, lastSignIn: null,
           accessStatus: "unknown", role: 'user', plan, entitlementStatus: entitlement.status,
           storedPlan: entitlement.plan, billingSource: entitlement.billingSource, entitlementEnd: entitlement.entitlementEnd,
           cancelAtPeriodEnd: entitlement.cancelAtPeriodEnd, lastVerifiedAt: entitlement.lastVerifiedAt,
