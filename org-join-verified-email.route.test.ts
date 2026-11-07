@@ -24,7 +24,7 @@ vi.mock('twilio', () => ({ default: () => ({ messages: { create: vi.fn() } }) })
 
 import request from 'supertest';
 import { app } from './server';
-import { resetStore, seedDoc, getDocRaw } from './test/fake-firestore';
+import { resetStore, seedDoc, getDocRaw, allPaths } from './test/fake-firestore';
 
 const auth = (uid: string) => ({ Authorization: `Bearer ${uid}` });
 
@@ -83,5 +83,29 @@ describe('orphan memberships cannot be revived by joining', () => {
     expect(res.status).toBe(409);
     expect(getDocRaw('organisations/company_a/members/verified_employee')?.role).toBe('owner');
     expect(getDocRaw('users/verified_employee')?.organisationId).toBeUndefined();
+  });
+});
+
+describe('distributed company joining abuse protection', () => {
+  it('limits the thirteenth attempt across the shared Firestore counter', async () => {
+    for (let i = 0; i < 12; i++) {
+      const res = await request(app).post('/api/org/join')
+        .set(auth('verified_employee')).send({ joinCode: 'INVALID_CODE' });
+      expect(res.status).toBe(404);
+    }
+    const limited = await request(app).post('/api/org/join')
+      .set(auth('verified_employee')).send({ joinCode: 'ABC123' });
+    expect(limited.status).toBe(429);
+    expect(getDocRaw('users/verified_employee')?.organisationId).toBeUndefined();
+    expect(getDocRaw('organisations/company_a')?.memberUids).not.toContain('verified_employee');
+  });
+
+  it('does not persist raw user identifiers or IP addresses in rate-limit document paths', async () => {
+    await request(app).post('/api/org/join')
+      .set(auth('verified_employee')).send({ joinCode: 'INVALID_CODE' });
+    const ratePaths = allPaths().filter((p) => p.startsWith('org_join_rate_limits/'));
+    expect(ratePaths).toHaveLength(2);
+    expect(JSON.stringify(ratePaths)).not.toContain('verified_employee');
+    expect(JSON.stringify(ratePaths)).not.toContain('127.0.0.1');
   });
 });
