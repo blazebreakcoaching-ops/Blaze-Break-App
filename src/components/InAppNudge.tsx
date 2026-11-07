@@ -4,7 +4,7 @@ import { Sparkles, X, ChevronRight } from "lucide-react";
 import { useAuth } from '../lib/auth';
 import { getDb } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
-import { isNudgeVisibleForAccount } from '../lib/nudge-visibility';
+import { isNudgeVisibleForAccount, nudgeHistoryKey } from '../lib/nudge-visibility';
 import { detectFuelPatterns, FUEL_PATTERN_COPY, FuelLogEntry } from '../../recovery-fuel-patterns';
 
 // InAppNudge is always mounted from app start (it polls every 60s), not a
@@ -300,7 +300,7 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
     }
 
     // Local frequency limits check (using simple local storage to avoid extra DB calls)
-    const storedHistory = localStorage.getItem("blaze_nudge_history") || "[]";
+    const storedHistory = localStorage.getItem(nudgeHistoryKey(user.uid)) || "[]";
     const localHistory = JSON.parse(storedHistory);
     const today = now.toDateString();
     
@@ -389,7 +389,7 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
       
       // update local 
       const nextLocal = [...localHistory, histItem];
-      localStorage.setItem("blaze_nudge_history", JSON.stringify(nextLocal));
+      localStorage.setItem(nudgeHistoryKey(user.uid), JSON.stringify(nextLocal));
     } catch (e) {
       console.warn("Nudge history save failed");
     }
