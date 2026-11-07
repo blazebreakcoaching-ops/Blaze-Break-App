@@ -10719,6 +10719,11 @@ const getOrgMemberRole = async (db: any, orgId: string, org: any, uid: string): 
   // A stale member document or legacy UID array must not grant access to
   // Company A after the same account has been assigned to Company B.
   // Preserve compatibility for truly legacy users with no organisationId.
+  // The company roster is authoritative for ALL roles. A leftover
+  // members/{uid} document or legacy adminUids entry must never restore
+  // access after an offboarding operation removes the roster entry.
+  const memberUids: string[] = Array.isArray(org?.memberUids) ? org.memberUids : [];
+  if (!memberUids.includes(uid)) return null;
   const profileDoc = await db.collection("users").doc(uid).get();
   const linkedOrgId = profileDoc.exists ? profileDoc.data()?.organisationId : null;
   if (linkedOrgId && linkedOrgId !== orgId) return null;
@@ -10733,7 +10738,6 @@ const getOrgMemberRole = async (db: any, orgId: string, org: any, uid: string): 
     return isOrgRole(member?.role) ? member.role : null;
   }
   const adminUids: string[] = org.adminUids || [];
-  const memberUids: string[] = org.memberUids || [];
   if (adminUids.includes(uid)) return 'owner';
   if (memberUids.includes(uid)) return 'member';
   return null;
@@ -10790,8 +10794,12 @@ const requireOrgPermission = async (req: any, orgId: string, permission: OrgPerm
 const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid: string, tx?: any) => {
   const membersRef = db.collection("organisations").doc(orgId).collection("members");
   const membersSnap = tx ? await tx.get(membersRef) : await membersRef.get();
+  // Stale member documents and legacy adminUids outside the active
+  // roster must never count as replacement owners.
+  const roster = new Set<string>(Array.isArray(org?.memberUids) ? org.memberUids : []);
   const resolvedRoleByUid = new Map<string, string>();
   membersSnap.docs.forEach((d: any) => {
+    if (!roster.has(d.id)) return;
     const member = d.data();
     // Match getOrgMemberRole exactly: an existing granular record always
     // overrides legacy arrays, even when the role/status is invalid.
@@ -10809,7 +10817,7 @@ const assertNotLastOrgOwner = async (db: any, orgId: string, org: any, targetUid
   // granular records must never revive their privileges.
   const adminUids: string[] = org?.adminUids || [];
   adminUids.forEach((uid) => {
-    if (!resolvedRoleByUid.has(uid)) ownerUids.add(uid);
+    if (roster.has(uid) && !resolvedRoleByUid.has(uid)) ownerUids.add(uid);
   });
   if (ownerUids.has(targetUid) && ownerUids.size <= 1) {
     throw new Error("Operation Rejected: Cannot remove or downgrade the last owner of this organisation.");
