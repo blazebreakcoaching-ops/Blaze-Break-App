@@ -104,6 +104,8 @@ const NOVA_PERMISSION_DEFAULTS = {
   allowFocusSessions: true,
   allowSomaticResets: true,
   allowRecoveryAlly: true,
+  // Independent opt-in for using feedback to tailor future routing; never inferred from onboarding.
+  allowAdaptiveIntelligence: false,
 };
 
 // Called once, right when onboarding completes. Without this doc existing,
