@@ -78,7 +78,7 @@ Legend: DONE / IN PROGRESS / BLOCKED / NOT STARTED
 | Recovery Report | "PDF" export downloaded HTML behind fake progress; AI text unescaped | DONE (real Save-as-PDF, escaped, sandboxed) |
 | Recovery Report | Fake "Save Locally" (+15 pts per click, fabricated audit entries) | DONE (removed) |
 | Mobile | Nova Send button covered by nav toggle on phones | DONE |
-| Mobile | Native 2FA challenge (2FA accounts are currently blocked on mobile) | NOT STARTED |
+| Mobile | Native 2FA challenge | DONE (Batch 5) |
 | Mobile | Capacitor | N/A — app uses Expo/React Native; not adding a second stack |
 | Nova | Agentic journey off unless `NOVA_AGENTIC_JOURNEY_ENABLED=true` | DONE (verified fail-closed) |
 | Design | Ember design consolidation / progressive disclosure | NOT STARTED (after gates pass) |
@@ -170,3 +170,22 @@ Intelligence Hub; the legacy staff screen stays staff-only.
 
 Gate: `verify:integration:offline` on `80da89e` → OFFLINE_CHECKS_PASS (vitest 5,362;
 components 144; emulator 52; Playwright preview 66, real app 38; mobile and Functions pass).
+
+## 9. Batch 5 — Mobile two-factor, Nova/NHEI readiness, design foundation (2026-11-08)
+
+Commits: `d61b8a2` (mobile 2FA), `92c177d` (Nova/NHEI), `c71635d` (design tokens).
+
+| Area | Item | Status |
+|---|---|---|
+| Mobile | Native two-factor challenge (code / recovery code / cancel) | DONE |
+| Mobile | Token in memory only, bound to one account; switch / mid-check switch / expiry re-challenge | DONE (tested) |
+| Web + mobile | Wrong 2FA codes were submitted twice (auto-retry on 401) | DONE (fixed) |
+| Nova | Diagnostic fallback was a fixed conclusion with a medical-sounding claim | DONE (fixed) |
+| Nova / NHEI | Agentic, calendar execution and NHEI modes off by default; no personal NHEI processing wired; no AI-generated scores | DONE (verified, regression-locked) |
+| Super Nova | No code exists in this repository | N/A — needs a specification |
+| Design | 587 duplicated hard-coded colour pairs -> 4 semantic utilities, pixel-identical | DONE |
+| Design | Novice -> Mastering -> Expert progression | BLOCKED — changes navigation; needs owner approval (design lock) |
+| Mobile | Two-factor tested on a physical device / EAS build | BLOCKED — needs device and build credentials |
+
+Gate: `verify:integration:offline` on `c71635d` → OFFLINE_CHECKS_PASS (vitest 5,379;
+components 144; emulator 52; Playwright preview 66, real app 38; mobile Jest 65; Functions pass).
