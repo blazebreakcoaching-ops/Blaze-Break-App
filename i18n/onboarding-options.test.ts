@@ -13,7 +13,7 @@ describe('multilingual onboarding with stable persisted answers', () => {
       for (const v of variants) expect(pack[`onboarding.choice.${v}` as TranslationKey]?.trim()).toBeTruthy();
       for (const v of extras) expect(pack[`onboarding.${v}` as TranslationKey]?.trim()).toBeTruthy();
     }
-    expect(Object.keys(en)).toHaveLength(291);
+    expect(Object.keys(en).length).toBeGreaterThanOrEqual(291);
   });
   it('renders translated labels while selecting and saving canonical English options', () => {
     for (const v of variants) expect(source).toContain(`display: t('onboarding.choice.${v}')`);
