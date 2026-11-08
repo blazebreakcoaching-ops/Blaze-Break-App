@@ -57,13 +57,13 @@ const memoriesCollection = async (uid: string) => {
 export const isNovaLearningAllowed = (): boolean => {
   try {
     const stored = localStorage.getItem('blaze_profile');
-    // No profile yet means onboarding hasn't completed - default open,
-    // matching the toggle's own on-by-default stance once it does exist.
-    if (!stored) return true;
+    // No profile may mean onboarding is incomplete or storage unavailable:
+    // never assume consent to remembering personal information.
+    if (!stored) return false;
     const profile = JSON.parse(stored);
     return profile.letNovaLearn !== false;
   } catch (e) {
-    return true;
+    return false;
   }
 };
 
