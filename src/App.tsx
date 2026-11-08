@@ -2796,6 +2796,7 @@ export default function App() {
             {activeTab === "nova" && (
               <div className="space-y-32">
                 <NovaChat
+                  key={user?.uid ?? 'signed-out'}
                   fingerprint={isDemoSession ? DEMO_FINGERPRINT : fingerprint}
                   profile={isDemoSession ? undefined : stats.profile}
                   systemInstruction={`You are Nova, the recovery coach.
