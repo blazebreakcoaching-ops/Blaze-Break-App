@@ -56,10 +56,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
   const steps = [
     {
       id: "welcome",
-      title: "Welcome. Let's take this one step at a time.",
+      title: t('onboarding.welcomeTitle'),
       subtitle: "A few quick questions to help Nova understand where you're at.",
       icon: Sparkles,
-      question: "What brought you here today?",
+      question: t('onboarding.welcomeQuestion'),
       options: [
         { label: "I need to restore my energy", icon: BatteryLow },
         { label: "I need to disconnect from constant demands", icon: Activity },
@@ -71,10 +71,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     },
     {
       id: "pathway",
-      title: "A bit about your work",
+      title: t('onboarding.pathwayTitle'),
       subtitle: "This helps Nova tailor its support to your situation.",
       icon: Briefcase,
-      question: "Which of these sounds most like you?",
+      question: t('onboarding.pathwayQuestion'),
       options: [
         { label: "Executive / Founder", icon: Briefcase },
         { label: "Manager / Team Leader", icon: Target },
@@ -85,10 +85,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     },
     {
       id: "pressure",
-      title: "What's weighing on you",
+      title: t('onboarding.pressureTitle'),
       subtitle: "This helps shape the kind of support that fits you.",
       icon: HeartPulse,
-      question: "What's draining you the most right now?",
+      question: t('onboarding.pressureQuestion'),
       options: [
         { label: "Workload and deadlines", icon: Activity },
         { label: "People and expectations", icon: User },
@@ -99,10 +99,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     },
     {
       id: "nova_tone",
-      title: "How Nova should talk to you",
+      title: t('onboarding.novaToneTitle'),
       subtitle: "Your coach can match the tone that works best for you.",
       icon: Brain,
-      question: "How should Nova communicate with you?",
+      question: t('onboarding.novaToneQuestion'),
       options: [
         { label: "Direct & Analytical (No fluff)", icon: Brain },
         { label: "Firm & Accountable", icon: Shield },
