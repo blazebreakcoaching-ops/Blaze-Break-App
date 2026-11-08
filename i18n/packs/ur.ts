@@ -250,4 +250,10 @@ export const ur: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "نووا آپ کے جوابات کا جائزہ لے رہی ہے...",
   "fingerprint.errorTitle": "آپ کا جائزہ مکمل نہیں ہو سکا",
   "fingerprint.retry": "دوبارہ کوشش کریں",
+  "notifications.title": "نووا کی یاد دہانیاں",
+  "notifications.description": "صرف ایپ کے اندر خاموش یاد دہانیاں۔ پش، ای میل، ایس ایم ایس اور Guardian کی اطلاعات بند ہیں۔",
+  "notifications.enable": "ایپ کے اندر یاد دہانیاں فعال کریں",
+  "notifications.enableDetail": "ایپ استعمال کرتے ہوئے نووا کو نرم مدد پیش کرنے کی اجازت دیں۔",
+  "notifications.quietHours": "پرسکون اوقات",
+  "notifications.quietDetail": "ان اوقات میں نووا یاد دہانی نہیں بھیجے گی۔",
 };
