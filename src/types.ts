@@ -195,6 +195,8 @@ export interface UserProfileData {
   subscription?: SubscriptionTier;
   // Personalisation Consent
   preferredName?: string;
+  language?: string;
+  greetingTone?: 'warm' | 'simple' | 'direct';
   useNameInGreetings?: boolean;
   useLocalTime?: boolean;
   timeZone?: string;

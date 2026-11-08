@@ -20,6 +20,7 @@ import { cn } from "../lib/utils";
 import { logAuditAction } from "../lib/audit-logger";
 import { useAuth } from "../lib/auth";
 import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
+import { deviceTimeZone, validTimeZone } from '../../personal-welcome';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfileData) => Promise<void> | void;
@@ -33,6 +34,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
 
   const [profile, setProfile] = useState<UserProfileData>({
     fullName: "",
+    preferredName: "",
+    timeZone: deviceTimeZone(),
+    language: "en",
+    greetingTone: "warm",
+    useNameInGreetings: false,
     role: "",
     organization: "",
     pathway: "",
@@ -269,7 +275,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     if (step < steps.length - 1) {
       setStep(step + 1);
     } else {
-      if (!profile.fullName.trim()) return;
+      if (!profile.fullName.trim() || !validTimeZone(profile.timeZone || '')) return;
       setSaving(true);
       setSaveError(false);
       try {
@@ -445,6 +451,39 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                       }
                       className="w-full bg-background border border-white/[0.05] focus:border-primary/50 text-text-main placeholder:text-text-muted rounded-xl px-5 py-4 text-sm focus:outline-none transition-all shadow-inner font-sans"
                     />
+                  </div>
+                  <div className="space-y-3">
+                    <label htmlFor="blaze-preferred-name" className="block text-xs font-bold text-text-muted">What should we call you? (Optional)</label>
+                    <input id="blaze-preferred-name" type="text" maxLength={60}
+                      autoComplete="nickname" value={profile.preferredName || ''}
+                      onChange={e => setProfile(p => ({ ...p, preferredName: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main"
+                      placeholder="Your preferred name" />
+                  </div>
+                  <div className="space-y-3">
+                    <label htmlFor="blaze-timezone" className="block text-xs font-bold text-text-muted">Your time zone</label>
+                    <input id="blaze-timezone" type="text" maxLength={80}
+                      value={profile.timeZone || ''} onChange={e => setProfile(p => ({ ...p, timeZone: e.target.value }))}
+                      aria-invalid={!validTimeZone(profile.timeZone || '')}
+                      aria-describedby="blaze-timezone-hint"
+                      className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main"
+                      placeholder="Europe/London" />
+                    <p id="blaze-timezone-hint" className="text-xs text-text-muted">Suggested from your device. Change it if needed. No location tracking.</p>
+                  </div>
+                  <div className="space-y-3">
+                    <label htmlFor="blaze-language" className="block text-xs font-bold text-text-muted">App language</label>
+                    <select id="blaze-language" value="en" disabled
+                      className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main">
+                      <option value="en">English (other translations coming later)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-3">
+                    <label htmlFor="blaze-welcome-tone" className="block text-xs font-bold text-text-muted">Welcome style</label>
+                    <select id="blaze-welcome-tone" value={profile.greetingTone || 'warm'}
+                      onChange={e => setProfile(p => ({ ...p, greetingTone: e.target.value as 'warm' | 'simple' | 'direct' }))}
+                      className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main">
+                      <option value="warm">Warm</option><option value="simple">Simple</option><option value="direct">Direct</option>
+                    </select>
                   </div>
                   <div className="space-y-3">
                     <p className="text-xs font-black text-text-muted uppercase tracking-widest pl-1">
