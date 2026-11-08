@@ -3,17 +3,21 @@
 // It only adjusts preferences on candidates; selectRoute still enforces safety,
 // user capacity, explicit requests, cooldowns and recommendation budget.
 import type { InterventionCandidate, PreferenceMatch } from './recovery-routing-engine';
+import type { BandwidthBand } from './recovery-capacity-gate';
 
 export type AdaptiveFeedback = 'better' | 'same' | 'not_really' | 'not_sure';
 export interface AdaptiveOutcome {
   sourceModule: string;
   feedback: AdaptiveFeedback;
+  bandwidthBand?: BandwidthBand;
 }
 export interface AdaptiveContext {
   // Learning is opt-in. Missing consent must never activate personal adaptation.
   learningEnabled: boolean;
   // Only user's own recorded feedback, never employer-facing data.
   outcomes: readonly AdaptiveOutcome[];
+  // Outcomes from a different energy/capacity context are not interchangeable.
+  currentBandwidthBand?: BandwidthBand;
   // A person's explicit preference always wins over inferred patterns.
   preferredModules?: readonly string[];
   avoidedModules?: readonly string[];
@@ -56,7 +60,9 @@ export function adaptInterventionCandidates(
       basis = 'explicit_preference';
     } else {
       const recent = context.outcomes
-        .filter(outcome => outcome.sourceModule === candidate.sourceModule && outcome.feedback !== 'not_sure')
+        .filter(outcome => outcome.sourceModule === candidate.sourceModule &&
+          outcome.feedback !== 'not_sure' &&
+          (!context.currentBandwidthBand || outcome.bandwidthBand === context.currentBandwidthBand))
         .slice(-MAX_RECENT_ADAPTIVE_OUTCOMES);
       samples = recent.length;
       if (samples >= MIN_ADAPTIVE_OUTCOMES) {
