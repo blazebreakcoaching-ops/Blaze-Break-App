@@ -15147,7 +15147,7 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         adaptiveContext = {
           learningEnabled: true,
           outcomes,
-          currentBandwidthBand: bandwidth.band,
+          currentBandwidthBand: bandwidth.band ?? undefined,
           preferredModules: validModules(p.adaptivePreferredModules),
           avoidedModules: validModules(p.adaptiveAvoidedModules),
         };
