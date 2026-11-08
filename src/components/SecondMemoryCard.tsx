@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
+import { useAuth } from '../lib/auth';
 
 interface MemoryItem { id: string; text: string; status: 'open' | 'done'; updatedAt: string }
 interface MemoryResponse { enabled: boolean; items: MemoryItem[] }
 
 export function SecondMemoryCard({ minimal = false }: { minimal?: boolean }) {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [enabled, setEnabled] = useState(false);
   const [note, setNote] = useState('');
@@ -14,18 +17,22 @@ export function SecondMemoryCard({ minimal = false }: { minimal?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmErase, setConfirmErase] = useState(false);
   const load = useCallback(async () => {
-    if (!auth.currentUser) return;
+    if (!uid || auth.currentUser?.uid !== uid) return;
     try {
       const response = await secureApiFetch('/api/nova/second-memory');
       const data = await response.json() as MemoryResponse;
+      if (auth.currentUser?.uid !== uid) return;
       setItems(data.items ?? []);
       setEnabled(data.enabled === true);
       setError('');
     } catch {
       setError('Your notes could not be loaded.');
     }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  }, [uid]);
+  useEffect(() => {
+    setItems([]); setEnabled(false); setExpanded(false); setNote('');
+    void load();
+  }, [load]);
   const save = async () => {
     const text = note.trim();
     if (!text || text.length > 240 || busy) return;
