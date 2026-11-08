@@ -123,7 +123,7 @@ export function NovaAdaptiveControls() {
               Your direct request and safety boundaries always take priority.
             </p>
           </div>
-          <button type="button" role="switch" aria-checked={canEdit && enabled}
+          <button type="button" role="switch" aria-checked={status === 'ready' && ownerUid === uid && enabled}
             aria-label="Allow Nova to learn from my feedback"
             disabled={!canEdit || (!enabled && !memoryAllowed)}
             onClick={() => { void save({ allowAdaptiveIntelligence: !enabled }); }}
