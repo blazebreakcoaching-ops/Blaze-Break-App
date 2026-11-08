@@ -1,4 +1,5 @@
 import { useI18n } from '../lib/i18n-react';
+import type { TranslationKey } from '../../i18n';
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { X, PhoneCall, MessageCircle, LifeBuoy, Loader2, CheckCircle2, Globe, ArrowUpRight } from 'lucide-react';
@@ -8,6 +9,12 @@ import { secureApiFetch } from '../lib/secure-api';
 import { updateNovaMemoryBySourceAndType } from '../lib/nova-brain';
 import { detectCrisisRegion, getBrowserTimeZone, shouldShowGlobalDirectoryFirst } from '../../crisis-region';
 import { useGuardianAlertsEnabled } from '../lib/useGuardianAlertsEnabled';
+
+// Keep all emergency contact destinations and provider names independent of translated display copy.
+function SupportLabel({ id }: { id: TranslationKey }) {
+  const { t } = useI18n();
+  return <>{t(id)}</>;
+}
 
 interface GuardianForCrisisAction {
   id: string;
@@ -24,6 +31,7 @@ interface GuardianForCrisisAction {
 // component it already lives in, rather than needing its own separate
 // global placement.
 const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction[] }) => {
+  const { t } = useI18n();
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [resultByContact, setResultByContact] = useState<Record<string, { ok: boolean; text: string }>>({});
   const realGuardians = guardians.filter(g => g.isGuardian || g.role === 'primary_guardian' || g.role === 'backup_guardian');
@@ -60,7 +68,7 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
 
   return (
     <div className="space-y-3">
-      <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Ask someone you trust</h5>
+      <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1"><SupportLabel id="support.trusted" /></h5>
       {realGuardians.map(g => {
         const result = resultByContact[g.id];
         return (
@@ -68,12 +76,12 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
             <button
               onClick={() => alertsEnabled && sendAlert(g)}
               disabled={sendingId === g.id || !alertsEnabled}
-              aria-label={alertsEnabled ? `Ask ${g.name} to call you` : `Guardian alerts temporarily unavailable`}
+              aria-label={alertsEnabled ? t("support.askCall", { name: g.name }) : `Guardian alerts temporarily unavailable`}
               className="w-full flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 disabled:opacity-60 transition-colors group"
             >
               {alertsEnabled ? (
                 <div className="space-y-1.5 text-left">
-                  <span className="text-sm font-bold text-ember-accent block">Ask {g.name} to call me</span>
+                  <span className="text-sm font-bold text-ember-accent block">{t("support.askCall", { name: g.name })}</span>
                   <span className="text-[11px] font-black uppercase tracking-widest text-ember-accent font-mono">Sends a text asking them to call you right now</span>
                 </div>
               ) : (
@@ -103,7 +111,7 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
 
 const UkIrelandBlock = () => (
   <div className="space-y-3">
-    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the UK or Ireland</h5>
+    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1"><SupportLabel id="support.ukIreland" /></h5>
     <a href="tel:116123" className="flex items-center justify-between p-4 rounded-xl border border-warning/20 dark:border-warning-foreground/30 bg-warning/10 dark:bg-warning-foreground/20 hover:bg-warning/20 dark:hover:bg-warning-foreground/40 transition-colors group">
       <div className="space-y-1.5">
         <span className="text-sm font-bold text-ember-warning block">Samaritans</span>
@@ -120,7 +128,7 @@ const UkIrelandBlock = () => (
     </a>
     <a href="tel:999" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
       <div className="space-y-1.5">
-        <span className="text-sm font-bold text-destructive-foreground dark:text-[#f87171] block">Emergency services</span>
+        <span className="text-sm font-bold text-destructive-foreground dark:text-[#f87171] block"><SupportLabel id="support.emergency" /></span>
         <span className="text-[11px] font-black uppercase tracking-widest text-destructive-foreground dark:text-[#f87171] font-mono">Call 999 &middot; for immediate danger</span>
       </div>
       <PhoneCall className="w-5 h-5 text-destructive-foreground dark:text-destructive group-hover:scale-110 transition-transform shrink-0" />
@@ -130,7 +138,7 @@ const UkIrelandBlock = () => (
 
 const UsCanadaBlock = () => (
   <div className="space-y-3">
-    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the US or Canada</h5>
+    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1"><SupportLabel id="support.usCanada" /></h5>
     <a href="tel:988" className="flex items-center justify-between p-4 rounded-xl border border-destructive dark:border-destructive/30 bg-destructive dark:bg-destructive/20 hover:bg-destructive dark:hover:bg-destructive/40 transition-colors group">
       <div className="space-y-1.5">
         <span className="text-sm font-bold text-destructive-foreground dark:text-[#f87171] block">988 Suicide & Crisis Lifeline</span>
@@ -157,7 +165,7 @@ const UsCanadaBlock = () => (
 // or stale number here would be actively dangerous, not just unhelpful.
 const GlobalDirectoryBlock = () => (
   <div className="space-y-3">
-    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">Anywhere else in the world</h5>
+    <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1"><SupportLabel id="support.world" /></h5>
     <a
       href="https://findahelpline.com"
       target="_blank"
@@ -166,7 +174,7 @@ const GlobalDirectoryBlock = () => (
     >
       <div className="space-y-1.5">
         <span className="text-sm font-bold text-text-main block">Find A Helpline</span>
-        <span className="text-[11px] font-black uppercase tracking-widest text-text-muted font-mono">Verified local helplines in 175+ countries</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-text-muted font-mono"><SupportLabel id="support.directoryDesc" /></span>
       </div>
       <div className="flex items-center gap-1 shrink-0 text-text-muted group-hover:text-text-main transition-colors">
         <Globe className="w-5 h-5" />
@@ -191,8 +199,7 @@ export const CrisisSupportContent = ({ guardians = [] }: { guardians?: GuardianF
   return (
     <div className="space-y-6">
       <p className="text-sm text-text-muted leading-relaxed">
-        If things feel like too much right now, you don't have to handle it alone.
-        These are free, confidential, and available any time.
+        <SupportLabel id="support.intro" />
       </p>
 
       <GuardianQuickAction guardians={guardians} />
@@ -275,7 +282,7 @@ export const CrisisSupportModal = ({ isOpen, onClose, guardians = [] }: CrisisSu
                   <LifeBuoy className="w-5 h-5" />
                 </div>
                 <h3 id="crisis-support-title" className="text-lg font-bold text-text-main leading-snug">
-                  Need support right now?
+                  <SupportLabel id="support.title" />
                 </h3>
               </div>
               <button
