@@ -152,3 +152,11 @@ Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site
 - Extended `i18n/onboarding-options.test.ts` for source-level regression coverage. Not executed on a local checkout.
 
 No merge to main, GitHub Actions or deployment.
+
+## Build-fix preflight — 8 November 2026
+
+- GitHub integration branch checked at the latest source head. Corrected a stale source-contract expectation in `nhei-recovery-account-isolation-contract.test.ts`: the previous assertion expected an obsolete account guard, but the live code uses an authenticated UID equality check that returns false on mismatch.
+- Compared six recent source-contract test files with their corresponding implementation strings; no remaining mismatches were detected among literal `toContain` / `not.toContain` assertions. This is **static source inspection**, not actual Vitest execution.
+- Inspected `package.json` and `package-lock.json`: 68 direct dependency specifications match. Lockfile records Vite 8.3.5, @vitejs/plugin-react 5.2.0, @tailwindcss/vite 4.3.2, Vitest 4.1.12, TypeScript 5.8.3, React/React DOM 19.2.7, with compatible declared peer ranges. This is lockfile compatibility inspection, not `npm ci` or installed dependency verification.
+- Local container has Node 22.16.0 but cannot resolve github.com; there is no full repository checkout or lockfile-installed `node_modules`. Consequently **npm ci, npm run lint, npm run build and Vitest could not be run** at the actual integrated SHA. Current GitHub commit status checks contain no test results for the build-fix commit.
+- Exact next release verification must run from a clean checkout of this branch with `EXPECTED_RELEASE_SHA` set to the exact head and the existing `npm run verify:web:offline` / `npm run verify:integration:offline` scripts. These existing scripts, not new GitHub Actions or deployments, collect trustworthy build/test logs. Do not merge or deploy on source-only evidence.
