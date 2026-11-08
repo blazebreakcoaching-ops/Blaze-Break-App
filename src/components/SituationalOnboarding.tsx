@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
@@ -19,6 +19,7 @@ import { UserProfileData } from "../types";
 import { cn } from "../lib/utils";
 import { logAuditAction } from "../lib/audit-logger";
 import { useAuth } from "../lib/auth";
+import { auth } from "../lib/firebase";
 import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 import { deviceTimeZone, validTimeZone } from '../../personal-welcome';
 import { useI18n } from '../lib/i18n-react';
@@ -28,19 +29,11 @@ interface OnboardingProps {
   onComplete: (profile: UserProfileData) => Promise<void> | void;
 }
 
-export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
-  const { t, locale, setLocale } = useI18n();
-  const { logOut, user } = useAuth();
-  const [step, setStep] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
-
-  const [profile, setProfile] = useState<UserProfileData>({
+const freshOnboardingProfile = (language: string): UserProfileData => ({
     fullName: "",
     preferredName: "",
     timeZone: deviceTimeZone(),
-    // Starts as the language the person is already using (device/browser).
-    language: locale,
+    language,
     greetingTone: "warm",
     greetingEnabled: true,
     useNameInGreetings: false,
@@ -50,9 +43,39 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     purpose: "",
     novaTone: "direct",
     primaryDrain: "",
-    letNovaLearn: false, // A missing answer is never permission to learn.
-    sendNovaNudges: false, // Reminders also require an explicit opt-in.
-  } as any);
+    letNovaLearn: false,
+    sendNovaNudges: false,
+  } as UserProfileData);
+
+export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
+  const { t, locale, setLocale } = useI18n();
+  const { logOut, user } = useAuth();
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+
+  const [profile, setProfile] = useState<UserProfileData>(() => freshOnboardingProfile(locale));
+  const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousUidRef = useRef(user?.uid);
+  const currentLocaleRef = useRef(locale);
+  currentLocaleRef.current = locale;
+
+  useEffect(() => {
+    if (previousUidRef.current !== user?.uid) {
+      previousUidRef.current = user?.uid;
+      // Never carry a previous account's answers or opt-ins into another.
+      setProfile(freshOnboardingProfile(currentLocaleRef.current));
+      setStep(0);
+      setSaving(false);
+      setSaveError(false);
+    }
+    return () => {
+      if (autoAdvanceRef.current !== null) {
+        clearTimeout(autoAdvanceRef.current);
+        autoAdvanceRef.current = null;
+      }
+    };
+  }, [user?.uid]);
 
   const steps = [
     {
@@ -268,27 +291,38 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
   ];
 
   const handleSelect = (field: string, value: string) => {
+    if (!user?.uid || auth.currentUser?.uid !== user.uid) return;
     setProfile((p) => ({ ...p, [field]: value }));
+    if (autoAdvanceRef.current !== null) clearTimeout(autoAdvanceRef.current);
     if (step < steps.length - 1) {
-      setTimeout(() => setStep(step + 1), 400);
+      const uid = user.uid;
+      autoAdvanceRef.current = setTimeout(() => {
+        autoAdvanceRef.current = null;
+        if (auth.currentUser?.uid === uid) setStep(step + 1);
+      }, 400);
     }
   };
 
   const next = async () => {
-    if (saving) return;
+    if (saving || !user?.uid || auth.currentUser?.uid !== user.uid) return;
+    if (autoAdvanceRef.current !== null) {
+      clearTimeout(autoAdvanceRef.current);
+      autoAdvanceRef.current = null;
+    }
     if (step < steps.length - 1) {
       setStep(step + 1);
     } else {
       if (!profile.fullName.trim() || !validTimeZone(profile.timeZone || '')) return;
       setSaving(true);
       setSaveError(false);
+      const uid = user.uid;
       try {
         await onComplete(profile);
       } catch {
         // The user stays on this screen with their answers intact.
-        setSaveError(true);
+        if (auth.currentUser?.uid === uid) setSaveError(true);
       } finally {
-        setSaving(false);
+        if (auth.currentUser?.uid === uid) setSaving(false);
       }
     }
   };
