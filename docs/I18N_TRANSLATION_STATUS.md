@@ -8,7 +8,7 @@ is selected. Change a status to `reviewed` only after a documented native-speake
 review of the whole pack.
 
 ## How it works
-- English source of truth: `i18n/en.ts` (268 keys). Packs: `i18n/packs/*.ts`.
+- English source of truth: `i18n/en.ts` (320 keys). Packs: `i18n/packs/*.ts`.
 - Runtime: `i18n/index.ts` - translate with English fallback, CLDR plurals,
   RTL direction, BCP-47 tags, local number/date formatting with IANA time zones.
 - Shared by web (`src/lib/i18n-react.tsx`) and Expo (`mobile/src/lib/i18n.tsx`).
@@ -21,20 +21,20 @@ review of the whole pack.
 ## Coverage per language
 | Code | Language | Native name | Catalogue keys | Review status |
 |---|---|---|---|---|
-| en | English | English | 268/268 | Source |
-| de | German | Deutsch | 268/268 | Machine draft |
-| nl | Dutch | Nederlands | 268/268 | Machine draft |
-| fr | French | Français | 268/268 | Machine draft |
-| ar | Arabic | العربية | 268/268 | Machine draft (RTL) |
-| es | Spanish | Español | 268/268 | Machine draft |
-| pt | Portuguese | Português | 268/268 | Machine draft |
-| hi | Hindi | हिन्दी | 268/268 | Machine draft |
-| ur | Urdu | اردو | 268/268 | Machine draft (RTL) |
-| zh | Mandarin Chinese (Simplified) | 中文（简体） | 268/268 | Machine draft |
-| bn | Bengali | বাংলা | 268/268 | Machine draft |
-| pl | Polish | Polski | 268/268 | Machine draft |
+| en | English | English | 320/320 | Source |
+| de | German | Deutsch | 320/320 | Machine draft |
+| nl | Dutch | Nederlands | 320/320 | Machine draft |
+| fr | French | Français | 320/320 | Machine draft |
+| ar | Arabic | العربية | 320/320 | Machine draft (RTL) |
+| es | Spanish | Español | 320/320 | Machine draft |
+| pt | Portuguese | Português | 320/320 | Machine draft |
+| hi | Hindi | हिन्दी | 320/320 | Machine draft |
+| ur | Urdu | اردو | 320/320 | Machine draft (RTL) |
+| zh | Mandarin Chinese (Simplified) | 中文（简体） | 320/320 | Machine draft |
+| bn | Bengali | বাংলা | 320/320 | Machine draft |
+| pl | Polish | Polski | 320/320 | Machine draft |
 
-"268/268" means every catalogue key has a draft. It does **not** mean the whole
+"320/320" means every catalogue key has a draft. It does **not** mean the whole
 app is translated - see below.
 
 ## Screens translated (web unless stated)
@@ -86,3 +86,15 @@ Added fourteen question prompts to the shared catalogue (268 entries per locale)
 **Critical limitation:** answer choices remain in English; result explanations are not fully translated; translated prompts have not undergone native-speaker, safeguarding, clinical/measurement equivalence or RTL testing. They are not validated alternate-language versions of the original assessment and must not be marked release-ready. Cross-language score equivalence is **not established**. The released UI must not imply multilingual assessment validity until that review is complete.
 
 The `i18n/fingerprint-question-prompts.test.ts` source contract checks presence and answer-ID stability; it has been authored but not executed.
+
+## Batch 11 — onboarding choices, consent and complete quick-assessment draft (8 November)
+
+- Shared catalogue now contains **320 keys** per language (all 12 packs populated). This is catalogue coverage, NOT full product translation or human approval.
+- Onboarding: translated the four step subtitles, 17 display-only options and profile heading/subtitle. The underlying `purpose`, `pathway`, `primaryDrain` and `novaTone` values remain the original English tokens to avoid breaking existing profiles. Tests: `i18n/onboarding-options.test.ts`.
+- Onboarding reminder permission: `sendNovaNudges` now defaults to false, and the switch only displays enabled after an explicit true value. No notification channel was activated.
+- Fingerprint: translated 28 answer-option drafts for the seven original quick-check questions across all 12 packs. In quick mode, translated prompts and options are shown; in full mode the questions/answers stay in English until all fourteen option sets can be translated and validated. Non-English users see a clear disclosure about the English-only full assessment. Numeric 1–4 values and question IDs remain unchanged.
+- Fixed an existing Fingerprint bug where the selection page hid error/loading states and removed a raw unlocalised internal category code. Added `i18n/fingerprint-quick-options.test.ts` and updated an older source-contract test.
+
+**Important review gates:** The 11 non-English packs are machine-draft, including all questions and answers, and the quick assessment has **not** been checked for measurement equivalence across languages. Do not claim score equivalence or production readiness. The other seven full-question option groups, results, reports, billing/privacy pages, and more notification copy still require translation.
+
+**Executable verification:** source-level key counts and route invariants checked using the GitHub connector; TypeScript, Vitest, emulator, staging, physical-device and specialist/native-speaker review still NOT performed at this branch head.
