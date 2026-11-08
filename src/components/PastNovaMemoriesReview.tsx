@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firestore';
 import { auth } from '../lib/firebase';
@@ -18,42 +18,57 @@ export function PastNovaMemoriesReview() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  // Invalidate pending requests when auth changes, even if the same UID returns.
+  const requestGeneration = useRef(0);
   useEffect(() => {
+    requestGeneration.current += 1;
+    setBusy(false);
     setOpened(false); setEntries([]); setEditing(null); setDraft(''); setError('');
   }, [accountUid]);
   const load = async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
+    const generation = requestGeneration.current;
     setBusy(true); setError('');
     try {
       const snap = await getDocs(collection(db, 'users', uid, 'nova_memories'));
-      if (auth.currentUser?.uid !== uid) return;
+      if (auth.currentUser?.uid !== uid || requestGeneration.current !== generation) return;
       setEntries(snap.docs.map(d => ({
         id: d.id, type: String(d.data().type ?? 'memory'),
         content: String(d.data().content ?? ''), canEdit: d.data().canEdit === true,
       })));
       setOpened(true);
     } catch {
-      setError('Saved memories could not be loaded.');
-    } finally { setBusy(false); }
+      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) {
+        setError('Saved memories could not be loaded.');
+      }
+    } finally {
+      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) setBusy(false);
+    }
   };
   const change = async (id: string, action: 'delete' | 'edit') => {
     const uid = auth.currentUser?.uid;
     const target = entries.find(e => e.id === id);
     if (!uid || !target?.canEdit || busy) return;
     if (action === 'edit' && (!draft.trim() || draft.length > 1000)) return;
+    const generation = requestGeneration.current;
     setBusy(true); setError('');
     try {
       const ref = doc(db, 'users', uid, 'nova_memories', id);
       if (action === 'delete') await deleteDoc(ref);
       else await updateDoc(ref, { content: draft.trim(), updatedAt: new Date().toISOString() });
+      if (auth.currentUser?.uid !== uid || requestGeneration.current !== generation) return;
       setEntries(previous => action === 'delete'
         ? previous.filter(e => e.id !== id)
         : previous.map(e => e.id === id ? { ...e, content: draft.trim() } : e));
       setEditing(null);
     } catch {
-      setError('This memory could not be changed. Please try again.');
-    } finally { setBusy(false); }
+      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) {
+        setError('This memory could not be changed. Please try again.');
+      }
+    } finally {
+      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) setBusy(false);
+    }
   };
   return (
     <section className="rounded-xl border border-border p-4 space-y-3" aria-label="Review previous Nova memories">
