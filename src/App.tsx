@@ -2339,15 +2339,19 @@ export default function App() {
             // all - without this, Nova stays blind until someone separately
             // finds Settings > Nova Privacy Controls. Memory specifically
             // carries through whatever the user chose on the consent step.
-            if (user) {
-              initNovaPermissionsForNewUser(user.uid, profile.letNovaLearn === true);
-            }
+            const permissionsReady = user
+              ? await initNovaPermissionsForNewUser(user.uid, profile.letNovaLearn === true)
+              : false;
 
+            // Memory writes can only start after the explicit permission
+            // document has been saved and its Firestore rule can verify it.
+            if (permissionsReady && profile.letNovaLearn === true) {
             updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
               content: `Onboarding complete. Goal: ${profile.purpose || "N/A"}. Work context: ${profile.pathway || "N/A"}. Main drain: ${profile.primaryDrain || "N/A"}. Preferred tone: ${profile.novaTone || "N/A"}.`,
               confidence: "verified",
               canEdit: true,
             });
+            }
 
             // Structured record of which consent toggles were on/off at
             // completion - never the free-text answers themselves, matching
