@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { en } from './en';
 import { PACKS } from './index';
-import { LOCALES } from './locales';
 import { readFileSync } from 'node:fs';
 
 const keys = [
