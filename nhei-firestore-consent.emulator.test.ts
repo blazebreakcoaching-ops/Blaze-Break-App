@@ -31,7 +31,7 @@ const memory = () => ({
 
 suite('NHEI Firestore memory consent security', () => {
   beforeAll(async () => {
-    const [hostname, port] = host!.split(':');
+    const [hostname = '127.0.0.1', port = '8080'] = host!.split(':');
     env = await initializeTestEnvironment({
       projectId: 'demo-nhei-rules',
       firestore: {
