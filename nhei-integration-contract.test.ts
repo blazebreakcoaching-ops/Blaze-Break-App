@@ -27,6 +27,13 @@ describe('NHEI integration contracts', () => {
     expect(server).toContain('app.post("/api/nova/second-memory"');
     expect(server).toContain('app.delete("/api/nova/second-memory"');
   });
+  it('shows when learning actually affected a recommendation and offers review', () => {
+    const hub = source('src/components/RecoveryIntelligenceHub.tsx');
+    expect(hub).toContain('decision?.adaptiveLearningUsed === true');
+    expect(hub).toContain("decision.adaptiveExplanation.basis === 'explicit_preference'");
+    expect(hub).toContain("navigateToTab('privacy')");
+    expect(hub).toContain('Review Nova learning and feedback');
+  });
   it('lets Nova connect the existing recovery and privacy areas', () => {
     const tools = source('nova-tools.ts');
     expect(tools).toContain("recovery_intelligence: 'Recovery Intelligence'");
