@@ -320,4 +320,5 @@ export const bn: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "প্রশাসনিক কাজের ভিড়ে উদ্দেশ্য ম্লান হয়ে যাচ্ছে।",
   "fingerprint.option.meaning.3": "উদ্দেশ্য থেকে বিচ্ছিন্ন, শুধু টিকে থাকার চেষ্টা করছি।",
   "fingerprint.option.meaning.4": "অর্থপূর্ণ কাজ কেমন লাগে তা আর মনে নেই।",
+  "fingerprint.fullEnglishNotice": "সম্পূর্ণ ১৪-প্রশ্নের মূল্যায়নে বর্তমানে ইংরেজি প্রশ্ন ও উত্তর ব্যবহার করা হয়। অনুবাদের পর্যালোচনা চলছে।",
 };
