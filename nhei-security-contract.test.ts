@@ -41,6 +41,23 @@ describe('NHEI security/coordination contracts', () => {
     expect(review).toContain('auth.currentUser?.uid === uid && requestGeneration.current === generation');
   });
 
+  it('isolates Second Memory asynchronous work by signed-in user and generation', () => {
+    const card = read('src/components/SecondMemoryCard.tsx');
+    expect(card).toContain('requestGeneration.current += 1');
+    expect(card).toContain('auth.currentUser?.uid !== uid || generation !== requestGeneration.current');
+    expect(card).toContain('generation === requestGeneration.current');
+    expect(card).toContain('setConfirmErase(false)');
+  });
+
+  it('does not show another account pending recovery recommendations or prompts', () => {
+    const hub = read('src/components/RecoveryIntelligenceHub.tsx');
+    expect(hub).toContain('const accountUid = user?.uid ?? null');
+    expect(hub).toContain('setDecision(null); setDirection(null); setPendingOutcomeCheck(null); setResumePrompt(null)');
+    expect(hub).toContain('auth.currentUser?.uid !== uid || generation !== requestGeneration.current');
+    expect(hub).toContain('setResumePrompt(data.hasIncomplete ? data : null)');
+    expect(hub).toContain('requestGeneration.current += 1');
+  });
+
   it('allows Nova to recommend the existing central journey and privacy controls', () => {
     const server = read('server.ts');
     expect(server).toContain('recovery_intelligence (one useful step');
