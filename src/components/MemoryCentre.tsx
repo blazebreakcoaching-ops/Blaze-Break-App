@@ -4,6 +4,7 @@ import { Shield, Brain, Trash2, Edit2 } from 'lucide-react';
 import { getNovaBrain, deleteNovaMemory, editNovaMemoryContent, NovaMemory } from '../lib/nova-brain';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SecondMemoryCard } from './SecondMemoryCard';
+import { PastNovaMemoriesReview } from './PastNovaMemoriesReview';
 
 export function MemoryCentre() {
   const { user } = useAuth();
@@ -132,8 +133,9 @@ export function MemoryCentre() {
         </div>
       )}
 
-      <div className="mt-5">
+      <div className="mt-5 space-y-4">
         <SecondMemoryCard />
+        <PastNovaMemoriesReview />
       </div>
 
       <ConfirmDialog
