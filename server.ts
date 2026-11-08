@@ -14153,11 +14153,12 @@ const secondMemoryPermissions = async (uid: string): Promise<boolean> => {
 app.get("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
-    if (!(await secondMemoryPermissions(user.uid))) return res.json({ enabled: false, items: [] });
+    const enabled = await secondMemoryPermissions(user.uid);
+    // Always allow the member to inspect and erase existing notes, even when learning is off.
     const snap = await secondMemoryCollection(user.uid).orderBy("updatedAt", "desc").limit(MAX_OPEN_LOOPS).get();
     const items = snap.docs.map(doc => normalizeOpenLoop({ id: doc.id, ...doc.data() }))
       .filter((item): item is NonNullable<typeof item> => item !== null);
-    res.json({ enabled: true, items });
+    res.json({ enabled, items });
   } catch (err: any) {
     logger.error("Second Memory read failed", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -14197,6 +14198,21 @@ app.patch("/api/nova/second-memory/:id", verifyAppCheck, authenticateFirebaseUse
     res.json({ ok: true });
   } catch (err: any) {
     logger.error("Second Memory update failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// User-initiated bulk erasure remains available after consent withdrawal.
+app.delete("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const snap = await secondMemoryCollection(user.uid).limit(MAX_OPEN_LOOPS + 1).get();
+    const batch = getDb().batch();
+    for (const doc of snap.docs) batch.delete(doc.ref);
+    await batch.commit();
+    res.json({ ok: true, deleted: snap.size });
+  } catch (err: any) {
+    logger.error("Second Memory bulk deletion failed", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
