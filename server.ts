@@ -15264,6 +15264,51 @@ app.delete("/api/recovery/my-feedback/:id", verifyAppCheck, authenticateFirebase
   }
 });
 
+// User-directed learning reset. Stop adapting first, then erase the
+// subjective ratings that the learning engine considered. Recovery events
+// remain intact, preserving the user's work and their outcome timeline.
+app.post("/api/recovery/reset-adaptive-learning", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (req.body?.confirm !== 'RESET_MY_LEARNING') {
+      return res.status(400).json({ error: "Explicit reset confirmation is required." });
+    }
+    const db = getDb();
+    const permissionsRef = db.collection('users').doc(user.uid).collection('nova_permissions').doc('current');
+    const permissionsSnap = await permissionsRef.get();
+    if (!permissionsSnap.exists) return res.status(409).json({ error: "Nova permissions are not initialised." });
+    await permissionsRef.set({
+      allowAdaptiveIntelligence: false,
+      adaptivePreferredModules: [],
+      adaptiveAvoidedModules: [],
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // A bounded batch protects the service. If there are more records,
+    // the user can repeat the request without losing what was done.
+    let erased = 0;
+    let complete = false;
+    const decisionsRef = db.collection('users').doc(user.uid).collection('recovery_routing_decisions');
+    for (let pass = 0; pass < 20; pass++) {
+      const snap = await decisionsRef
+        .where('helpfulness', 'in', ['better', 'same', 'not_really', 'not_sure'])
+        .limit(100).get();
+      if (snap.empty) { complete = true; break; }
+      const batch = db.batch();
+      for (const doc of snap.docs) batch.update(doc.ref, { helpfulness: FieldValue.delete() });
+      await batch.commit();
+      erased += snap.size;
+    }
+    res.json({
+      ok: true, adaptiveLearningEnabled: false, ratingsErased: erased, complete,
+      message: complete ? "Adaptive learning reset." : "Learning disabled. Some older ratings remain; run reset again to finish erasing.",
+    });
+  } catch (err: any) {
+    logger.error("Adaptive learning reset failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
 app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
