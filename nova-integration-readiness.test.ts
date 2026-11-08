@@ -26,16 +26,38 @@ describe('unfinished agentic capabilities stay off by default', () => {
   });
 });
 
-describe('personal NHEI processing is not wired into any route', () => {
-  it('server.ts imports only consent, export, educational and knowledge-review NHEI functions', () => {
-    const nheiImports = [...server.matchAll(/import \{([^}]+)\} from '\.\/nhei-[^']+';/g)]
-      .flatMap((m) => m[1].split(',').map((s) => s.trim()).filter(Boolean));
-    expect(nheiImports.sort()).toEqual([
-      'NHEI_CONSENT_PURPOSES', 'NHEI_KNOWLEDGE_REVIEWER_ROLE', 'buildNheiEducationalChatAddendum',
-      'exportAllNheiData', 'getNheiConsent', 'handleNheiKnowledgeReviewRequest', 'importKnowledgeContentLibrary',
-      'isNheiModeEnabledInGovernance', 'isValidNheiConsentPurpose', 'listAllKnowledgeEntriesForReview',
-      'nheiEducationalModeIsEnabledNow', 'setNheiConsent', 'withdrawNheiConsent',
-    ].sort());
+describe('NHEI personal intelligence requires explicit permissions', () => {
+  it('protects Second Memory routes with authentication and App Check', () => {
+    for (const route of [
+      'get("/api/nova/second-memory"',
+      'post("/api/nova/second-memory"',
+      'patch("/api/nova/second-memory/:id"',
+      'delete("/api/nova/second-memory"',
+      'delete("/api/nova/second-memory/:id"',
+    ]) {
+      expect(server).toContain(
+        `app.${route}, verifyAppCheck, authenticateFirebaseUser`
+      );
+    }
+  });
+
+  it('requires active permission before creating Second Memory notes', () => {
+    expect(server).toContain('transaction.get(permissionsRef)');
+    expect(server).toContain('if (!mayUseSecondMemory(permissionSnap.data()))');
+    expect(server).toContain('transaction.create(ref');
+  });
+
+  it('requires three permissions before using adaptive outcome history', () => {
+    expect(server).toContain('p?.allowAdaptiveIntelligence === true');
+    expect(server).toContain('p.allowNovaMemory === true');
+    expect(server).toContain('p.allowNovaUseSavedMemories === true');
+    expect(server).toContain('adaptiveContext = undefined;');
+  });
+
+  it('scopes personal intelligence reads to the authenticated user', () => {
+    expect(server).toContain('secondMemoryCollection(user.uid)');
+    expect(server).toContain('.collection("recovery_routing_decisions")');
+    expect(server).toContain('adaptInterventionCandidates(candidates, adaptiveContext)');
   });
 });
 

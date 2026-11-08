@@ -93,9 +93,11 @@ describe('POST /api/recovery/routing-outcome', () => {
 
   it('completed: an invalid helpfulness value is stored as null rather than trusted as-is', async () => {
     seedDoc(`users/${USER}/recovery_routing_decisions/d1`, { createdAt: new Date().toISOString(), selectedModule: 'guided_reset' });
-    await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'completed', helpfulness: 'not_a_real_value' });
+    const res = await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: 'd1', action: 'completed', helpfulness: 'not_a_real_value' });
+    expect(res.status).toBe(400);
     const decision = getDocRaw(`users/${USER}/recovery_routing_decisions/d1`);
-    expect(decision?.helpfulness).toBeNull();
+    expect(decision?.helpfulness).toBeUndefined();
+    expect(decision?.outcome).toBeUndefined();
   });
 
   it('abandoned: stamps outcome and increments interventionsAbandoned', async () => {

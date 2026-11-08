@@ -523,7 +523,7 @@ describe('GET /api/user/recommendation - idempotent offers (Report 26)', () => {
     seedSelectable(USER);
     const first = await request(app).get('/api/user/recommendation').set(auth(USER));
     const firstId = first.body.decisionId;
-    await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: firstId, action: 'completed' });
+    await request(app).post('/api/recovery/routing-outcome').set(auth(USER)).send({ decisionId: firstId, action: 'completed', helpfulness: 'better' });
 
     const second = await request(app).get('/api/user/recommendation').set(auth(USER));
     expect(second.body.decisionId).toBeTruthy();

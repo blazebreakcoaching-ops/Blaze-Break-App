@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   auth: { currentUser: { uid: 'account-A' } as { uid: string } | null },
   getDocs: vi.fn(),
+  getDoc: vi.fn(),
   setDoc: vi.fn(),
 }));
 
@@ -16,6 +17,7 @@ vi.mock('firebase/firestore', () => ({
   query: vi.fn(() => ({})),
   orderBy: vi.fn(() => ({})),
   getDocs: mocks.getDocs,
+  getDoc: mocks.getDoc,
   doc: vi.fn(() => ({})),
   setDoc: mocks.setDoc,
 }));
@@ -43,6 +45,13 @@ const snap = (id: string) => ({
 beforeEach(() => {
   mocks.auth.currentUser = { uid: 'account-A' };
   mocks.getDocs.mockReset();
+  mocks.getDoc.mockReset().mockResolvedValue({
+    exists: () => true,
+    data: () => ({
+      allowNovaMemory: true,
+      allowNovaUseSavedMemories: true,
+    }),
+  });
   mocks.setDoc.mockReset().mockResolvedValue(undefined);
   localStorage.clear();
   clearNovaBrainCache();
@@ -50,6 +59,7 @@ beforeEach(() => {
 
 describe('Nova local memory cache isolation', () => {
   it('never shows account A memories after account B signs in, even if A finishes last', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
     const readA = deferred<ReturnType<typeof snap>>();
     const readB = deferred<ReturnType<typeof snap>>();
     mocks.getDocs.mockImplementationOnce(() => readA.promise).mockImplementationOnce(() => readB.promise);
@@ -57,6 +67,7 @@ describe('Nova local memory cache isolation', () => {
     const loadA = initNovaBrain('account-A');
     await vi.waitFor(() => expect(mocks.getDocs).toHaveBeenCalledTimes(1));
     mocks.auth.currentUser = { uid: 'account-B' };
+    setNovaLearningAllowedForUid('account-B', true);
     const loadB = initNovaBrain('account-B');
     await vi.waitFor(() => expect(mocks.getDocs).toHaveBeenCalledTimes(2));
     expect(getNovaBrain()).toEqual([]);
@@ -71,6 +82,7 @@ describe('Nova local memory cache isolation', () => {
   });
 
   it('keeps newly-added same-account memories if Firestore finishes later', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
     const pending = deferred<ReturnType<typeof snap>>();
     mocks.getDocs.mockImplementationOnce(() => pending.promise);
     const loading = initNovaBrain('account-A');
@@ -90,6 +102,7 @@ describe('Nova local memory cache isolation', () => {
   });
 
   it('invalidates an unfinished load when the account signs out', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
     const readA = deferred<ReturnType<typeof snap>>();
     mocks.getDocs.mockImplementationOnce(() => readA.promise);
     const loadA = initNovaBrain('account-A');
@@ -103,12 +116,14 @@ describe('Nova local memory cache isolation', () => {
   });
 
   it('does not automatically sync when Firestore memory hydration failed', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
     mocks.getDocs.mockRejectedValueOnce(new Error('offline'));
     await initNovaBrain('account-A');
     expect(isNovaBrainReadyForAutoSync('account-A')).toBe(false);
   });
 
   it('only allows automatic profile sync once this UID has hydrated', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
     const pending = deferred<ReturnType<typeof snap>>();
     mocks.getDocs.mockImplementationOnce(() => pending.promise);
     const loading = initNovaBrain('account-A');
@@ -122,6 +137,7 @@ describe('Nova local memory cache isolation', () => {
   });
 
   it('does not persist a memory again when its canonical values are identical', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
     mocks.getDocs.mockResolvedValueOnce({
       docs: [{
         id: 'memory-1',

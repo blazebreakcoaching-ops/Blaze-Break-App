@@ -11,7 +11,7 @@ describe('support directory locale and destination integrity', () => {
       for (const key of supportKeys) expect(PACKS[code][key], code + ' ' + key).toBeTruthy();
     }
   });
-  it('interpolates a trusted person's name without altering its spelling', () => {
+  it("interpolates a trusted person's name without altering its spelling", () => {
     for (const code of LOCALE_CODES) {
       const text = translate(code, 'support.askCall', { name: 'Aaliyah' });
       expect(text, code).toContain('Aaliyah');
