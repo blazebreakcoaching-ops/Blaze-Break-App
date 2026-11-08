@@ -69,6 +69,32 @@ suite('NHEI Firestore memory consent security', () => {
     await assertSucceeds(deleteDoc(doc(db, 'users/alice/nova_memories/a')));
   });
 
+  it('prevents modifying system-managed memories or erasing them through direct client writes', async () => {
+    await env.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users/alice/nova_permissions/current'), permissions(false));
+      await setDoc(doc(db, 'users/alice/nova_memories/system'), {
+        ...memory(), canEdit: false,
+      });
+    });
+    const db = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(getDoc(doc(db, 'users/alice/nova_memories/system')));
+    await assertFails(updateDoc(doc(db, 'users/alice/nova_memories/system'), { content: 'Overwrite safety record' }));
+    await assertFails(deleteDoc(doc(db, 'users/alice/nova_memories/system')));
+  });
+
+  it('prevents editable memory metadata tampering and oversized corrections after opt-out', async () => {
+    await env.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users/alice/nova_permissions/current'), permissions(false));
+      await setDoc(doc(db, 'users/alice/nova_memories/a'), memory());
+    });
+    const db = env.authenticatedContext('alice').firestore();
+    await assertFails(updateDoc(doc(db, 'users/alice/nova_memories/a'), { source: 'Admin' }));
+    await assertFails(updateDoc(doc(db, 'users/alice/nova_memories/a'), { dataZone: 'public' }));
+    await assertFails(updateDoc(doc(db, 'users/alice/nova_memories/a'), { content: 'x'.repeat(1001) }));
+  });
+
   it('blocks another account from viewing or editing private memories', async () => {
     await env.withSecurityRulesDisabled(async context => {
       await setDoc(doc(context.firestore(), 'users/alice/nova_memories/a'), memory());
