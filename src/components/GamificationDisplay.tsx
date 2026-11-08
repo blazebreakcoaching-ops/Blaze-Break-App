@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { Trophy, Zap, Star, Award, Sparkles, Check, Flag, Waves, Target, Shield, ShieldAlert, ShieldCheck, Moon, Battery, type LucideIcon } from 'lucide-react';
 import { UserStats, BADGES, BurnoutFingerprint } from '../types';
+import { recordedSleepShortfall } from '../lib/recorded-debts';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
 
 // Badge icons are referenced by string name in BADGES (types.ts) and
@@ -291,8 +292,8 @@ export const GamificationDisplay = ({ stats, fingerprint, shipStage = 'Safety', 
                if (badge.id === 'boundary_set') progress = (stats.rehearsalCount / 5) * 100;
                if (badge.id === 'boundary_boss') progress = (stats.rehearsalCount / 10) * 100;
                if (badge.id === 'consistent_sleep') {
-                 const sleepShortfall = stats.debts?.find(d => d.label === 'Sleep Shortfall')?.value ?? 8;
-                 progress = sleepShortfall <= 1 ? 100 : Math.max(0, ((8 - sleepShortfall) / 7) * 100);
+                 const sleepShortfall = recordedSleepShortfall(stats.debts);
+                 progress = sleepShortfall === null ? 0 : sleepShortfall <= 1 ? 100 : Math.max(0, ((8 - sleepShortfall) / 7) * 100);
                }
                if (badge.id === 'master_boundaries') progress = (stats.rehearsalCount / 15) * 100;
             }

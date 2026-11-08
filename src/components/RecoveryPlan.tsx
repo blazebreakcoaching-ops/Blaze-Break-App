@@ -16,6 +16,9 @@ import {
 import { BurnoutFingerprint, UserStats } from '../types';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType, logJourney } from '../lib/nova-brain';
+import { highestRecordedDebt, recordedDebts } from '../lib/recorded-debts';
+
+const NO_DEBT_SENTINEL = '\u0000no-recorded-debt\u0000';
 
 interface RecoveryPlanProps {
   stats: UserStats;
@@ -88,44 +91,46 @@ export const RecoveryPlan = ({
   const [actions, setActions] = useState<ActionItem[]>([]);
 
   // 1. Determine highest physiological debt
-  const getHighestDebt = (): any => {
-    const debts = stats.debts || [];
-    if (debts.length === 0) return { label: 'Mental Fatigue', value: 8, max: 20, unit: '' };
-    return [...debts].sort((a, b) => (b.value / b.max) - (a.value / a.max))[0];
-  };
-
-  const highestDebt = getHighestDebt();
-  const highestDebtRatio = highestDebt.value / highestDebt.max;
+  // Only real, logged readings count (see recorded-debts.ts). With nothing
+  // logged there is no "highest debt" - never a placeholder or invented one.
+  const highestDebt = highestRecordedDebt(stats.debts);
+  const highestDebtRatio = highestDebt ? highestDebt.value / highestDebt.max : 0;
 
   // 2. Synthesize dynamic coaching feedback from Nova
   const getNovaSynthesis = () => {
     const archetype = fingerprint?.profile || 'High-Functioning Exhausted';
     
+    // Sentinel used only to strip the debt sentence when nothing is logged.
+    const debtName = highestDebt ? highestDebt.label : NO_DEBT_SENTINEL;
     let feedback: string;
     if (archetype === 'Founder on Fire') {
-      feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. This is worth taking seriously, not optimising around. Cease the fawning performance narratives and rest.";
+      feedback = "Your identity is completely fused with the survival of your venture. Right now, your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. This is worth taking seriously, not optimising around. Cease the fawning performance narratives and rest.";
     } else if (archetype === 'Over-Giver') {
-      feedback = "Your fawning habit has turned you into a safety net for everyone else's obligations. Your current " + highestDebt.label + " (" + Math.round(highestDebtRatio * 100) + "% load) reflects a pattern of fawning. You are leaking energy by keeping others comfortable. Let's patch it.";
+      feedback = "Your fawning habit has turned you into a safety net for everyone else's obligations. Your current " + debtName + " (" + Math.round(highestDebtRatio * 100) + "% load) reflects a pattern of fawning. You are leaking energy by keeping others comfortable. Let's patch it.";
     } else if (archetype === 'Silent Resenter') {
-      feedback = "You are carrying intense resentment because you keep saying yes while your capacity is already stretched. Your " + highestDebt.label + " is elevated, at " + Math.round(highestDebtRatio * 100) + "% of its tracked range. Resentment is often a sign of where a boundary is needed.";
+      feedback = "You are carrying intense resentment because you keep saying yes while your capacity is already stretched. Your " + debtName + " is elevated, at " + Math.round(highestDebtRatio * 100) + "% of its tracked range. Resentment is often a sign of where a boundary is needed.";
     } else if (archetype === 'Manager in the Middle') {
-      feedback = "Squeezed between corporate targets and team fatigue, your mental load is high. Your " + highestDebt.label + " load is at " + Math.round(highestDebtRatio * 100) + "%. Today is about reclaiming your executive authority through radical, protective calendar scheduling.";
+      feedback = "Squeezed between corporate targets and team fatigue, your mental load is high. Your " + debtName + " load is at " + Math.round(highestDebtRatio * 100) + "%. Today is about reclaiming your executive authority through radical, protective calendar scheduling.";
     } else if (archetype === 'The Impostor') {
-      feedback = "You keep adding proof to a case that's already closed. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. The wins are real — today is about letting one of them actually count.";
+      feedback = "You keep adding proof to a case that's already closed. Your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. The wins are real — today is about letting one of them actually count.";
     } else if (archetype === 'The Perfectionist') {
-      feedback = "Your standards are the leak, not other people's demands. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about handing something off and leaving it alone.";
+      feedback = "Your standards are the leak, not other people's demands. Your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about handing something off and leaving it alone.";
     } else if (archetype === 'The Constant Adapter') {
-      feedback = "A lot of your energy is going into managing how you come across, not the work itself. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about protecting real recovery time, not just pushing through.";
+      feedback = "A lot of your energy is going into managing how you come across, not the work itself. Your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about protecting real recovery time, not just pushing through.";
     } else if (archetype === 'The Second Shift') {
-      feedback = "You're running two jobs at once, and only one of them is visible to anyone else. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about naming the invisible load, not carrying it silently.";
+      feedback = "You're running two jobs at once, and only one of them is visible to anyone else. Your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about naming the invisible load, not carrying it silently.";
     } else if (archetype === 'Crisis Sprinter') {
-      feedback = "Your system runs on urgency, and calm feels riskier than pressure does. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about proving to your own nervous system that quiet is safe.";
+      feedback = "Your system runs on urgency, and calm feels riskier than pressure does. Your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about proving to your own nervous system that quiet is safe.";
     } else if (archetype === 'People-Pleasing Performer') {
-      feedback = "The version of you that shows up for other people is working overtime. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about letting one honest reaction through.";
+      feedback = "The version of you that shows up for other people is working overtime. Your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about letting one honest reaction through.";
     } else if (archetype === 'Responsibility Addict') {
-      feedback = "You've quietly taken ownership of things that were never yours to carry. Your " + highestDebt.label + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about leaving one thing where it actually belongs.";
+      feedback = "You've quietly taken ownership of things that were never yours to carry. Your " + debtName + " is at " + Math.round(highestDebtRatio * 100) + "%. Today is about leaving one thing where it actually belongs.";
     } else {
-      feedback = "Perfectionism is a slow energy leak. Your " + highestDebt.label + " is currently loaded to " + Math.round(highestDebtRatio * 100) + "% capacity. Stop aiming for 120% where a calm, steady 85% is perfect. Let's practise active nervous system regulation.";
+      feedback = "Perfectionism is a slow energy leak. Your " + debtName + " is currently loaded to " + Math.round(highestDebtRatio * 100) + "% capacity. Stop aiming for 120% where a calm, steady 85% is perfect. Let's practise active nervous system regulation.";
+    }
+    if (!highestDebt) {
+      feedback = feedback.split(/(?<=[.!?])\s+/).filter((sentence) => !sentence.includes(NO_DEBT_SENTINEL)).join(' ') +
+        ' Log your sleep, capacity or commitments and I can point to where your energy is going.';
     }
     return feedback;
   };
@@ -136,7 +141,7 @@ export const RecoveryPlan = ({
 
     const buildPlan = async () => {
       const archetype = fingerprint.profile || 'High-Functioning Exhausted';
-      const debtLabel = highestDebt.label;
+      const debtLabel = highestDebt?.label ?? null;
 
       let completedIds: string[] = [];
       if (auth.currentUser) {
@@ -440,7 +445,7 @@ export const RecoveryPlan = ({
   // to be hardcoded to always show "Active" on the locked screen regardless
   // of whether stats.debts held anything. Checked here for real so the
   // prerequisite row honestly reflects what's actually been logged.
-  const hasDebtData = (stats.debts || []).length > 0;
+  const hasDebtData = recordedDebts(stats.debts).length > 0;
 
   // LOCKED STATE RENDER
   if (!fingerprint) {
@@ -595,7 +600,7 @@ export const RecoveryPlan = ({
               Profile: {archetype}
             </span>
             <span className="text-[10px] text-text-muted mt-1 font-medium">
-              Highest Debt: {highestDebt.label} ({highestDebt.value}{highestDebt.unit})
+              {highestDebt ? `Highest Debt: ${highestDebt.label} (${highestDebt.value}${highestDebt.unit})` : 'No recovery debt logged yet'}
             </span>
           </div>
         </div>
@@ -614,19 +619,25 @@ export const RecoveryPlan = ({
           <div className="bg-surface dark:bg-surface/30 p-4 rounded-lg border border-border flex flex-col justify-between">
             <div className="space-y-1.5">
               <span className="text-[10px] font-medium uppercase tracking-widest text-text-muted block">Recovery signals</span>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-medium text-text-main">{highestDebt.label} Load</span>
-                <span className="font-mono font-bold text-ember-danger">{Math.round(highestDebtRatio * 100)}%</span>
-              </div>
-              <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-destructive rounded-full"
-                  style={{ width: `${highestDebtRatio * 100}%` }}
-                />
-              </div>
+              {highestDebt ? (
+                <>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-medium text-text-main">{highestDebt.label} Load</span>
+                    <span className="font-mono font-bold text-ember-danger">{Math.round(highestDebtRatio * 100)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-destructive rounded-full"
+                      style={{ width: `${highestDebtRatio * 100}%` }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-text-main">Nothing logged yet.</p>
+              )}
             </div>
             <div className="mt-4 text-[10px] text-text-muted leading-relaxed">
-              *Completing items below immediately patches this energy leak and lowers your physiological debt.
+              Log sleep, capacity and commitments in the Debt Tracker to keep these signals up to date.
             </div>
           </div>
         </div>
