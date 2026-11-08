@@ -21,12 +21,15 @@ import { logAuditAction } from "../lib/audit-logger";
 import { useAuth } from "../lib/auth";
 import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 import { deviceTimeZone, validTimeZone } from '../../personal-welcome';
+import { useI18n } from '../lib/i18n-react';
+import { LanguageSelector } from './LanguageSelector';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfileData) => Promise<void> | void;
 }
 
 export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
+  const { t, locale, setLocale } = useI18n();
   const { logOut, user } = useAuth();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -36,7 +39,8 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     fullName: "",
     preferredName: "",
     timeZone: deviceTimeZone(),
-    language: "en",
+    // Starts as the language the person is already using (device/browser).
+    language: locale,
     greetingTone: "warm",
     greetingEnabled: true,
     useNameInGreetings: false,
@@ -454,41 +458,40 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                     />
                   </div>
                   <div className="space-y-3">
-                    <label htmlFor="blaze-preferred-name" className="block text-xs font-bold text-text-muted">What should we call you? (Optional)</label>
+                    <label htmlFor="blaze-preferred-name" className="block text-xs font-bold text-text-muted">{t('onboarding.preferredName')}</label>
                     <input id="blaze-preferred-name" type="text" maxLength={60}
                       autoComplete="nickname" value={profile.preferredName || ''}
                       onChange={e => setProfile(p => ({ ...p, preferredName: e.target.value }))}
                       className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main"
-                      placeholder="Your preferred name" />
+                      placeholder={t('onboarding.preferredNamePlaceholder')} />
                   </div>
                   <div className="space-y-3">
-                    <label htmlFor="blaze-timezone" className="block text-xs font-bold text-text-muted">Your time zone</label>
+                    <label htmlFor="blaze-timezone" className="block text-xs font-bold text-text-muted">{t('onboarding.timeZone')}</label>
                     <input id="blaze-timezone" type="text" maxLength={80}
                       value={profile.timeZone || ''} onChange={e => setProfile(p => ({ ...p, timeZone: e.target.value }))}
                       aria-invalid={!validTimeZone(profile.timeZone || '')}
                       aria-describedby={validTimeZone(profile.timeZone || '') ? "blaze-timezone-hint" : "blaze-timezone-hint blaze-timezone-error"}
                       className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main"
                       placeholder="Europe/London" />
-                    <p id="blaze-timezone-hint" className="text-xs text-text-muted">Suggested from your device. Change it if needed. No location tracking.</p>
+                    <p id="blaze-timezone-hint" className="text-xs text-text-muted">{t('onboarding.timeZoneHint')}</p>
                     {!validTimeZone(profile.timeZone || '') && (
                       <p id="blaze-timezone-error" role="alert" className="text-xs text-ember-danger">
-                        Enter a time zone such as Europe/London or America/New_York.
+                        {t('onboarding.timeZoneError')}
                       </p>
                     )}
                   </div>
+                  <LanguageSelector
+                    id="blaze-language"
+                    value={(profile.language as typeof locale) || locale}
+                    onChange={(code) => { setLocale(code); setProfile(p => ({ ...p, language: code })); }}
+                    className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main"
+                  />
                   <div className="space-y-3">
-                    <label htmlFor="blaze-language" className="block text-xs font-bold text-text-muted">App language</label>
-                    <select id="blaze-language" value="en" disabled
-                      className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main">
-                      <option value="en">English (other translations coming later)</option>
-                    </select>
-                  </div>
-                  <div className="space-y-3">
-                    <label htmlFor="blaze-welcome-tone" className="block text-xs font-bold text-text-muted">Welcome style</label>
+                    <label htmlFor="blaze-welcome-tone" className="block text-xs font-bold text-text-muted">{t('onboarding.welcomeStyle')}</label>
                     <select id="blaze-welcome-tone" value={profile.greetingTone || 'warm'}
                       onChange={e => setProfile(p => ({ ...p, greetingTone: e.target.value as 'warm' | 'simple' | 'direct' }))}
                       className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main">
-                      <option value="warm">Warm</option><option value="simple">Simple</option><option value="direct">Direct</option>
+                      <option value="warm">{t('settings.tone.warm')}</option><option value="simple">{t('settings.tone.simple')}</option><option value="direct">{t('settings.tone.direct')}</option>
                     </select>
                   </div>
                   <div className="space-y-3">

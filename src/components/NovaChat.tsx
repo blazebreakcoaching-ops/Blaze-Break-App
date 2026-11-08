@@ -1,3 +1,4 @@
+import { useI18n } from '../lib/i18n-react';
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -136,6 +137,7 @@ export const NovaChat = ({
   // Fixed, user-invoked UI help; never sends a message to the model.
   onShowMeHow?: () => void;
 }) => {
+  const { t: tNova, locale: novaUiLocale } = useI18n();
   // Tone is stored per signed-in account, not in the old browser-wide
   // profile key. The canonical Firestore profile remains authoritative;
   // the passed-in profile covers device cache misses.
@@ -1477,14 +1479,14 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === "Enter" && handleSend()}
-                aria-label="Message Nova"
+                aria-label={tNova("nova.messageLabel")}
                 data-nova-guide-target="nova-message-input"
                 placeholder={
                   dictationError
                     ? dictationError
                     : isDictating
                     ? "Listening... Speak naturally"
-                    : "Type or speak to Nova..."
+                    : novaUiLocale === "en" ? "Type or speak to Nova..." : tNova("nova.placeholder")
                 }
                 className={cn(
                   "w-full bg-surface text-text-main border rounded-xl py-4 px-12 pr-16 text-base font-display focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-text-muted",
@@ -1517,7 +1519,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
               <button
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
-                aria-label="Send message"
+                aria-label={tNova("nova.send")}
                 className="ember-nova-send absolute right-2 top-2 w-11 h-11 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
               >
                 <Send className="w-4.5 h-4.5" />

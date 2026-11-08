@@ -129,6 +129,15 @@ import { isCustomerRole, shouldShowCustomerNavTab, MOBILE_PRIMARY_TAB_IDS } from
 import { useExperienceLevel } from "./hooks/useExperienceLevel";
 import { recordedSleepShortfall } from "./lib/recorded-debts";
 import { resolvePersonalPreferences, webProfileFieldsFrom } from "../personal-preferences";
+import { useI18n } from "./lib/i18n-react";
+import { en as EN_STRINGS, isLocaleCode, type TranslationKey } from "../i18n";
+
+// Translated tab label (falls back to the English ALL_TABS label for tabs
+// that are not yet in the catalogue, e.g. staff-only screens).
+const navLabel = (t: (k: TranslationKey) => string, tab: { id: string; label: string }) =>
+  `nav.${tab.id}` in EN_STRINGS ? t(`nav.${tab.id}` as TranslationKey) : tab.label;
+const shortNavLabel = (t: (k: TranslationKey) => string, tab: { id: string; label: string }) =>
+  `nav.${tab.id}.short` in EN_STRINGS ? t(`nav.${tab.id}.short` as TranslationKey) : navLabel(t, tab);
 import { ExperienceLevelSwitcher } from "./components/ExperienceLevelSwitcher";
 import type { ExperienceLevel } from "../experience-level";
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
@@ -450,6 +459,7 @@ const Sidebar = ({
   onExperienceLevelChange: (level: ExperienceLevel) => void;
   experienceLevelError: string | null;
 }) => {
+  const { t } = useI18n();
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -572,7 +582,7 @@ const Sidebar = ({
         <button
           onClick={onOpenCrisisSupport}
           title="Find the right support when things feel too heavy to handle alone."
-          aria-label="Need support now? Open crisis support"
+          aria-label={t("nav.needSupportLabel")}
           className="shrink-0 w-full flex items-center justify-center p-3 rounded-2xl text-info bg-info/10 hover:bg-info/20 border border-info/20 transition-colors"
         >
           <LifeBuoy className="w-5 h-5" aria-hidden="true" />
@@ -583,7 +593,7 @@ const Sidebar = ({
       <button
         onClick={onOpenLauncher}
         title="Quick find (Ctrl/Cmd + K)"
-        aria-label="Quick find a tool"
+        aria-label={t("nav.quickFindLabel")}
         className={cn(
           "shrink-0 flex items-center rounded-2xl border border-border bg-surface text-text-muted hover:text-primary hover:border-primary/40 transition-colors",
           isCollapsed ? "justify-center p-3" : "gap-2.5 px-3 py-2.5",
@@ -592,7 +602,7 @@ const Sidebar = ({
         <Search className="w-4 h-4 shrink-0" />
         {!isCollapsed && (
           <>
-            <span className="text-sm font-medium flex-1 text-left">Quick find</span>
+            <span className="text-sm font-medium flex-1 text-left">{t("nav.quickFind")}</span>
             <kbd className="text-[10px] font-mono border border-border rounded px-1.5 py-0.5">⌘K</kbd>
           </>
         )}
@@ -612,7 +622,7 @@ const Sidebar = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                aria-label={tab.id === "recover" && pendingTasksCount > 0 ? `${tab.label}, ${pendingTasksCount} pending recovery task${pendingTasksCount === 1 ? '' : 's'}` : tab.label}
+                aria-label={tab.id === "recover" && pendingTasksCount > 0 ? `${navLabel(t, tab)}, ${pendingTasksCount} pending recovery task${pendingTasksCount === 1 ? '' : 's'}` : navLabel(t, tab)}
                 aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   "nav-item relative group flex items-center w-full transition-all",
@@ -622,7 +632,7 @@ const Sidebar = ({
                     : "justify-between",
                   indented && !isCollapsed && "pl-4",
                 )}
-                title={isCollapsed ? tab.label : undefined}
+                title={isCollapsed ? navLabel(t, tab) : undefined}
               >
                 <div className="flex items-center gap-3">
                   <tab.icon
@@ -640,9 +650,9 @@ const Sidebar = ({
                         animate={{ opacity: 1, width: "auto" }}
                         exit={{ opacity: 0, width: 0 }}
                         transition={{ duration: 0.2 }}
-                        className="text-sm whitespace-nowrap overflow-hidden"
+                        className="text-sm leading-tight overflow-hidden [overflow-wrap:anywhere]"
                       >
-                        {tab.label}
+                        {navLabel(t, tab)}
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -689,7 +699,7 @@ const Sidebar = ({
               const groupTabs = tabs.filter((t) => t.group === tab.group);
               const isGroupActive = groupTabs.some((t) => t.id === activeTab);
               const isExpanded = expandedGroups[tab.group] ?? isGroupActive;
-              const groupLabel = tab.group === "recovery_tools" ? "Recovery Tools" : tab.group;
+              const groupLabel = tab.group === "recovery_tools" ? t("nav.group.recovery_tools") : tab.group;
               return (
                 <div key={tab.group}>
                   <button
@@ -756,15 +766,15 @@ const Sidebar = ({
             type="button"
             onClick={() => setShowAllTools(!showAllTools)}
             aria-expanded={showAllTools}
-            aria-label={showAllTools ? "Show the simpler navigation" : "Explore all available tools"}
+            aria-label={showAllTools ? t("nav.keepSimpleLabel") : t("nav.exploreAllLabel")}
             className={cn(
               "flex items-center w-full rounded-xl px-3 py-2.5 text-text-muted hover:text-text-main hover:bg-primary/10 transition-colors",
               isCollapsed ? "justify-center" : "gap-2 text-sm"
             )}
-            title={isCollapsed ? (showAllTools ? "Keep it simple" : "Explore all tools") : undefined}
+            title={isCollapsed ? (showAllTools ? t("nav.keepSimple") : t("nav.exploreAll")) : undefined}
           >
             <Compass className="w-4 h-4 shrink-0" />
-            {!isCollapsed && (showAllTools ? "Keep it simple" : "Explore all tools")}
+            {!isCollapsed && (showAllTools ? t("nav.keepSimple") : t("nav.exploreAll"))}
           </button>
         )}
         <AppearanceMenu mode={themeMode} onChange={setThemeMode} compact={isCollapsed} above />
@@ -837,16 +847,20 @@ const Header = ({
 
   // Stable daily copy, using the customer's selected IANA time zone.
   // No AI, GPS or pressure-inducing messages. Preferred name is opt-in.
-  const [dashboardWelcome] = useState(() => personalWelcome({
-    now: new Date(),
+  // The moment is fixed per mount (no reshuffling mid-visit); the text
+  // follows the chosen language instantly.
+  const { t: tHeader, locale: uiLocale } = useI18n();
+  const [welcomeMoment] = useState(() => new Date());
+  const dashboardWelcome = useMemo(() => personalWelcome({
+    now: welcomeMoment,
     timeZone: profile?.timeZone,
     preferredName: profile?.preferredName || (userName ? userName.split(" ")[0] : null),
     allowName: profile?.useNameInGreetings === true,
     tone: profile?.greetingTone,
-    locale: profile?.language,
+    locale: uiLocale,
     seed: userName || 'welcome',
-  }));
-  const dashboardGreeting = profile?.greetingEnabled === false ? 'Welcome to Blaze Break.' : `${dashboardWelcome.greeting} ${dashboardWelcome.message}`;
+  }), [welcomeMoment, profile?.timeZone, profile?.preferredName, profile?.useNameInGreetings, profile?.greetingTone, uiLocale, userName]);
+  const dashboardGreeting = profile?.greetingEnabled === false ? tHeader('welcome.default') : `${dashboardWelcome.greeting} ${dashboardWelcome.message}`;
 
   const handleGuardianPing = useCallback(async () => {
     if (guardianPingActive) return;
@@ -1098,9 +1112,13 @@ const Header = ({
 };
 
 export default function App() {
+  const { t, setLocale: setUiLocale } = useI18n();
   const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
   // Never show or save a previous Firebase account's data during a switch.
   const [statsOwnerUid, setStatsOwnerUid] = useState<string | null>(null);
+  // Low-Energy Mode (account preference). A ref so timers/handlers created
+  // earlier still see the latest choice.
+  const lowEnergyModeRef = useRef(false);
   const [novaBrainReadyUid, setNovaBrainReadyUid] = useState<string | null>(null);
   const [statsLoadError, setStatsLoadError] = useState(false);
   const [statsLoadRetry, setStatsLoadRetry] = useState(0);
@@ -1549,6 +1567,17 @@ export default function App() {
     committedActionIds: [],
     debts: [],
   });
+
+  // Account-scoped language and Low-Energy Mode: applied only once the
+  // loaded stats belong to the signed-in account, never a previous one.
+  useEffect(() => {
+    lowEnergyModeRef.current = stats.profile?.lowEnergyMode === true;
+  }, [stats.profile?.lowEnergyMode]);
+  useEffect(() => {
+    if (!user || statsOwnerUid !== user.uid) return;
+    const saved = stats.profile?.language;
+    if (isLocaleCode(saved)) setUiLocale(saved);
+  }, [user, statsOwnerUid, stats.profile?.language, setUiLocale]);
 
   // The tools this user can actually open - same predicate the sidebar uses,
   // so the quick-find launcher never offers a tab that isn't really available.
@@ -2011,9 +2040,13 @@ export default function App() {
     if (newlyUnlocked.length > 0) {
       const badge = BADGES.find(b => b.id === newlyUnlocked[0]);
       if (badge) {
-        setShowBadgeUnlocked(badge);
-        fireConfetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
-        setTimeout(() => setShowBadgeUnlocked(null), 5000);
+        // Low-Energy Mode: the badge is still earned and listed, but there
+        // is no pop-up or confetti interrupting the person.
+        if (!lowEnergyModeRef.current) {
+          setShowBadgeUnlocked(badge);
+          fireConfetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
+          setTimeout(() => setShowBadgeUnlocked(null), 5000);
+        }
       }
     }
   }, [stats.unlockedBadges, authLoading, user]);
@@ -2133,7 +2166,7 @@ export default function App() {
       };
     });
 
-    setShowRewardNotification({ points: amount, reason });
+    if (!lowEnergyModeRef.current) setShowRewardNotification({ points: amount, reason });
     setTimeout(() => setShowRewardNotification(null), 4000);
   };
 
@@ -2214,9 +2247,11 @@ export default function App() {
         };
       });
 
-      setShowRewardNotification({ points: 100, reason: "Daily Pulse Reward" });
-      setTimeout(() => setShowRewardNotification(null), 4000);
-      fireConfetti({ particleCount: 100, spread: 65, origin: { y: 0.6 } });
+      if (!lowEnergyModeRef.current) {
+        setShowRewardNotification({ points: 100, reason: "Daily Pulse Reward" });
+        setTimeout(() => setShowRewardNotification(null), 4000);
+        fireConfetti({ particleCount: 100, spread: 65, origin: { y: 0.6 } });
+      }
     }
   };
 
@@ -2273,10 +2308,13 @@ export default function App() {
         unlockedBadges: checkBadges(updated),
       };
     });
-    setShowRewardNotification({ points: 50, reason: "Direct Application" });
+    if (!lowEnergyModeRef.current) setShowRewardNotification({ points: 50, reason: "Direct Application" });
     setTimeout(() => setShowRewardNotification(null), 4000);
   };
 
+  // Customer pages use the translated title; other pages keep English.
+  const pageTitle = (id: string): string | undefined =>
+    `title.${id}` in EN_STRINGS ? t(`title.${id}` as TranslationKey) : titles[id];
   const titles: Record<string, string> = {
     plan: "Personalised Recovery Plan",
     micro: "Micro-Recovery",
@@ -2322,8 +2360,9 @@ export default function App() {
   // distinguish one open page from another. Reuses the same `titles` map
   // the in-app header already uses, so the two can never drift apart.
   useEffect(() => {
-    document.title = titles[activeTab] ? `${titles[activeTab]} — Blaze Break` : "Blaze Break";
-  }, [activeTab]);
+    const title = pageTitle(activeTab);
+    document.title = title ? `${title} — Blaze Break` : "Blaze Break";
+  }, [activeTab, t]);
 
   useEffect(() => {
     // This effect writes multiple personal Nova memories. During an
@@ -2445,7 +2484,7 @@ export default function App() {
           className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
         >
           <LifeBuoy className="w-4 h-4 shrink-0" />
-          <span>Need support now?</span>
+          <span>{t("nav.needSupport")}</span>
         </button>
         <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       </>
@@ -2467,7 +2506,7 @@ export default function App() {
           className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
         >
           <LifeBuoy className="w-4 h-4 shrink-0" />
-          <span>Need support now?</span>
+          <span>{t("nav.needSupport")}</span>
         </button>
         <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       </>
@@ -2540,7 +2579,7 @@ export default function App() {
           className="fixed left-6 bg-info/10 text-info hover:bg-info/20 border border-info/20 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl transition-colors z-50 text-xs font-bold" style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
         >
           <LifeBuoy className="w-4 h-4 shrink-0" />
-          <span>Need support now?</span>
+          <span>{t("nav.needSupport")}</span>
         </button>
         <CrisisSupportModal isOpen={showCrisisSupport} onClose={() => setShowCrisisSupport(false)} guardians={stats.supportCircle || []} />
       </>
@@ -2643,7 +2682,7 @@ export default function App() {
               </div>
               <div className="relative z-10">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
-                  Recovery Progress Logged
+                  {t("common.reward")}
                 </p>
                 <p className="text-sm font-bold">
                   +{showRewardNotification.points} for{" "}
@@ -2667,7 +2706,7 @@ export default function App() {
               </div>
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
-                  Badge Unlocked
+                  {t("common.badge")}
                 </p>
                 <p className="text-sm font-bold">{showBadgeUnlocked.name}</p>
                 <p className="text-xs text-text-muted">{showBadgeUnlocked.description}</p>
@@ -2677,7 +2716,7 @@ export default function App() {
         </AnimatePresence>
 
         <Header
-          title={titles[activeTab] || "Dashboard Module"}
+          title={pageTitle(activeTab) || "Dashboard Module"}
           activeTab={activeTab}
           themeMode={themeMode}
           setThemeMode={setThemeMode}
@@ -3305,7 +3344,7 @@ export default function App() {
       <div className="md:hidden z-50">
         <button
           onClick={() => setShowCrisisSupport(true)}
-          title="Need support now?"
+          title={t("nav.needSupport")}
           className="fixed top-1/2 -translate-y-1/2 w-12 h-12 rounded-full text-info bg-info/10 hover:bg-info/20 border border-info/20 flex items-center justify-center shadow-2xl transition-colors z-50" style={{ left: "calc(1rem + env(safe-area-inset-left))" }}
         >
           <LifeBuoy className="w-5 h-5" />
@@ -3373,8 +3412,8 @@ export default function App() {
                     className={`p-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === tab.id ? "text-primary bg-primary/10" : "text-text-muted hover:text-text-main"}`}
                   >
                     <tab.icon className="w-5 h-5" />
-                    <span className="text-[10px] font-bold tracking-wide text-center leading-tight">
-                      {tab.label}
+                    <span className="text-[10px] font-bold tracking-wide text-center leading-tight [overflow-wrap:anywhere]">
+                      {navLabel(t, tab)}
                     </span>
                   </button>
                 ))}
@@ -3405,7 +3444,7 @@ export default function App() {
                       onClick={() => setShowMobileToolsSheet((v) => !v)}
                       aria-expanded={showMobileToolsSheet}
                       aria-current={activeSheetTab ? 'page' : undefined}
-                      aria-label={activeSheetTab ? `${activeSheetTab.label}, open tools` : undefined}
+                      aria-label={activeSheetTab ? t("nav.openTools", { tool: navLabel(t, activeSheetTab) }) : undefined}
                       className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                     >
                       <div
@@ -3413,7 +3452,7 @@ export default function App() {
                       >
                         <SlotIcon className="w-5 h-5" />
                       </div>
-                      <span className="text-[11px] font-bold tracking-wide max-w-[48px] min-[360px]:max-w-[72px] truncate">{activeSheetTab ? activeSheetTab.label : "Tools"}</span>
+                      <span className="text-[11px] font-bold tracking-wide max-w-[48px] min-[360px]:max-w-[72px] truncate">{activeSheetTab ? shortNavLabel(t, activeSheetTab) : t("nav.tools")}</span>
                     </button>
                   );
                 }
@@ -3429,8 +3468,8 @@ export default function App() {
                     >
                       <tab.icon className="w-5 h-5" />
                     </div>
-                    <span className="text-[11px] font-bold tracking-wide">
-                      {tab.label}
+                    <span className="text-[11px] font-bold tracking-wide max-w-[72px] truncate">
+                      {shortNavLabel(t, tab)}
                     </span>
                   </button>
                 );
@@ -3444,11 +3483,11 @@ export default function App() {
                   setShowMobileToolsSheet(false);
                 }}
                 aria-expanded={showAllTools}
-                aria-label={showAllTools ? "Show the simpler navigation" : "Explore all available tools"}
+                aria-label={showAllTools ? t("nav.keepSimpleLabel") : t("nav.exploreAllLabel")}
                 className="p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] text-text-muted hover:text-text-main"
               >
                 <span className="p-1.5 rounded-full"><Menu className="w-5 h-5" /></span>
-                <span className="text-[11px] font-bold tracking-wide">{showAllTools ? "Less" : "More"}</span>
+                <span className="text-[11px] font-bold tracking-wide">{showAllTools ? t("nav.less") : t("nav.more")}</span>
               </button>
             )}
           </div>

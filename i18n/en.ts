@@ -162,6 +162,11 @@ export const en = {
   'insights.loadError': 'Your insights could not be loaded right now. Please try again.',
   'insights.updateError': 'Your insights could not be updated right now. Nothing was changed.',
   'insights.novaNote': 'Nova used only the insights you allow it to see. This is coaching, not medical advice.',
+  'insights.steady': 'Steady',
+  'insights.label.energy_trend': 'Energy',
+  'insights.label.mood_trend': 'Mood',
+  'insights.label.recovery_debt': 'Pressure load',
+  'insights.valueLabel': '{label}: {value} out of 100, {tone}',
 
   // Personal plan
   'plan.noDebt': 'No recovery debt logged yet',

@@ -1,4 +1,5 @@
-import { EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_GUIDANCE, EXPERIENCE_LEVEL_LABELS, type ExperienceLevel } from '../../experience-level';
+import { EXPERIENCE_LEVELS, type ExperienceLevel } from '../../experience-level';
+import { useI18n } from '../lib/i18n-react';
 import { cn } from '../lib/utils';
 
 // Customer-chosen display level. Progressive disclosure only: it never
@@ -15,10 +16,11 @@ export function ExperienceLevelSwitcher({
   error?: string | null;
   className?: string;
 }) {
+  const { t } = useI18n();
   return (
     <div className={cn('space-y-2', className)} data-testid="experience-level-switcher">
       <p id="experience-level-label" className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-        Your experience
+        {t('experience.heading')}
       </p>
       <div role="radiogroup" aria-labelledby="experience-level-label" className="grid grid-cols-3 gap-1 rounded-xl bg-surface border border-border p-1">
         {EXPERIENCE_LEVELS.map((option) => (
@@ -33,12 +35,12 @@ export function ExperienceLevelSwitcher({
               level === option ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-text-main',
             )}
           >
-            {EXPERIENCE_LEVEL_LABELS[option]}
+            {t(`experience.${option}`)}
           </button>
         ))}
       </div>
       <p className="text-xs leading-snug text-text-muted" aria-live="polite">
-        <span className="font-semibold text-ember-accent">Nova Blaze:</span> {EXPERIENCE_LEVEL_GUIDANCE[level]}
+        <span className="font-semibold text-ember-accent">{t('experience.novaPrefix')}</span> {t(`experience.guidance.${level}`)}
       </p>
       {error && <p role="alert" className="text-xs text-ember-danger">{error}</p>}
     </div>

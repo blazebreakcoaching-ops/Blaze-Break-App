@@ -165,3 +165,24 @@ describe('company reporting never reads personal derived summaries', () => {
     });
   });
 });
+
+describe('Nova explains insights in the customer\'s chosen language', () => {
+  it('uses the stored language preference; a body cannot set it', async () => {
+    seedDoc('users/u1/nova_permissions/current', allowAll);
+    seedDoc('users/u1/preferences/ui', { localePreference: 'fr' });
+    seedDoc('users/u1/derived/energy_trend', summary('energy_trend'));
+    const res = await request(app).post('/api/recovery/insights/explain').set(auth('u1')).send({});
+    expect(res.status).toBe(200);
+    const prompt: string = h.generateContent.mock.calls[0][0].contents;
+    expect(prompt).toContain('Reply in French (Français)');
+    expect(prompt).toMatch(/do not invent/i);
+    expect((await request(app).post('/api/recovery/insights/explain').set(auth('u1')).send({ language: 'ar' })).status).toBe(400);
+  });
+
+  it('English (or no preference) adds no language instruction', async () => {
+    seedDoc('users/u2/nova_permissions/current', allowAll);
+    seedDoc('users/u2/derived/energy_trend', summary('energy_trend'));
+    await request(app).post('/api/recovery/insights/explain').set(auth('u2')).send({});
+    expect(h.generateContent.mock.calls[0][0].contents).not.toContain('Reply in');
+  });
+});

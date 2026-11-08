@@ -1,3 +1,5 @@
+import { useI18n } from '../lib/i18n-react';
+import type { TranslationKey } from '../../i18n';
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
@@ -19,16 +21,24 @@ interface Insight {
   explanation: string;
 }
 
-const TONE_TEXT: Record<Tone, string> = {
-  better: 'Helpful direction',
-  worse: 'Worth some attention',
-  steady: 'Steady',
-  unknown: 'No clear direction yet',
+const TONE_KEY: Record<Tone, TranslationKey> = {
+  better: 'insights.helpful',
+  worse: 'insights.attention',
+  steady: 'insights.steady',
+  unknown: 'insights.noDirection',
+};
+const LABEL_KEYS: Record<string, TranslationKey> = {
+  energy_trend: 'insights.label.energy_trend',
+  mood_trend: 'insights.label.mood_trend',
+  recovery_debt: 'insights.label.recovery_debt',
 };
 
 const reasonOf = (e: unknown, fallback: string) => (e instanceof SecureApiError ? e.message : fallback);
 
 export const RecoveryInsightsPanel = () => {
+  const { t, number } = useI18n();
+  const toneText = (tone: Tone) => t(TONE_KEY[tone]);
+  const labelOf = (i: { type: string; label: string }) => (LABEL_KEYS[i.type] ? t(LABEL_KEYS[i.type]) : i.label);
   const [insights, setInsights] = useState<Insight[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,7 +55,7 @@ export const RecoveryInsightsPanel = () => {
       const data = await res.json();
       setInsights(Array.isArray(data.insights) ? data.insights : []);
     } catch (e) {
-      setError(reasonOf(e, 'Your insights could not be loaded right now. Please try again.'));
+      setError(reasonOf(e, t('insights.loadError')));
     }
     setLoading(false);
   }, []);
@@ -61,7 +71,7 @@ export const RecoveryInsightsPanel = () => {
       await secureApiFetch('/api/recovery/recalculate', { method: 'POST', data: {} });
       await load();
     } catch (e) {
-      setError(reasonOf(e, 'Your insights could not be updated right now. Nothing was changed.'));
+      setError(reasonOf(e, t('insights.updateError')));
     }
     setUpdating(false);
   };
@@ -74,10 +84,10 @@ export const RecoveryInsightsPanel = () => {
       const res = await secureApiFetch('/api/recovery/insights/explain', { method: 'POST', data: {} });
       const data = await res.json();
       if (data.explanation) setExplanation(data.explanation);
-      else if (data.reason === 'no_consent') setExplainNote("Nova can't see these insights because you haven't allowed it. You can change this in Privacy Centre under Nova permissions.");
-      else setExplainNote("There isn't enough data yet for Nova to explain a trend. Keep logging for a few more days.");
+      else if (data.reason === 'no_consent') setExplainNote(t('insights.noConsent'));
+      else setExplainNote(t('insights.notEnough'));
     } catch (e) {
-      setExplainNote(reasonOf(e, "Nova couldn't explain your insights right now. Your insights above are still accurate."));
+      setExplainNote(reasonOf(e, t('insights.explainError')));
     }
     setExplaining(false);
   };
@@ -88,8 +98,8 @@ export const RecoveryInsightsPanel = () => {
     <section aria-labelledby="your-insights-heading" data-nova-guide-target="insights-content" tabIndex={-1} className="rounded-xl border border-border bg-surface p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 id="your-insights-heading" className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Your insights</h3>
-          <p className="text-xs text-text-muted mt-1">From what you have logged in the last 30 days. Only you can see these.</p>
+          <h3 id="your-insights-heading" className="text-[11px] font-bold uppercase tracking-widest text-text-muted">{t('insights.heading')}</h3>
+          <p className="text-xs text-text-muted mt-1">{t('insights.sub')}</p>
         </div>
         <button
           type="button"
@@ -98,11 +108,11 @@ export const RecoveryInsightsPanel = () => {
           className="shrink-0 py-2 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
         >
           {updating ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
-          {updating ? 'Updating…' : 'Update my insights'}
+          {updating ? t('insights.updating') : t('insights.update')}
         </button>
       </div>
 
-      {loading && <p role="status" className="text-xs text-text-muted">Loading your insights…</p>}
+      {loading && <p role="status" className="text-xs text-text-muted">{t('insights.loading')}</p>}
       {!loading && error && <p role="alert" className="text-xs text-destructive">{error}</p>}
 
       {!loading && insights && (
@@ -110,15 +120,15 @@ export const RecoveryInsightsPanel = () => {
           {insights.map((insight) => (
             <li key={insight.type} className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-sm font-bold text-text-main">{insight.label}</span>
+                <span className="text-sm font-bold text-text-main">{labelOf(insight)}</span>
                 <span className="text-xs text-text-muted">
-                  {insight.state === 'available' ? TONE_TEXT[insight.tone] : 'Not available yet'}
+                  {insight.state === 'available' ? toneText(insight.tone) : t('insights.notAvailable')}
                 </span>
               </div>
               {insight.state === 'available' && insight.value !== null && (
                 <div
                   role="img"
-                  aria-label={`${insight.label}: ${insight.value} out of 100, ${TONE_TEXT[insight.tone].toLowerCase()}`}
+                  aria-label={t('insights.valueLabel', { label: labelOf(insight), value: number(insight.value ?? 0), tone: toneText(insight.tone).toLocaleLowerCase() })}
                   className="h-2 rounded-full bg-border overflow-hidden"
                 >
                   <div className="h-full rounded-full bg-primary" style={{ width: `${insight.value}%` }} />
@@ -139,13 +149,13 @@ export const RecoveryInsightsPanel = () => {
             className="py-2 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
             {explaining ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />}
-            {explaining ? 'Nova is thinking…' : 'Ask Nova to explain'}
+            {explaining ? t('insights.thinking') : t('insights.ask')}
           </button>
-          {!anyAvailable && <p className="text-xs text-text-muted">Nova can explain your insights once at least one is available.</p>}
+          {!anyAvailable && <p className="text-xs text-text-muted">{t('insights.askDisabled')}</p>}
           {explanation && (
             <div role="status" className="text-sm text-text-main space-y-1">
               <p>{explanation}</p>
-              <p className="text-[11px] text-text-muted">Nova used only the insights you allow it to see. This is coaching, not medical advice.</p>
+              <p className="text-[11px] text-text-muted">{t('insights.novaNote')}</p>
             </div>
           )}
           {explainNote && <p role="status" className="text-xs text-text-muted">{explainNote}</p>}

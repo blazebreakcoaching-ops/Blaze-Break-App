@@ -14,6 +14,9 @@ import { useAuth } from '../lib/auth';
 import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 import { profileImageFileError, profileImageDimensions } from '../lib/profile-image-safety';
 import { deviceTimeZone, validTimeZone } from '../../personal-welcome';
+import { useI18n } from '../lib/i18n-react';
+import { LanguageSelector } from './LanguageSelector';
+import { resolveLocale } from '../../i18n';
 
 interface SettingsModalProps {
   profile: UserProfileData | undefined;
@@ -24,6 +27,7 @@ interface SettingsModalProps {
 
 export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }: SettingsModalProps) => {
   const { logOut, user } = useAuth();
+  const { t, locale, setLocale } = useI18n();
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'experiments' | 'consent' | 'feedback'>('profile');
   const [formData, setFormData] = useState<UserProfileData>(profile || {
     fullName: '',
@@ -146,7 +150,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
 
   const validate = () => {
     const newErrors: { fullName?: string; email?: string; timeZone?: string } = {};
-    if (formData.timeZone && !validTimeZone(formData.timeZone)) newErrors.timeZone = 'Use a valid time zone such as Europe/London';
+    if (formData.timeZone && !validTimeZone(formData.timeZone)) newErrors.timeZone = t('settings.timeZoneError');
     if (!formData.fullName.trim()) {
       newErrors.fullName = 'Full name is required';
     }
@@ -431,31 +435,41 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                   </div>
 
                   <div className="space-y-1.5">
-                    <label htmlFor="settings-preferred-name" className="block text-xs font-bold text-text-muted">Preferred name (optional)</label>
+                    <label htmlFor="settings-preferred-name" className="block text-xs font-bold text-text-muted">{t('settings.preferredName')}</label>
                     <input id="settings-preferred-name" type="text" maxLength={60} autoComplete="nickname"
                       value={formData.preferredName || ''}
                       onChange={e => setFormData({ ...formData, preferredName: e.target.value })}
                       className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-main" />
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="settings-time-zone" className="block text-xs font-bold text-text-muted">Time zone</label>
+                    <label htmlFor="settings-time-zone" className="block text-xs font-bold text-text-muted">{t('settings.timeZone')}</label>
                     <input id="settings-time-zone" type="text" maxLength={80}
                       value={formData.timeZone || deviceTimeZone()}
                       onChange={e => setFormData({ ...formData, timeZone: e.target.value })}
                       aria-invalid={!!errors.timeZone}
                       aria-describedby={errors.timeZone ? "settings-time-zone-help settings-time-zone-error" : "settings-time-zone-help"}
                       className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-main" />
-                    <p id="settings-time-zone-help" className="text-xs text-text-muted">Suggested from your device. No precise location is collected.</p>
+                    <p id="settings-time-zone-help" className="text-xs text-text-muted">{t('settings.timeZoneHelp')}</p>
                     {errors.timeZone && <p id="settings-time-zone-error" role="alert" className="text-xs text-ember-danger">{errors.timeZone}</p>}
                   </div>
+                  {/* Instant switch, saved to the account straight away. */}
+                  <LanguageSelector
+                    id="settings-language"
+                    value={resolveLocale(formData.language || locale)}
+                    onChange={(code) => { setLocale(code); savePreference({ ...formData, language: code }); }}
+                  />
+                  <label className="flex items-start gap-3 text-sm text-text-main">
+                    <input type="checkbox" checked={formData.lowEnergyMode === true}
+                      onChange={e => savePreference({ ...formData, lowEnergyMode: e.target.checked })}
+                      aria-describedby="settings-low-energy-hint"
+                      className="h-5 w-5 mt-0.5 accent-primary" />
+                    <span>
+                      <span className="block font-semibold">{t('settings.lowEnergy')}</span>
+                      <span id="settings-low-energy-hint" className="block text-xs text-text-muted">{t('settings.lowEnergyHint')}</span>
+                    </span>
+                  </label>
                   <div className="space-y-1.5">
-                    <label htmlFor="settings-language" className="block text-xs font-bold text-text-muted">Language</label>
-                    <select id="settings-language" value="en" disabled className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-main">
-                      <option value="en">English — other translations are being prepared</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label htmlFor="settings-region" className="block text-xs font-bold text-text-muted">Country or region (optional)</label>
+                    <label htmlFor="settings-region" className="block text-xs font-bold text-text-muted">{t('settings.region')}</label>
                     <input id="settings-region" type="text" maxLength={60}
                       value={formData.region || ''}
                       onChange={e => setFormData({ ...formData, region: e.target.value })}
@@ -465,14 +479,14 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                     <input type="checkbox" checked={formData.greetingEnabled !== false}
                       onChange={e => setFormData({ ...formData, greetingEnabled: e.target.checked })}
                       className="h-5 w-5 accent-primary" />
-                    Show welcome messages
+                    {t('settings.showWelcome')}
                   </label>
                   <div className="space-y-1.5">
-                    <label htmlFor="settings-welcome-style" className="block text-xs font-bold text-text-muted">Welcome style</label>
+                    <label htmlFor="settings-welcome-style" className="block text-xs font-bold text-text-muted">{t('settings.welcomeStyle')}</label>
                     <select id="settings-welcome-style" value={formData.greetingTone || 'warm'}
                       onChange={e => setFormData({ ...formData, greetingTone: e.target.value as 'warm' | 'simple' | 'direct' })}
                       className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-main">
-                      <option value="warm">Warm</option><option value="simple">Simple</option><option value="direct">Direct</option>
+                      <option value="warm">{t('settings.tone.warm')}</option><option value="simple">{t('settings.tone.simple')}</option><option value="direct">{t('settings.tone.direct')}</option>
                     </select>
                   </div>
 

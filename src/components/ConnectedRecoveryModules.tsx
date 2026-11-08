@@ -8,6 +8,7 @@ import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { LOW_ENERGY_OPTIONS, type LowEnergyResponse } from '../../low-energy-checkin';
+import { useI18n } from '../lib/i18n-react';
 
 // Helper for empty states
 const SecureVaultNotice = () => (
@@ -31,6 +32,7 @@ const ErrorMessage = ({ msg }: { msg: string }) => {
 // 1. Connected Daily Check-In
 export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }: { onClose: () => void, onReviewWithNova?: () => void, onComplete?: (data: { energyLevel: number; focusLevel: number; detachmentLevel: number; stressLoad: number }) => void }) => {
   const dialogRef = useFocusTrap(true);
+  const { t } = useI18n();
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -56,7 +58,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
   const handleQuickResponse = async (response: LowEnergyResponse) => {
     const currentUid = auth.currentUser?.uid;
     if (!currentUid) {
-      setError('Please sign in before saving your answer.');
+      setError(t('checkin.low.signIn'));
       return;
     }
     if (quickSavingRef.current) return;
@@ -77,7 +79,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
       // instantly, which left people unsure whether anything was saved.
       setQuickSaved(true);
     } catch {
-      setError('Your answer could not be saved. Try again when you are ready.');
+      setError(t('checkin.low.saveError'));
     } finally {
       quickSavingRef.current = false;
       setLoading(false);
@@ -174,9 +176,9 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
           {step === 0 && (
             <div className="space-y-6">
               <button onClick={() => { setStep(2); setEditingId(null); setError(''); }} className="w-full min-h-12 rounded-xl border border-primary/30 bg-primary/10 text-text-main px-4 py-3 text-sm font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
-                One-question check-in
+                {t('checkin.low.entry')}
               </button>
-              <p className="text-xs text-text-muted">One tap, no numerical scores. You can skip anytime.</p>
+              <p className="text-xs text-text-muted">{t('checkin.low.entryHint')}</p>
               <button onClick={() => { setStep(1); setEditingId(null); }} className="w-full btn-primary py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
                 <Plus className="w-4 h-4" /> New Check-In
               </button>
@@ -217,26 +219,26 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
 
           {step === 2 && quickSaved && (
             <section className="space-y-4">
-              <p role="status" className="text-lg font-bold text-text-main">Saved. Thank you for checking in.</p>
-              <p className="text-sm text-text-muted">Your answer is private and does not create a recovery score.</p>
-              <button type="button" autoFocus onClick={onClose} className="w-full min-h-12 btn-primary rounded-xl text-sm font-bold">Done</button>
+              <p role="status" className="text-lg font-bold text-text-main">{t('checkin.low.saved')}</p>
+              <p className="text-sm text-text-muted">{t('checkin.low.savedNote')}</p>
+              <button type="button" autoFocus onClick={onClose} className="w-full min-h-12 btn-primary rounded-xl text-sm font-bold">{t('common.done')}</button>
             </section>
           )}
 
           {step === 2 && !quickSaved && (
             <section aria-labelledby="low-energy-checkin-question" className="space-y-3">
-              <h4 id="low-energy-checkin-question" className="text-lg font-bold text-text-main">How are you feeling right now?</h4>
-              <p className="text-sm text-text-muted">Choose what feels closest. There is no wrong answer.</p>
+              <h4 id="low-energy-checkin-question" className="text-lg font-bold text-text-main">{t('checkin.low.question')}</h4>
+              <p className="text-sm text-text-muted">{t('checkin.low.sub')}</p>
               {LOW_ENERGY_OPTIONS.map(option => (
                 <button key={option.id} type="button" disabled={loading}
                   onClick={() => { void handleQuickResponse(option.id); }}
                   className="w-full min-h-14 rounded-xl border border-border bg-surface p-4 text-left text-text-main hover:border-primary/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60">
-                  <span className="block font-semibold">{option.label}</span>
-                  <span className="block text-sm text-text-muted">{option.description}</span>
+                  <span className="block font-semibold">{t(`checkin.low.${option.id}`)}</span>
+                  <span className="block text-sm text-text-muted">{t(`checkin.low.${option.id}.desc`)}</span>
                 </button>
               ))}
-              <p className="text-xs text-text-muted">Private and qualitative. This does not create a recovery score.</p>
-              <button type="button" disabled={loading} onClick={() => setStep(0)} className="min-h-12 px-3 text-sm text-text-muted underline">Go back</button>
+              <p className="text-xs text-text-muted">{t('checkin.low.privacy')}</p>
+              <button type="button" disabled={loading} onClick={() => setStep(0)} className="min-h-12 px-3 text-sm text-text-muted underline">{t('common.goBack')}</button>
             </section>
           )}
 

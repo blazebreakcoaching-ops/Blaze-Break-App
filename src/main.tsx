@@ -1,3 +1,4 @@
+import { I18nRoot } from './lib/i18n-react';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import { MotionConfig } from 'motion/react';
@@ -61,6 +62,7 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary level="app">
       <AuthProvider>
         <MotionConfig reducedMotion="user">
+          <I18nRoot>
           {allyTokenMatch ? (
             <AllyView token={allyTokenMatch[1]} />
           ) : isAuthActionPath ? (
@@ -68,6 +70,7 @@ createRoot(document.getElementById('root')!).render(
           ) : (
             <AccountAccessGate />
           )}
+          </I18nRoot>
         </MotionConfig>
       </AuthProvider>
     </ErrorBoundary>

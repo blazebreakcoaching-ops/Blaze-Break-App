@@ -7,6 +7,9 @@ const DEVICE_ONLY_KEYS = new Set([
   'blaze_dark_mode',
   'blaze_theme_mode',
   'blaze_feature_flags',
+  // Interface language chosen on this device (a language code only, no
+  // personal data); the signed-in account's saved choice overrides it.
+  'blaze_ui_locale',
 ]);
 
 const ACCOUNT_PREFIXES = [

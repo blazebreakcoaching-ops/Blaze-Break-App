@@ -17,6 +17,7 @@ import { BurnoutFingerprint, UserStats } from '../types';
 import { cn } from '../lib/utils';
 import { updateNovaMemoryBySourceAndType, logJourney } from '../lib/nova-brain';
 import { highestRecordedDebt, recordedDebts } from '../lib/recorded-debts';
+import { useI18n } from '../lib/i18n-react';
 
 const NO_DEBT_SENTINEL = '\u0000no-recorded-debt\u0000';
 
@@ -44,6 +45,7 @@ export const RecoveryPlan = ({
   onNavigateTab,
   onRehearsalComplete
 }: RecoveryPlanProps) => {
+  const { t } = useI18n();
 
   // Opt-in and nickname settings, plan progress, and journals - all now
   // genuinely persisted to Firestore rather than trapped in one browser.
@@ -600,7 +602,7 @@ export const RecoveryPlan = ({
               Profile: {archetype}
             </span>
             <span className="text-[10px] text-text-muted mt-1 font-medium">
-              {highestDebt ? `Highest Debt: ${highestDebt.label} (${highestDebt.value}${highestDebt.unit})` : 'No recovery debt logged yet'}
+              {highestDebt ? `Highest Debt: ${highestDebt.label} (${highestDebt.value}${highestDebt.unit})` : t('plan.noDebt')}
             </span>
           </div>
         </div>
@@ -633,11 +635,11 @@ export const RecoveryPlan = ({
                   </div>
                 </>
               ) : (
-                <p className="text-xs text-text-main">Nothing logged yet.</p>
+                <p className="text-xs text-text-main">{t('plan.nothingLogged')}</p>
               )}
             </div>
             <div className="mt-4 text-[10px] text-text-muted leading-relaxed">
-              Log sleep, capacity and commitments in the Debt Tracker to keep these signals up to date.
+              {t('plan.logHint')}
             </div>
           </div>
         </div>
