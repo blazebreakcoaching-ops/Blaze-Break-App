@@ -27,8 +27,10 @@ describe('Burnout Fingerprint question localisation', () => {
     expect(file).toContain('handleAnswer(option.value)');
     expect(file).toContain('data: { answers: finalAnswers, letNovaLearn }');
   });
-  it('does not imply answer-option translations or validation are complete', () => {
-    expect(file).toContain('{option.text}');
+  it('translates only quick answers while retaining the English full-assessment fallback', () => {
+    expect(file).toContain("mode === 'quick'");
+    expect(file).toContain("fingerprint.option.");
+    expect(file).toContain(": option.text");
     expect(file).toContain("const QUICK_CHECK_IDS = ['workload', 'boundaries'");
   });
 });
