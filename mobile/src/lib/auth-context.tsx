@@ -2,10 +2,10 @@
 // Phase 1 screen needs (anonymous-first sign-in, email/password with
 // anonymous-session upgrade, sign-out) and drops what's out of scope
 // this phase: social providers other than email (Google native sign-in
-// needs its own extra native config), an interactive MFA challenge and
-// email-verification banners. Native must still CHECK the MFA-enabled
-// claim and block access until it has a real second-factor experience.
-// This client gate does not replace Firestore rules or server enforcement.
+// needs its own extra native config) and email-verification banners.
+// Accounts with two-factor on are held at the native challenge
+// (MfaChallengeScreen) until the server verifies a code for THIS sign-in;
+// the server and Firestore rules enforce the same requirement independently.
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   User,
@@ -20,6 +20,9 @@ import {
 import { auth, getDb } from './firebase';
 import { classifyNativeAccountSecurity, type NativeAccountSecurity } from './native-account-security';
 import { mayCommitNativeAuthCallback } from './native-auth-callback';
+import { secureApiFetch, SecureApiError } from './secure-api';
+import { setMfaSessionToken, getMfaSessionToken, clearMfaSessionToken, onMfaSessionExpired } from './mfa-session';
+import { buildMfaSubmission, describeMfaFailure, extractMfaSessionToken, type MfaMode } from './mfa-challenge';
 
 interface AuthContextType {
   user: User | null;
@@ -28,6 +31,8 @@ interface AuthContextType {
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
+  /** Verifies a two-factor code for the current sign-in. Resolves to an error message, or null on success. */
+  verifyMfa: (mode: MfaMode, value: string) => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -37,7 +42,30 @@ const AuthContext = createContext<AuthContextType>({
   signUpWithEmail: async () => {},
   signInWithEmail: async () => {},
   logOut: async () => {},
+  verifyMfa: async () => 'Not ready.',
 });
+
+// Ensures the signed-in account has its profile document. Runs only once
+// the account is cleared to read app data (after two-factor if enabled).
+async function ensureUserDocument(userRecord: User, stillCurrent: () => boolean): Promise<void> {
+  try {
+    const db = await getDb();
+    const { doc, getDoc, setDoc } = await import('firebase/firestore');
+    if (!stillCurrent()) return;
+    const userDocRef = doc(db, 'users', userRecord.uid);
+    const userDoc = await getDoc(userDocRef);
+    if (!stillCurrent()) return;
+    if (!userDoc.exists()) {
+      await setDoc(userDocRef, {
+        ...(userRecord.displayName ? { displayName: userRecord.displayName } : {}),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch (e) {
+    console.warn('Could not ensure user document exists:', e);
+  }
+}
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -62,6 +90,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const current = ++generation;
       const nextUid = userRecord?.uid ?? null;
       if (nextUid !== settledAuthUidRef.current) {
+        // A different account (or none): never carry a verification over.
+        clearMfaSessionToken();
         setUser(null);
         setSecurityGate('unverified');
       }
@@ -77,6 +107,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // REST requests. Refresh it BEFORE any native Firestore read.
             const result = await userRecord.getIdTokenResult(true);
             gate = classifyNativeAccountSecurity(false, result.claims);
+            // Already verified in this app session for this same account
+            // (e.g. a token refresh re-fired this listener).
+            if (gate === 'mfa_required' && getMfaSessionToken(userRecord.uid)) gate = 'clear';
           } catch {
             gate = 'unverified'; // Fail closed if claims cannot be checked.
           }
@@ -89,23 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
           return; // No native Firestore read or user-document write.
         }
-        try {
-          const db = await getDb();
-          const { doc, getDoc, setDoc } = await import('firebase/firestore');
-          if (!stillCurrent()) return;
-          const userDocRef = doc(db, 'users', userRecord.uid);
-          const userDoc = await getDoc(userDocRef);
-          if (!stillCurrent()) return;
-          if (!userDoc.exists()) {
-            await setDoc(userDocRef, {
-              ...(userRecord.displayName ? { displayName: userRecord.displayName } : {}),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        } catch (e) {
-          console.warn('Could not ensure user document exists:', e);
-        }
+        await ensureUserDocument(userRecord, stillCurrent);
         if (!stillCurrent()) return;
         setSecurityGate('clear');
         setLoading(false);
@@ -136,6 +153,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubscribe();
     };
   }, []);
+
+  // Server reported the two-factor session expired or was revoked: return
+  // the SAME account to the challenge (no data screens in the meantime).
+  useEffect(() => onMfaSessionExpired(() => {
+    if (auth.currentUser && !auth.currentUser.isAnonymous) setSecurityGate('mfa_required');
+  }), []);
+
+  const verifyMfa = async (mode: MfaMode, value: string): Promise<string | null> => {
+    const submission = buildMfaSubmission(mode, value);
+    if (!submission.ok) return submission.message;
+    const verifyingUid = auth.currentUser?.uid ?? null;
+    if (!verifyingUid) return 'You have been signed out. Please sign in again.';
+    let token: string | null = null;
+    try {
+      const res = await secureApiFetch('/api/auth/mfa/totp/verify-at-signin', { method: 'POST', data: submission.body, noAuthRetry: true });
+      token = extractMfaSessionToken(await res.json());
+    } catch (e) {
+      return describeMfaFailure(e instanceof SecureApiError ? e.status : -1);
+    }
+    // The account may have changed while the request was in flight.
+    const stillSameAccount = () => auth.currentUser?.uid === verifyingUid;
+    if (!token || !stillSameAccount()) {
+      return token ? 'Your account changed during verification. Please sign in again.' : describeMfaFailure(-1);
+    }
+    setMfaSessionToken(verifyingUid, token);
+    const current = auth.currentUser;
+    if (current) await ensureUserDocument(current, stillSameAccount);
+    if (!stillSameAccount()) return 'Your account changed during verification. Please sign in again.';
+    setSecurityGate('clear');
+    return null;
+  };
 
   const signUpWithEmail = async (email: string, password: string) => {
     try {
@@ -173,6 +221,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logOut = async () => {
+    clearMfaSessionToken();
     explicitSignOutRef.current = true;
     try {
       await signOut(auth);
@@ -183,7 +232,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, securityGate, signUpWithEmail, signInWithEmail, logOut }}>
+    <AuthContext.Provider value={{ user, loading, securityGate, signUpWithEmail, signInWithEmail, logOut, verifyMfa }}>
       {children}
     </AuthContext.Provider>
   );

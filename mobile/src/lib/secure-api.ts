@@ -3,11 +3,12 @@
 // adapted for two things web didn't need: an absolute API_BASE_URL
 // (native fetch has no same-origin relative path to fall back to) and a
 // native App Check token source (see app-check.ts) instead of web's
-// reCAPTCHA Enterprise one. MFA-session-token handling is NOT available
-// in native yet. Existing website users CAN have MFA enabled; the native
-// AuthProvider now blocks those users before any app-owned Firestore read.
-// This is not itself a replacement for a server-enforced data boundary.
+// reCAPTCHA Enterprise one. For accounts with two-factor on, the signed
+// MFA session token (mfa-session.ts) is attached as X-MFA-Session-Token,
+// exactly like the website; if the server reports MFA_SESSION_REQUIRED the
+// token is discarded and the app returns to the two-factor challenge.
 import { auth } from './firebase';
+import { getMfaSessionToken, expireMfaSession } from './mfa-session';
 import { getAppCheckToken } from './app-check';
 import { API_BASE_URL } from './config';
 import { buildNativeApiUrl } from './api-url';
@@ -26,6 +27,8 @@ export class SecureApiError extends Error {
 
 interface SecureApiOptions extends RequestInit {
   data?: unknown;
+  /** Never auto-retry a 401/403 (e.g. a wrong 2FA code must count once, not twice). */
+  noAuthRetry?: boolean;
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
@@ -59,8 +62,13 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   if (appCheckToken) {
     headers.set('X-Firebase-AppCheck', appCheckToken);
   }
+  // Only ever this account's own token (bound to uid in mfa-session.ts).
+  const mfaSessionToken = getMfaSessionToken(user.uid);
+  if (mfaSessionToken) {
+    headers.set('X-MFA-Session-Token', mfaSessionToken);
+  }
 
-  const { data, ...rest } = options;
+  const { data, noAuthRetry, ...rest } = options;
   if (data !== undefined) {
     headers.set('Content-Type', 'application/json');
     (rest as RequestInit).body = JSON.stringify(data);
@@ -85,19 +93,34 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
 
   const status = response.status;
 
-  if ((status === 401 || status === 403) && retryCount < 1) {
-    return secureApiFetch(path, options, retryCount + 1);
-  }
-
+  // Read the body once (a response stream cannot be read twice).
   let errorMessage = `API Error ${status}`;
   let errorDetails: unknown = null;
-
+  let errorCode: string | undefined;
   try {
-    const errorData = await response.json();
-    if (errorData.error) errorMessage = errorData.error;
-    if (errorData.details) errorDetails = errorData.details;
+    const text = await response.text();
+    try {
+      const errorData = JSON.parse(text);
+      if (typeof errorData?.error === 'string') errorMessage = errorData.error;
+      if (errorData?.details !== undefined) errorDetails = errorData.details;
+      if (typeof errorData?.code === 'string') errorCode = errorData.code;
+    } catch {
+      if (text) errorMessage = text;
+    }
   } catch {
-    errorMessage = (await response.text()) || errorMessage;
+    // Keep the generic message.
+  }
+
+  // The two-factor session expired or was revoked: retrying with a fresh
+  // ID token cannot help. Drop the token and send the person back to the
+  // challenge screen instead of silently failing.
+  if (status === 401 && errorCode === 'MFA_SESSION_REQUIRED') {
+    expireMfaSession();
+    throw new SecureApiError('Please confirm your two-factor code to continue.', status, { code: errorCode });
+  }
+
+  if ((status === 401 || status === 403) && retryCount < 1 && !noAuthRetry) {
+    return secureApiFetch(path, options, retryCount + 1);
   }
 
   if (status === 401 || status === 403) {

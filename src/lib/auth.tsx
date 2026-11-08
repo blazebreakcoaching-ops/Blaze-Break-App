@@ -534,6 +534,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verifyMfaAtSignIn = async (codeOrRecoveryCode: string, isRecoveryCode = false) => {
     const res = await secureApiFetch('/api/auth/mfa/totp/verify-at-signin', {
       method: 'POST',
+      noAuthRetry: true,
       data: isRecoveryCode ? { recoveryCode: codeOrRecoveryCode } : { code: codeOrRecoveryCode },
     });
     const data = await res.json();

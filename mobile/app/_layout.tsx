@@ -4,6 +4,7 @@ import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/lib/auth-context';
 import { NativeThemeProvider, useNativeTheme } from '../src/lib/native-theme';
+import { MfaChallengeScreen } from '../src/components/MfaChallengeScreen';
 
 // The anonymous-first pattern means `user` is set as soon as loading
 // finishes for essentially everyone (even a brand-new visitor - see
@@ -41,16 +42,19 @@ function RootNavigator() {
     );
   }
 
-  // Even when Firebase Auth succeeds, an account that requires MFA cannot
-  // enter native screens until a real native challenge is implemented.
+  // An account with two-factor on sees only the challenge until the server
+  // verifies a code for this sign-in (no app screen or Firestore read first).
+  if (user && securityGate === 'mfa_required') {
+    return <MfaChallengeScreen />;
+  }
+
+  // Security status could not be confirmed (e.g. offline): fail closed.
   if (user && securityGate !== 'clear') {
     return (
       <View style={[styles.securityBlock, { backgroundColor: colors.background }]}>
         <Text style={[styles.securityTitle, { color: colors.text }]}>Additional verification required</Text>
         <Text style={[styles.securityExplanation, { color: colors.muted }]}>
-          {securityGate === 'mfa_required'
-            ? 'This account uses two-factor verification. Use the Blaze Break website to sign in until native verification is supported.'
-            : 'We could not verify your account security. Sign out and try again when connected.'}
+          We could not verify your account security. Sign out and try again when connected.
         </Text>
         <TouchableOpacity accessibilityRole="button" onPress={() => { void logOut(); }}
           style={[styles.securityButton, { backgroundColor: colors.accent }]}>

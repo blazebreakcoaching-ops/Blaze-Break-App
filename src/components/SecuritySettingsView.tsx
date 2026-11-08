@@ -118,6 +118,7 @@ export const SecuritySettingsView = ({ onEnabled }: SecuritySettingsViewProps = 
       const trimmed = disableInput.trim();
       const isNumericCode = /^\d{6}$/.test(trimmed);
       await secureApiFetch('/api/auth/mfa/totp/disable', {
+        noAuthRetry: true,
         method: 'POST',
         data: isNumericCode ? { code: trimmed } : { recoveryCode: trimmed },
       });

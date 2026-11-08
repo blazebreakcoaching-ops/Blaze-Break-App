@@ -16,6 +16,10 @@ export class SecureApiError extends Error {
 
 interface SecureApiOptions extends RequestInit {
   data?: any;
+  /** Never auto-retry a 401/403. A wrong 2FA code must be submitted once,
+   * not twice (each submission counts toward the lockout, and a recovery
+   * code is single-use). */
+  noAuthRetry?: boolean;
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
@@ -71,7 +75,7 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     headers.set('X-Firebase-AppCheck', "dev-bypass");
   }
 
-  const { data, ...requestInit } = options;
+  const { data, noAuthRetry, ...requestInit } = options;
   if (data !== undefined) {
     headers.set('Content-Type', 'application/json');
     requestInit.body = JSON.stringify(data);
@@ -96,7 +100,7 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   // Handle specific status codes
   const status = response.status;
   
-  if ((status === 401 || status === 403) && retryCount < 1) {
+  if ((status === 401 || status === 403) && retryCount < 1 && !noAuthRetry) {
     // Retry once with a forced token refresh
     return secureApiFetch(path, options, retryCount + 1);
   }
