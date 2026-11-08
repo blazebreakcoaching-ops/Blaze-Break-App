@@ -61,7 +61,7 @@ describe('NHEI individual situations', () => {
   });
   it('asks for clarification rather than guessing when capacity is unknown', () => {
     const decision = selectRoute([choice('a', 'guided_reset')], {
-      band: 'low_bandwidth', sufficientData: false, source: 'unknown',
+      band: null, sufficientData: false, source: 'insufficient_data',
     }, EMPTY_SESSION_STATE);
     expect(decision.routingOutcome).toBe('needs_clarification');
   });
