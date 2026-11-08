@@ -19208,6 +19208,11 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
     }
     const validHelpfulness: RoutingOutcomeHelpfulness | null =
       ROUTING_OUTCOME_HELPFULNESS.includes(helpfulness) ? helpfulness : null;
+    // Completed actions require an explicit, validated response. Never record
+    // an unrated completion as feedback for Nova's adaptive learning.
+    if (action === 'completed' && validHelpfulness === null) {
+      return res.status(400).json({ error: 'A helpfulness answer is required for completed actions.' });
+    }
 
     const decisionRef = db.collection('users').doc(user.uid).collection('recovery_routing_decisions').doc(decisionId);
     const sessionRef = db.collection("users").doc(user.uid).collection("recovery_routing").doc("session_state");
