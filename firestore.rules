@@ -1091,13 +1091,15 @@ service cloud.firestore {
         // console or any other direct Firestore client.
         allow delete: if isOwner(uid) && resource.data.canEdit == true;
         allow create, update: if isOwner(uid)
-            && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
+            && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit', 'canonicalKey', 'dataZone'])
             && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
             && request.resource.data.type in ['profile', 'trigger', 'state', 'rule', 'preference']
             && isStringWithMax(request.resource.data.content, 1000)
             && isStringWithMax(request.resource.data.source, 200)
             && request.resource.data.confidence in ['low', 'medium', 'high', 'verified']
-            && request.resource.data.canEdit is bool;
+            && request.resource.data.canEdit is bool
+            && (!('canonicalKey' in request.resource.data) || request.resource.data.canonicalKey == null || isStringWithMax(request.resource.data.canonicalKey, 300))
+            && (!('dataZone' in request.resource.data) || request.resource.data.dataZone == 'private_recovery_vault');
       }
 
       // M. nudge_history
