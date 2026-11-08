@@ -237,6 +237,18 @@ export const en = {
   'nova.placeholder': 'Tell Nova what is on your mind…',
   'nova.languageNote': 'Nova replies in your chosen language. Safety and crisis information is always given in full.',
 
+  // Help and support (service names, numbers and URLs are not translated)
+  'support.title': "Need support right now?",
+  'support.intro': "Support is available. You can contact someone you trust or a local service.",
+  'support.trusted': "Ask someone you trust",
+  'support.ukIreland': "If you are in the UK or Ireland",
+  'support.usCanada': "If you are in the US or Canada",
+  'support.world': "Anywhere else in the world",
+  'support.directory': "Find local support services",
+  'support.directoryDesc': "Find support services in other countries",
+  'support.emergency': "Emergency services",
+  'support.askCall': "Ask {name} to call me",
+
   // Common
   'common.goBack': 'Go back',
   'common.notToday': 'Not today',
