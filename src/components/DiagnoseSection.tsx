@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { BurnoutFingerprint } from "../types";
 import { secureApiFetch } from "../lib/secure-api";
+import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
+import { useI18n } from '../lib/i18n-react';
 
 const questions = [
   {
@@ -246,6 +248,7 @@ export const DiagnoseView = ({
 }: {
   onComplete: (f: BurnoutFingerprint) => void;
 }) => {
+  const { t } = useI18n();
   const [mode, setMode] = useState<'choice' | 'quick' | 'full'>('choice');
   const [step, setStep] = useState(0);
   const questionContainerRef = useRef<HTMLDivElement>(null);
@@ -287,25 +290,32 @@ export const DiagnoseView = ({
     setLoading(true);
     setError(null);
     try {
-      let letNovaLearn = true;
+      // A local profile is only evidence of this account's explicit opt-in when
+      // it belongs to the currently authenticated user. Missing/corrupt data
+      // must never imply permission for Nova to learn from this assessment.
+      let letNovaLearn = false;
+      const uid = auth.currentUser?.uid;
       try {
-        const storedProfile = localStorage.getItem("blaze_profile");
-        if (storedProfile) {
-          const parsed = JSON.parse(storedProfile);
-          if (parsed.letNovaLearn === false) letNovaLearn = false;
+        if (uid && localStorage.getItem('blaze_profile_uid') === uid) {
+          const storedProfile = localStorage.getItem("blaze_profile");
+          if (storedProfile) {
+            const parsed = JSON.parse(storedProfile);
+            letNovaLearn = hasExplicitNovaLearningConsent(parsed?.letNovaLearn);
+          }
         }
-      } catch (e) {
-        // Corrupted local profile — default to the opt-in behaviour rather than blocking the assessment.
+      } catch {
+        letNovaLearn = false;
       }
       const res = await secureApiFetch("/api/nova/diagnose", {
         method: "POST",
         data: { answers: finalAnswers, letNovaLearn },
       });
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if (!res.ok || data.error) throw new Error('assessment_failed');
       onComplete({ ...data, wasQuickCheck: mode === 'quick' });
-    } catch (err: any) {
-      setError(err.message || "Failed to analyse assessment");
+    } catch {
+      // Raw backend errors may disclose implementation and personal context.
+      setError(t('common.tryAgain'));
     } finally {
       setLoading(false);
     }
@@ -365,9 +375,9 @@ export const DiagnoseView = ({
         <h3 className="font-display text-2xl font-bold">
           Something went wrong
         </h3>
-        <p className="font-display text-lg opacity-60">{error}</p>
+        <p role="alert" className="font-display text-lg opacity-60">{error}</p>
         <button onClick={() => setStep(0)} className="btn-primary bg-destructive">
-          Try Again
+          {t('common.tryAgain')}
         </button>
       </div>
     );
