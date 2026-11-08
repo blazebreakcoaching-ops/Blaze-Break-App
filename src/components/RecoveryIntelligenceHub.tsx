@@ -122,12 +122,40 @@ export const RecoveryIntelligenceHub = () => {
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [showMoodCheck, setShowMoodCheck] = useState(false);
   const [pendingOutcomeCheck, setPendingOutcomeCheck] = useState<PendingOutcomeCheck | null>(null);
+  const [outcomeError, setOutcomeError] = useState('');
+  const [floorMode, setFloorMode] = useState(false);
 
-  const reportOutcome = useCallback((decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string) => {
-    if (!decisionId || !accountUid || auth.currentUser?.uid !== accountUid) return;
-    void secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } }).catch(() => {
-      // Non-fatal for navigation; persistence is verified separately in the feedback screen.
+  // A display preference only: no wellness information is written when this is toggled.
+  useEffect(() => {
+    setFloorMode(false);
+    if (!accountUid || auth.currentUser?.uid !== accountUid) return;
+    try { setFloorMode(localStorage.getItem('blaze_floor_mode_' + accountUid) === 'true'); } catch { /* optional */ }
+  }, [accountUid]);
+
+  const toggleFloorMode = () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || uid !== accountUid) return;
+    setFloorMode(previous => {
+      const next = !previous;
+      try { localStorage.setItem('blaze_floor_mode_' + uid, String(next)); } catch { /* optional */ }
+      return next;
     });
+  };
+
+  const reportOutcome = useCallback(async (decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string): Promise<boolean> => {
+    const uid = auth.currentUser?.uid;
+    if (!decisionId || !uid || uid !== accountUid) return false;
+    const generation = requestGeneration.current;
+    setOutcomeError('');
+    try {
+      await secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } });
+      return auth.currentUser?.uid === uid && generation === requestGeneration.current;
+    } catch {
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+        setOutcomeError('Your feedback could not be saved. Please try again.');
+      }
+      return false;
+    }
   }, [accountUid]);
 
   const fetchDecision = useCallback(async (body: Record<string, unknown> = {}) => {
@@ -155,7 +183,7 @@ export const RecoveryIntelligenceHub = () => {
   useEffect(() => {
     requestGeneration.current += 1;
     setDecision(null); setDirection(null); setPendingOutcomeCheck(null);
-    setError(''); setDismissed(false); setLoading(!!accountUid);
+    setError(''); setOutcomeError(''); setDismissed(false); setLoading(!!accountUid);
     const uid = auth.currentUser?.uid;
     if (!uid || uid !== accountUid) return;
     const generation = requestGeneration.current;
@@ -221,18 +249,26 @@ export const RecoveryIntelligenceHub = () => {
     fetchDecision({ explicitBandwidthReport: band });
   };
 
-  const handlePendingOutcomeAnswer = (helpfulness: 'better' | 'same' | 'not_really' | 'not_sure') => {
+  const handlePendingOutcomeAnswer = async (helpfulness: 'better' | 'same' | 'not_really' | 'not_sure') => {
     if (!pendingOutcomeCheck) return;
-    reportOutcome(pendingOutcomeCheck.decisionId, 'completed', helpfulness);
-    setPendingOutcomeCheck(null);
+    const saved = await reportOutcome(pendingOutcomeCheck.decisionId, 'completed', helpfulness);
+    if (saved) setPendingOutcomeCheck(null);
   };
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
-      <div>
-        <h2 className="text-2xl font-display font-black text-text-main">{t("title.recovery_intelligence")}</h2>
-        <p className="text-xs text-text-muted mt-1">One useful next step, not a wall of tools.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-display font-black text-text-main">{t("title.recovery_intelligence")}</h2>
+          <p className="text-xs text-text-muted mt-1">One useful next step, not a wall of tools.</p>
+        </div>
+        <button type="button" onClick={toggleFloorMode} aria-pressed={floorMode}
+          className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs text-text-main hover:border-primary">
+          {floorMode ? t('nav.more') : t('nav.keepSimple')}
+        </button>
       </div>
+      {floorMode && <p className="text-xs text-text-muted">A quieter view. No extra tasks. You can switch back anytime.</p>}
+      {outcomeError && <p role="alert" className="text-xs text-red-600">{outcomeError}</p>}
 
       {loading && (
         <div className="flex items-center justify-center py-12">
@@ -263,7 +299,7 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
-      {!loading && !error && decision?.adaptiveLearningUsed === true && decision.adaptiveExplanation && (
+      {!loading && !error && !floorMode && decision?.adaptiveLearningUsed === true && decision.adaptiveExplanation && (
         <div className="rounded-lg border border-border bg-surface p-3 space-y-2" aria-live="polite">
           <p className="text-xs text-text-muted">
             {decision.adaptiveExplanation.basis === 'explicit_preference'
@@ -276,7 +312,7 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
-      {!loading && !error && auth.currentUser && <SecondMemoryCard minimal />}
+      {!loading && !error && !floorMode && auth.currentUser && <SecondMemoryCard minimal />}
 
       {!loading && !error && decision && !dismissed && (
         <NovaRecommendationCard
@@ -289,7 +325,7 @@ export const RecoveryIntelligenceHub = () => {
         />
       )}
 
-      <div className="rounded-xl border border-border bg-surface">
+      {!floorMode && <div className="rounded-xl border border-border bg-surface">
         <button
           onClick={() => setShowMoodCheck((v) => !v)}
           className="w-full flex items-center justify-between p-5 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors"
@@ -302,9 +338,9 @@ export const RecoveryIntelligenceHub = () => {
             <ConnectedMoodPulse />
           </div>
         )}
-      </div>
+      </div>}
 
-      {!loading && direction && (
+      {!floorMode && !loading && direction && (
         <div className="rounded-xl border border-border bg-surface p-5 space-y-2">
           <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Your Direction</h3>
           {direction.band ? (
@@ -314,9 +350,9 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
-      {auth.currentUser && <RecoveryInsightsPanel />}
+      {!floorMode && auth.currentUser && <RecoveryInsightsPanel />}
 
-      <div className="rounded-xl border border-border bg-surface">
+      {!floorMode && <div className="rounded-xl border border-border bg-surface">
         <button
           onClick={() => setShowExplore((v) => !v)}
           className="w-full flex items-center justify-between p-5 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors"
@@ -347,7 +383,7 @@ export const RecoveryIntelligenceHub = () => {
             })}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 };
