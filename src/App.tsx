@@ -1581,6 +1581,22 @@ export default function App() {
     }
   }, [activeTab, effectiveRole]);
 
+  // Keep Settings and Nova's dedicated privacy screen consistent in the
+  // active session. The event contains only the authenticated user's
+  // permission choice, never private recovery data.
+  useEffect(() => {
+    const onMemoryConsentChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ uid: string; enabled: boolean }>).detail;
+      if (!user?.uid || detail?.uid !== user.uid) return;
+      setStats(previous => ({
+        ...previous,
+        profile: { ...previous.profile, letNovaLearn: detail.enabled },
+      }));
+    };
+    window.addEventListener('nova-memory-consent-changed', onMemoryConsentChanged);
+    return () => window.removeEventListener('nova-memory-consent-changed', onMemoryConsentChanged);
+  }, [user?.uid]);
+
   useEffect(() => {
     if (authLoading) return;
 
