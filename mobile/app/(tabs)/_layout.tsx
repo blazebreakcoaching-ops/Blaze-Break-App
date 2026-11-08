@@ -2,9 +2,11 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useNativeTheme } from '../../src/lib/native-theme';
+import { useNativeI18n } from '../../src/lib/i18n';
 
 export default function TabsLayout() {
   const { colors } = useNativeTheme();
+  const { t } = useNativeI18n();
   return (
     <Tabs screenOptions={{
       headerShown: false,
@@ -15,28 +17,28 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Pulse',
+          title: t('nav.home'),
           tabBarIcon: ({ color, size }) => <Ionicons name="pulse" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="nova"
         options={{
-          title: 'Nova',
+          title: t('nav.nova'),
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="checkin"
         options={{
-          title: 'Check-in',
+          title: t('nav.diagnose'),
           tabBarIcon: ({ color, size }) => <Ionicons name="map" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="reset"
         options={{
-          title: 'Reset',
+          title: t('nav.reset'),
           tabBarIcon: ({ color, size }) => <Ionicons name="leaf" size={size} color={color} />,
         }}
       />
