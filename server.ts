@@ -15131,6 +15131,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
           .map(d => ({
             sourceModule: d.selectedModule as string,
             feedback: d.helpfulness as import('./nhei-adaptive-intelligence').AdaptiveFeedback,
+            bandwidthBand: ['low_bandwidth', 'some_bandwidth', 'reflective_bandwidth'].includes(d.bandwidthBand)
+              ? d.bandwidthBand as import('./recovery-capacity-gate').BandwidthBand : undefined,
           }));
         const validModules = (value: unknown): string[] => Array.isArray(value)
           ? value.filter((v): v is string => typeof v === 'string' && isKnownRoutingModule(v)).slice(0, 14)
@@ -15138,6 +15140,7 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         adaptiveContext = {
           learningEnabled: true,
           outcomes,
+          currentBandwidthBand: bandwidth.band,
           preferredModules: validModules(p.adaptivePreferredModules),
           avoidedModules: validModules(p.adaptiveAvoidedModules),
         };
