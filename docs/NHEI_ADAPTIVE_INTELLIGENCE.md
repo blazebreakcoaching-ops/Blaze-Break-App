@@ -136,3 +136,22 @@ Verified from repository source:
 7. Validate accessibility, languages, disconnected network behaviour, server logs, error handling and client UI. Only after real beta evidence and acceptance checks should a production release be approved.
 
 Keep calendar, employer-sharing and proactive external actions out of this release until their own explicit permission boundaries and tests pass.
+
+
+## Consolidated follow-on engineering batch — 8 November 2026
+
+**Code added to main, not deployed or runtime-tested:**
+- Prevent stale Second Memory notes, errors, and mutation results from updating a different authenticated account/session. Reset note state, loading, and deletion confirmations on identity change.
+- Reset Recovery Hub recommendations, pending outcome feedback, return-to-activity prompt, and directional display when authenticated identity changes. Discard late API responses for an obsolete account/session.
+- Keep outcome-save errors bound to the authenticated account that initiated the request.
+- Display the reason only when adaptive intelligence **actually influenced** a recommendation. Explain explicit preference versus comparable past feedback in plain English and provide a direct route to the existing privacy settings.
+- Add source-contract tests for these boundaries and attribution.
+
+**Release blockers still open — not code-completion claims:**
+1. Fresh checkout and dependency installation, TypeScript check, unit tests, production build, and Firestore rules emulator tests. The connector alone cannot execute them; Git clone was attempted in this execution environment but DNS resolution for github.com failed.
+2. Run account-switch, permission withdrawal, memory correction/deletion, learning-reset, offline/error, feedback and cross-device journeys against a controlled staging Firebase project.
+3. Verify staging authentication/App Check and coordinated frontend/server/rules deployment. Do not deploy automatically or activate GitHub Actions.
+4. Test accessibility, translations, mobile layouts, security rules, and real user-facing value with consented beta participants before product sign-off.
+5. Wider module adapters and proactive outside-app support remain conditional on validated data mapping, explicit consent and safety review; they are not implemented by this batch.
+
+**Status:** Source code and test definitions have advanced. A complete secure production release cannot be certified without the runtime and staging checks above.
