@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import {
   ArrowRight, ChevronLeft, ChevronRight, ClipboardCheck,
-  House, MessageCircle, Route, Sparkles, X,
+  House, LineChart, MessageCircle, Route, Sparkles, X,
   type LucideIcon,
 } from 'lucide-react';
 import { BlazeBrandLogo } from './BlazeBrandLogo';
@@ -16,6 +16,7 @@ const ICONS: Record<NovaGuideIcon, LucideIcon> = {
   sparkles: Sparkles,
   home: House,
   'check-in': ClipboardCheck,
+  insights: LineChart,
   nova: MessageCircle,
   plan: Route,
 };

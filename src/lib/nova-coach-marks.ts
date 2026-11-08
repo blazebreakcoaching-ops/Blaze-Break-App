@@ -22,6 +22,10 @@ export const NOVA_COACH_MARKS: Record<NovaGuideTab, readonly NovaCoachMark[]> = 
     { id: 'checkin', target: 'checkin-content', title: 'Your check-in',
       explanation: 'Start here when you feel ready. Answer honestly and take it at your own pace.' },
   ],
+  recovery_intelligence: [
+    { id: 'insights', target: 'insights-content', title: 'Your own insights',
+      explanation: 'These come only from your check-ins. "Not enough data yet" means a few more check-ins are needed.' },
+  ],
   nova: [
     { id: 'help', target: 'nova-show-how', title: 'Help is always nearby',
       explanation: 'Use Show me how whenever you want a quick reminder. You decide when to open it.' },

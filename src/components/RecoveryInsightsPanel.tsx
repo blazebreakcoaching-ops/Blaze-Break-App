@@ -85,7 +85,7 @@ export const RecoveryInsightsPanel = () => {
   const anyAvailable = (insights || []).some((i) => i.state === 'available');
 
   return (
-    <section aria-labelledby="your-insights-heading" className="rounded-xl border border-border bg-surface p-5 space-y-4">
+    <section aria-labelledby="your-insights-heading" data-nova-guide-target="insights-content" tabIndex={-1} className="rounded-xl border border-border bg-surface p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id="your-insights-heading" className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Your insights</h3>

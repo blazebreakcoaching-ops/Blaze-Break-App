@@ -12,12 +12,12 @@ describe('Nova Guide illustrated walkthrough', () => {
     const user = userEvent.setup();
     render(<NovaGuide isOpen startPage="welcome" accountId="guest-a" onClose={vi.fn()} onNavigate={vi.fn()} />);
     expect(screen.getByRole('dialog', { name: /one small step at a time/i })).toBeInTheDocument();
-    expect(screen.getByText('Step 1 of 5')).toBeInTheDocument();
+    expect(screen.getByText('Step 1 of 6')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /next/i }));
     expect(screen.getByRole('heading', { name: /your calm starting place/i })).toBeInTheDocument();
-    expect(screen.getByText('Step 2 of 5')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 of 6')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /back/i }));
-    expect(screen.getByText('Step 1 of 5')).toBeInTheDocument();
+    expect(screen.getByText('Step 1 of 6')).toBeInTheDocument();
   });
 
   it('explains the current page and navigates only when the user chooses it', async () => {
@@ -44,7 +44,7 @@ describe('Nova Guide illustrated walkthrough', () => {
 
     view.rerender(<NovaGuide isOpen={false} startPage="welcome" accountId="escape-user" onClose={vi.fn()} onNavigate={vi.fn()} />);
     view.rerender(<NovaGuide isOpen startPage="welcome" accountId="escape-user" onClose={vi.fn()} onNavigate={vi.fn()} />);
-    expect(screen.getByText('Step 2 of 5')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 of 6')).toBeInTheDocument();
   });
 
   it('skips without navigating, and remembers a resumable step for this account', async () => {

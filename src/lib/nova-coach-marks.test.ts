@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { NOVA_COACH_MARKS, novaCoachMarksForPage } from './nova-coach-marks';
 
 describe('Nova Guide real-control targeting', () => {
-  it('defines explanations only for the four real customer screens', () => {
-    expect(Object.keys(NOVA_COACH_MARKS).sort()).toEqual(['diagnose', 'home', 'nova', 'plan']);
+  it('defines explanations only for the five real customer journey screens', () => {
+    expect(Object.keys(NOVA_COACH_MARKS).sort()).toEqual(['diagnose', 'home', 'nova', 'plan', 'recovery_intelligence']);
   });
 
   it('keeps every mark short, unique and tied to an explicit existing target', () => {

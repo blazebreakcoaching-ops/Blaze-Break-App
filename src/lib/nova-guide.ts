@@ -3,8 +3,8 @@
  * These are not AI-generated messages and do not read private recovery data.
  * Only the real, customer-accessible tabs are exposed as destinations.
  */
-export type NovaGuideTab = 'home' | 'diagnose' | 'nova' | 'plan';
-export type NovaGuideIcon = 'sparkles' | 'home' | 'check-in' | 'nova' | 'plan';
+export type NovaGuideTab = 'home' | 'diagnose' | 'recovery_intelligence' | 'nova' | 'plan';
+export type NovaGuideIcon = 'sparkles' | 'home' | 'check-in' | 'insights' | 'nova' | 'plan';
 
 export interface NovaGuideStep {
   id: 'welcome' | NovaGuideTab;
@@ -41,6 +41,15 @@ export const NOVA_GUIDE_STEPS: readonly NovaGuideStep[] = [
     icon: 'check-in',
     tab: 'diagnose',
     action: 'Open Check-in',
+  },
+  {
+    id: 'recovery_intelligence',
+    title: 'See what your check-ins show',
+    message: 'Your insights turn your own check-ins into plain-English trends once there is enough data.',
+    why: 'Nothing is guessed. You choose whether Nova can use them, and it is not a medical assessment.',
+    icon: 'insights',
+    tab: 'recovery_intelligence',
+    action: 'Open my insights',
   },
   {
     id: 'nova',
