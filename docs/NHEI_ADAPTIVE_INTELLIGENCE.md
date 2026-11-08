@@ -112,3 +112,27 @@ The build and tests **have not been executed in this GitHub-only working environ
 - **Regression contracts:** `nhei-security-contract.test.ts` adds targeted source-level checks. Unit, rules emulator and full E2E tests still require execution and review.
 
 **Do not call the system production-ready on the basis of these commits alone.** Verify the Firestore transaction, memory permission rules, signed-in account isolation, feedback withdrawal, client rendering and build on staging. Keep privacy-sensitive functionality gated until those checks pass.
+
+## Follow-on release audit — 8 November 2026 (latest)
+**Scope:** existing NHEI/Nova code, no new standalone service, no GitHub Actions or deployments triggered.
+
+Verified from repository source:
+- `firestore.rules` now distinguishes consented memory **creation** from owner-only **text correction** of editable existing memories. The update path cannot change source, type, confidence, creation time, editability or privacy zone; no new memory can be created without current consent.
+- Second Memory note creation checks permissions and collection capacity inside one Firestore transaction.
+- Second Memory, adaptive feedback and historical memory review components clear stale UI state on authenticated account switches; late note/history reads are ignored when the active account changes.
+- A forgotten recovery rating carries `feedbackWithdrawnAt` and may not be re-submitted through a delayed outcome event.
+- `nhei-firestore-consent.emulator.test.ts` contains actual Firestore rules tests for opt-out creation denial, opt-in creation, correction after opt-out, deletion and cross-account denial.
+- `package.json` provides `npm run test:nhei` and `npm run test:nhei:rules` without enabling GitHub Actions.
+
+**Important: source inspection is not a substitute for execution.** The connected GitHub integration can read and commit code but cannot execute npm, start an emulator, authenticate with staging, or deploy. No CI status was reported for the latest checked commit. Do NOT sign off build, security rules or E2E acceptance as passed.
+
+### Exact external validation sequence (staging, test accounts only)
+1. Check out latest `main` in a trusted Node 22+ environment, then run `npm ci --legacy-peer-deps`.
+2. Run `npm run lint`, `npm run test:nhei`, `npm test`, and `npm run build`. Correct any failures before deployment.
+3. Start an isolated Firestore emulator using the checked-in rules; set `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`; run `npm run test:nhei:rules`. A missing emulator causes the rules suite to skip, and **must not count as a pass**.
+4. Deploy tested rules and server/client to **staging only**, using the existing Google Cloud/Firebase release process and approved credentials.
+5. Verify two real test accounts on the same device and separate devices; try switching accounts while notes, chat and feedback are open.
+6. Exercise consent off/on, notes CRUD, user memory correction after opt-out, feedback correction/forget/reset, changing capacity and explicit override, low-energy Floor Mode, the resume prompt and Nova's links to real existing tools.
+7. Validate accessibility, languages, disconnected network behaviour, server logs, error handling and client UI. Only after real beta evidence and acceptance checks should a production release be approved.
+
+Keep calendar, employer-sharing and proactive external actions out of this release until their own explicit permission boundaries and tests pass.
