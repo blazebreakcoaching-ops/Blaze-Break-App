@@ -266,7 +266,7 @@ export const RecoveryIntelligenceHub = () => {
       {outcomeError && <p role="alert" className="text-xs text-red-600">{outcomeError}</p>}
       {!loading && !floorMode && <SecondMemoryCard />}
 
-      {!loading && resumePrompt?.hasIncomplete && resumePrompt.tab && (
+      {!loading && resumePrompt?.hasIncomplete && resumePrompt.tab && (!floorMode || !pendingOutcomeCheck) && (
         <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
           <h3 className="text-sm font-semibold text-text-main">{resumePrompt.title || 'Where was I?'}</h3>
           <p className="text-xs text-text-muted">{resumePrompt.message}</p>
@@ -312,7 +312,7 @@ export const RecoveryIntelligenceHub = () => {
         </p>
       )}
 
-      {!loading && !error && decision && !dismissed && (
+      {!loading && !error && decision && !dismissed && (!floorMode || (!pendingOutcomeCheck && !resumePrompt?.hasIncomplete)) && (
         <NovaRecommendationCard
           decision={decision}
           onStart={handleStart}
@@ -341,7 +341,7 @@ export const RecoveryIntelligenceHub = () => {
 
       )}
 
-      {!loading && direction && (
+      {!floorMode && !loading && direction && (
         <div className="rounded-xl border border-border bg-surface p-5 space-y-2">
           <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Your Direction</h3>
           {direction.band ? (
