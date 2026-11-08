@@ -42,3 +42,22 @@
 
 ## Status
 The live routing backend now supports consented feedback adaptation and privacy screens expose opt-in controls. Automated tests have been written, not executed. Production deployment and end-to-end effectiveness have not been verified.
+
+## Additional integrated development — 8 November 2026
+- **Floor Mode:** the existing Recovery Intelligence Hub provides a user-selectable, locally remembered low-stimulation view that shows one next step instead of the full tool catalogue. When capacity is reported low, a simpler-view option is offered. This is not yet a fully automatic mode across all tabs.
+- **Where was I?:** the Hub reuses the established /api/user/resume-prompt endpoint for unfinished recovery activity and offers a voluntary continuation.
+- **Second Memory:** private user-created open loops are stored under users/{uid}/nova_second_memory via authenticated server-only CRUD endpoints. A compact card is accessible in Recovery Hub and Memory Centre. With both existing memory permissions, up to two open loops feed Nova's current text context as user-authored data, not instructions. Users can complete, reopen, delete and bulk-erase notes, including after consent withdrawal. No autonomous actions are performed.
+- **Outcome integrity:** repeated started/completed reports are idempotent, ratings can be corrected, and event records and session counts now update within a single database transaction.
+- **Personalisation freshness:** only the most recent 90 days of confirmed user feedback feed adaptive routing.
+- **Consent:** missing consent defaults to off, the learning toggle is independent, and disabling Nova memory also disables adaptive learning. Firestore memory validation now accepts the canonicalKey/dataZone fields the existing client actually sends.
+- **Coordinated discovery:** Nova can recommend existing Recovery Intelligence and Privacy areas, and navigation no longer awards points.
+- **Testing:** additional pure tests and source-level integration contract tests were committed. None were executed from this GitHub-only environment.
+
+## Explicitly outstanding before claiming full completion
+1. Run npm run lint, npm test and npm run build in a real checkout; run Firestore emulator rule tests and staging E2E journeys. Fix any findings.
+2. Deploy Firestore rules and server/frontend together as a controlled staging release. Commits are **not** a deployment.
+3. Verify auth, App Check, first-run permission creation, consent withdrawal, note erasure, memory writes and cross-device changes with actual accounts.
+4. Check localisation, accessibility, native layout, low-bandwidth network behaviour and age-appropriate safety in realistic sessions.
+5. Expand actual feature adapters based on validated information from modules not yet wired into the existing router. Avoid speculative classifications or broad private-data sharing.
+6. Test proactive **in-app** assistance with users. Background reminders, calendar integrations and external actions require separate explicit permission and safety review.
+7. Validate real-world benefit, retention and trust before describing the system as clinically effective or continuously self-learning.
