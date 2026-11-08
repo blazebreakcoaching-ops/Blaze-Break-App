@@ -37,17 +37,28 @@ describe('one canonical personal-preference record for web and native', () => {
     expect(p.timeZone).not.toBe('Not/AZone');
   });
 
-  it('writes only the fields the Firestore rules allow, English only', () => {
-    const w = canonicalPreferenceWrites({ preferredName: '  Sam ', timeZone: 'Europe/London', region: 'UK', tone: 'simple', useName: true, enabled: true, language: 'en' });
+  it('writes only the fields the Firestore rules allow', () => {
+    const w = canonicalPreferenceWrites({ preferredName: '  Sam ', timeZone: 'Europe/London', region: 'UK', tone: 'simple', useName: true, enabled: true, language: 'en', lowEnergyMode: false });
     expect(Object.keys(w.root).sort()).toEqual(['country', 'locale', 'preferredName', 'timezone']);
-    expect(Object.keys(w.ui).sort()).toEqual(['greetingEnabled', 'greetingTone', 'localePreference', 'usePreferredName']);
+    expect(Object.keys(w.ui).sort()).toEqual(['greetingEnabled', 'greetingTone', 'localePreference', 'lowEnergyMode', 'usePreferredName']);
     expect(w.root.preferredName).toBe('Sam');
     expect(w.ui.localePreference).toBe('en');
-    expect(() => sanitisePersonalPreferences({ preferredName: '', timeZone: 'Mars/Base', region: '', tone: 'warm', useName: false, enabled: true, language: 'en' })).toThrow(/valid time zone/);
+    expect(() => sanitisePersonalPreferences({ preferredName: '', timeZone: 'Mars/Base', region: '', tone: 'warm', useName: false, enabled: true, language: 'en', lowEnergyMode: false })).toThrow(/valid time zone/);
   });
 
   it('round-trips between the web profile and the canonical record', () => {
     const web = { preferredName: 'Lee', timeZone: 'Australia/Sydney', region: 'AU', greetingTone: 'direct', useNameInGreetings: true, greetingEnabled: false };
     expect(webProfileFieldsFrom(preferencesFromWebProfile(web))).toMatchObject({ ...web, language: 'en' });
+  });
+
+  it('language: any of the 12 codes, chosen on either platform; unknown -> English', () => {
+    expect(resolvePersonalPreferences({ ui: { localePreference: 'ar' } }).language).toBe('ar');
+    expect(resolvePersonalPreferences({ root: { locale: 'de' } }).language).toBe('de');
+    expect(resolvePersonalPreferences({ legacyProfile: { language: 'pl' } }).language).toBe('pl');
+    expect(resolvePersonalPreferences({ ui: { localePreference: 'xx' }, root: { locale: 'fr' } }).language).toBe('fr');
+    expect(resolvePersonalPreferences({ ui: { localePreference: 'klingon' } }).language).toBe('en');
+    const w = canonicalPreferenceWrites({ preferredName: '', timeZone: 'UTC', region: '', tone: 'warm', useName: false, enabled: true, language: 'zh' as any, lowEnergyMode: true });
+    expect(w.root.locale).toBe('zh');
+    expect(w.ui).toMatchObject({ localePreference: 'zh', lowEnergyMode: true });
   });
 });

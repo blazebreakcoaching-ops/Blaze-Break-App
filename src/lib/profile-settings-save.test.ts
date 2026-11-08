@@ -135,7 +135,7 @@ describe('verified settings and consent persistence', () => {
     const root = mocks.set.mock.calls.find(([path]) => path === 'users/account-A')?.[1];
     expect(root).toEqual({ preferredName: 'Sam', timezone: 'Asia/Tokyo', country: 'Japan', locale: 'en', updatedAt: expect.any(String) });
     const ui = mocks.set.mock.calls.find(([path]) => path === 'users/account-A/preferences/ui')?.[1];
-    expect(ui).toEqual({ greetingEnabled: true, usePreferredName: true, greetingTone: 'direct', localePreference: 'en' });
+    expect(ui).toEqual({ greetingEnabled: true, usePreferredName: true, greetingTone: 'direct', localePreference: 'en', lowEnergyMode: false });
   });
 
   it('creates the root document with createdAt only when it does not exist yet', async () => {

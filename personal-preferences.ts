@@ -9,10 +9,12 @@
  *   users/{uid}/user_stats/core  profile.{preferredName, timeZone, region,
  *                               greetingTone, greetingEnabled, useNameInGreetings, language}
  *
+ * Language: any of the 12 supported codes; unknown values fall back to English.
  * Consent rule: an explicit "no" anywhere is kept. Name use in greetings is
  * opt-in, so with no explicit choice the name is not used.
  */
 import { deviceTimeZone, validTimeZone, type WelcomeTone } from './personal-welcome';
+import { isLocaleCode, resolveLocale, type LocaleCode } from './i18n';
 
 export interface PersonalPreferences {
   preferredName: string;
@@ -21,7 +23,10 @@ export interface PersonalPreferences {
   tone: WelcomeTone;
   useName: boolean;
   enabled: boolean;
-  language: 'en';
+  /** One of the 12 supported languages (i18n/locales.ts). */
+  language: LocaleCode;
+  /** Calmer screens: no confetti or pop-up celebrations. */
+  lowEnergyMode: boolean;
 }
 
 type Doc = Record<string, unknown> | null | undefined;
@@ -32,7 +37,7 @@ const isTone = (v: unknown): v is WelcomeTone => typeof v === 'string' && (TONES
 const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
 
 export const defaultPersonalPreferences = (): PersonalPreferences => ({
-  preferredName: '', timeZone: deviceTimeZone(), region: '', tone: 'warm', useName: false, enabled: true, language: 'en',
+  preferredName: '', timeZone: deviceTimeZone(), region: '', tone: 'warm', useName: false, enabled: true, language: 'en', lowEnergyMode: false,
 });
 
 export function resolvePersonalPreferences(input: { root?: Doc; ui?: Doc; legacyProfile?: Doc }): PersonalPreferences {
@@ -58,7 +63,10 @@ export function resolvePersonalPreferences(input: { root?: Doc; ui?: Doc; legacy
     tone: isTone(ui.greetingTone) ? ui.greetingTone : isTone(legacy.greetingTone) ? legacy.greetingTone : 'warm',
     useName: Boolean(preferredName && useName),
     enabled,
-    language: 'en',
+    // The ui document is the canonical choice; then the root record; then
+    // the legacy web profile. Unknown codes fall back to English.
+    language: [ui.localePreference, root.locale, legacy.language].find(isLocaleCode) ?? 'en',
+    lowEnergyMode: ui.lowEnergyMode === true,
   };
 }
 
@@ -74,7 +82,8 @@ export function sanitisePersonalPreferences(value: PersonalPreferences): Persona
     tone: isTone(value.tone) ? value.tone : 'warm',
     useName: Boolean(preferredName && value.useName),
     enabled: value.enabled !== false,
-    language: 'en',
+    language: resolveLocale(value.language),
+    lowEnergyMode: value.lowEnergyMode === true,
   };
 }
 
@@ -83,7 +92,7 @@ export function canonicalPreferenceWrites(value: PersonalPreferences) {
   const p = sanitisePersonalPreferences(value);
   return {
     root: { preferredName: p.preferredName, timezone: p.timeZone, country: p.region, locale: p.language },
-    ui: { greetingEnabled: p.enabled, usePreferredName: p.useName, greetingTone: p.tone, localePreference: p.language },
+    ui: { greetingEnabled: p.enabled, usePreferredName: p.useName, greetingTone: p.tone, localePreference: p.language, lowEnergyMode: p.lowEnergyMode },
   };
 }
 
@@ -99,7 +108,8 @@ export function preferencesFromWebProfile(profile: Doc): PersonalPreferences {
     tone: isTone(p.greetingTone) ? p.greetingTone : 'warm',
     useName: p.useNameInGreetings === true,
     enabled: p.greetingEnabled !== false,
-    language: 'en',
+    language: resolveLocale(typeof p.language === 'string' ? p.language : null),
+    lowEnergyMode: p.lowEnergyMode === true,
   };
 }
 
@@ -107,6 +117,6 @@ export function preferencesFromWebProfile(profile: Doc): PersonalPreferences {
 export function webProfileFieldsFrom(p: PersonalPreferences) {
   return {
     preferredName: p.preferredName, timeZone: p.timeZone, region: p.region, greetingTone: p.tone,
-    useNameInGreetings: p.useName, greetingEnabled: p.enabled, language: p.language,
+    useNameInGreetings: p.useName, greetingEnabled: p.enabled, language: p.language, lowEnergyMode: p.lowEnergyMode,
   };
 }

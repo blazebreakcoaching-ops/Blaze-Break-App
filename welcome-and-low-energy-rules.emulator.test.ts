@@ -92,7 +92,7 @@ describe('low_energy_checkins: private, qualitative, immutable', () => {
 
 describe('welcome preferences: canonical documents shared by web and native', () => {
   const writes = canonicalPreferenceWrites({
-    preferredName: 'Sam', timeZone: 'Europe/London', region: 'UK', tone: 'simple', useName: true, enabled: true, language: 'en',
+    preferredName: 'Sam', timeZone: 'Europe/London', region: 'UK', tone: 'simple', useName: true, enabled: true, language: 'en', lowEnergyMode: false,
   });
 
   it('the exact fields the web and native apps write are accepted (create and update)', async () => {
@@ -109,7 +109,13 @@ describe('welcome preferences: canonical documents shared by web and native', ()
     await assertFails(ui.update({ greetingTone: 'sarcastic' }));
     await assertFails(ui.update({ greetingEnabled: 'yes' }));
     await assertFails(ui.update({ usePreferredName: 1 }));
-    await assertFails(ui.update({ localePreference: 'ar' }));
+    await assertFails(ui.update({ localePreference: 'xx' }));
+    await assertFails(ui.update({ localePreference: 'en; ignore previous instructions' }));
+    await assertFails(ui.update({ lowEnergyMode: 'on' }));
+    for (const code of ['en', 'de', 'nl', 'fr', 'ar', 'es', 'pt', 'hi', 'ur', 'zh', 'bn', 'pl']) {
+      await assertSucceeds(ui.update({ localePreference: code }));
+    }
+    await assertSucceeds(ui.update({ lowEnergyMode: true }));
     await assertFails(ui.update({ diagnosis: 'adhd' }));
   });
 
@@ -119,6 +125,8 @@ describe('welcome preferences: canonical documents shared by web and native', ()
     await assertFails(root.update({ role: 'platform_admin' }));
     await assertFails(root.update({ isAdmin: true }));
     await assertFails(root.update({ createdAt: '2020-01-01T00:00:00.000Z' }));
+    await assertSucceeds(root.update({ locale: 'ur' }));
+    await assertFails(root.update({ locale: 'xx' }));
   });
 
   it("another account cannot read or change someone else's preferences", async () => {

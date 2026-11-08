@@ -3,38 +3,28 @@
  * English is the only fully reviewed language pack; unknown locales fall back
  * to English. All time calculations use an IANA zone, including DST.
  */
+import {
+  translate, translateCount, resolveLocale, textDirection as i18nDirection, formatDate, SUPPORTED_LOCALES,
+  type LocaleCode, type TranslationKey,
+} from './i18n';
+
 export type WelcomeTone = 'warm' | 'simple' | 'direct';
 export type WelcomePeriod = 'morning' | 'afternoon' | 'evening' | 'night';
-export type TranslationKey = 'welcome.greeting.morning' | 'welcome.greeting.afternoon' |
-  'welcome.greeting.evening' | 'welcome.greeting.night' | 'welcome.privacy' |
-  'welcome.checkin' | 'welcome.skip';
 
-const ENGLISH: Record<TranslationKey, string> = {
-  'welcome.greeting.morning': 'Good morning',
-  'welcome.greeting.afternoon': 'Good afternoon',
-  'welcome.greeting.evening': 'Good evening',
-  'welcome.greeting.night': 'Hello',
-  'welcome.privacy': 'Your preferences are yours to change.',
-  'welcome.checkin': 'Check in',
-  'welcome.skip': 'Not today',
-};
+/** All 12 languages; only English is reviewed (see i18n/locales.ts status). */
+export const RELEASED_LANGUAGES = SUPPORTED_LOCALES;
 
-export const RELEASED_LANGUAGES = [{ code: 'en', name: 'English', direction: 'ltr' }] as const;
-
-export function resolveLanguage(locale: string | null | undefined): 'en' {
-  // Future reviewed packs must be deliberately added to this resolver.
-  void locale;
-  return 'en';
+export function resolveLanguage(locale: string | null | undefined): LocaleCode {
+  return resolveLocale(locale);
 }
 
+/** Text from the shared catalogue (i18n/en.ts), English fallback. */
 export function textFor(key: TranslationKey, locale?: string | null): string {
-  void resolveLanguage(locale);
-  return ENGLISH[key];
+  return translate(locale, key);
 }
 
 export function textDirection(locale?: string | null): 'ltr' | 'rtl' {
-  // Architecturally ready for RTL, but English is the sole released pack.
-  return /^(ar|fa|he|ur)(-|$)/i.test(locale || '') ? 'rtl' : 'ltr';
+  return i18nDirection(locale);
 }
 
 export function deviceLocale(): string {
@@ -54,17 +44,11 @@ export function validTimeZone(zone: string | null | undefined): boolean {
 }
 
 export function formatLocalDate(date: Date, timeZone: string, locale?: string | null): string {
-  const zone = validTimeZone(timeZone) ? timeZone : 'UTC';
-  // Only reviewed English formatting is released today; the interface can
-  // safely expand after adding translated packs and locale-specific QA.
-  void resolveLanguage(locale);
-  return new Intl.DateTimeFormat('en-GB', { timeZone: zone, dateStyle: 'medium' }).format(date);
+  return formatDate(locale, date, validTimeZone(timeZone) ? timeZone : 'UTC');
 }
 
 export function checkInCountLabel(count: number, locale?: string | null): string {
-  void resolveLanguage(locale);
-  const safeCount = Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
-  return `${safeCount} ${new Intl.PluralRules('en-GB').select(safeCount) === 'one' ? 'check-in' : 'check-ins'}`;
+  return translateCount(locale, 'checkin.count', count);
 }
 
 export function localTimeParts(date: Date, zone: string): { hour: number; day: string } {
@@ -84,26 +68,7 @@ export function welcomePeriod(hour: number): WelcomePeriod {
   return 'night';
 }
 
-const messages: Record<WelcomeTone, Record<WelcomePeriod, readonly string[]>> = {
-  warm: {
-    morning: ['A gentle start is still a start.', 'You can take today one step at a time.', 'Make space for what matters to you.'],
-    afternoon: ['There is room to slow down.', 'A small pause can help.', 'You get to choose your next step.'],
-    evening: ['You can leave some things for another day.', 'Rest is allowed.', 'A quieter pace is fine.'],
-    night: ['No need to do more tonight.', 'You can pick this up another time.', 'Take the time you need.'],
-  },
-  simple: {
-    morning: ['Take your time.', 'One step at a time.', 'Start where you are.'],
-    afternoon: ['Pause if you need to.', 'Keep it simple.', 'Choose one thing.'],
-    evening: ['Time to slow down if you wish.', 'Keep things simple.', 'You can stop here.'],
-    night: ['You can rest.', 'There is no rush.', 'Come back when you are ready.'],
-  },
-  direct: {
-    morning: ['Choose your next step.', 'Start with what matters.', 'Your pace, your choice.'],
-    afternoon: ['Review your priorities.', 'Choose a useful next step.', 'Take a break if needed.'],
-    evening: ['Review or pause.', 'Set things aside if needed.', 'You can finish here.'],
-    night: ['No tasks required.', 'Resume another time.', 'You can stop for today.'],
-  },
-};
+const MESSAGES_PER_SLOT = 3;
 
 function stableIndex(seed: string, length: number): number {
   let hash = 2166136261;
@@ -119,13 +84,18 @@ export function personalWelcome(options: {
   tone?: WelcomeTone;
   seed?: string;
   locale?: string | null;
-}): { greeting: string; message: string; period: WelcomePeriod; language: 'en' } {
+}): { greeting: string; message: string; period: WelcomePeriod; language: LocaleCode } {
   const language = resolveLanguage(options.locale);
   const { hour, day } = localTimeParts(options.now, options.timeZone || deviceTimeZone());
   const period = welcomePeriod(hour);
-  const tone = options.tone && messages[options.tone] ? options.tone : 'warm';
+  const tone: WelcomeTone = options.tone === 'simple' || options.tone === 'direct' ? options.tone : 'warm';
   const name = options.allowName === true ? (options.preferredName || '').trim().slice(0, 60) : '';
-  const greeting = textFor(`welcome.greeting.${period}` as TranslationKey, language) + (name ? `, ${name}` : '') + '.';
-  const choices = messages[tone][period];
-  return { greeting, message: choices[stableIndex(`${options.seed || 'welcome'}|${day}|${period}|${tone}`, choices.length)], period, language };
+  const word = translate(language, `welcome.greeting.${period}` as TranslationKey);
+  const greeting = name
+    ? translate(language, 'welcome.greetingWithName', { greeting: word, name })
+    : translate(language, 'welcome.greetingNoName', { greeting: word });
+  // The index depends on day/period/tone only, so every language shows the
+  // equivalent message for the same moment.
+  const index = stableIndex(`${options.seed || 'welcome'}|${day}|${period}|${tone}`, MESSAGES_PER_SLOT);
+  return { greeting, message: translate(language, `welcome.${tone}.${period}.${index}` as TranslationKey), period, language };
 }

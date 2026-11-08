@@ -198,6 +198,7 @@ export interface UserProfileData {
   language?: string;
   greetingTone?: 'warm' | 'simple' | 'direct';
   greetingEnabled?: boolean;
+  lowEnergyMode?: boolean;
   useNameInGreetings?: boolean;
   useLocalTime?: boolean;
   timeZone?: string;

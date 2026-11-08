@@ -24,9 +24,12 @@ describe('personal welcome', () => {
     const params = { now: new Date('2026-11-08T09:00:00Z'), timeZone: 'UTC', seed: 'account123' };
     expect(personalWelcome(params)).toEqual(personalWelcome(params));
   });
-  it('provides a verified English fallback for untranslated languages', () => {
-    expect(resolveLanguage('ar')).toBe('en');
-    expect(textFor('welcome.checkin', 'fr')).toBe('Check in');
+  it('uses the chosen language, with English fallback for unsupported ones', () => {
+    expect(resolveLanguage('ar')).toBe('ar');
+    expect(resolveLanguage('sv-SE')).toBe('en');
+    expect(textFor('welcome.default', 'sv')).toBe('Welcome to Blaze Break.');
+    expect(personalWelcome({ now: new Date('2026-11-08T07:00:00Z'), timeZone: 'Asia/Dubai', locale: 'ar' }).greeting).toBe('صباح الخير.');
+    expect(personalWelcome({ now: new Date('2026-11-08T07:00:00Z'), timeZone: 'Europe/Berlin', locale: 'de', allowName: true, preferredName: 'Jonas' }).greeting).toBe('Guten Morgen, Jonas.');
     expect(textDirection('ar-EG')).toBe('rtl');
     expect(textDirection('en-GB')).toBe('ltr');
   });
