@@ -250,4 +250,10 @@ export const de: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "Nova prüft Ihre Antworten...",
   "fingerprint.errorTitle": "Ihr Check-in konnte nicht abgeschlossen werden",
   "fingerprint.retry": "Erneut versuchen",
+  "notifications.title": "Nova-Erinnerungen",
+  "notifications.description": "Nur ruhige Erinnerungen in der App. Push-, E-Mail-, SMS- und Guardian-Benachrichtigungen sind deaktiviert.",
+  "notifications.enable": "In-App-Erinnerungen aktivieren",
+  "notifications.enableDetail": "Nova darf während der Nutzung der App sanfte Unterstützung anbieten.",
+  "notifications.quietHours": "Ruhezeiten",
+  "notifications.quietDetail": "Nova erinnert Sie während dieser Zeiten nicht.",
 };
