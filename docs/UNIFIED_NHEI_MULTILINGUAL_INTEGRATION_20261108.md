@@ -56,3 +56,18 @@ Source status descriptions are a point-in-time register and MUST be revalidated 
 ## Human and infrastructure gates
 
 Human native-speaker validation for all 11 drafts (especially safety), safeguarding and knowledge approval for gated NHEI modes, physical-device accessibility verification, staging auth/App Check, Firebase rules/index deployment authorisation and controlled production release remain outstanding. This document does not call them completed.
+
+## Phase 1 implementation checkpoint — consent and routing
+
+Completed on this integration branch:
+- Added ten consent-screen translation entries to English and the eleven explicitly unreviewed draft language packs.
+- Updated `SituationalOnboarding.tsx` to translate privacy, protection explanation and greeting/learning/reminder consent labels, including accessible switch labels. Data-model consent booleans and existing option values were left unchanged.
+- Added `i18n/onboarding-consent.test.ts` to check catalogue coverage, machine-draft disclosure and stable answer semantics.
+- Ported `nhei-adaptive-intelligence.ts` and its unit/scenario tests from the other branch.
+- Reconciled `recovery-routing-engine.ts` by adding an optional adaptive context and passing only adapted preference hints through the existing deterministic decision logic. Old callers remain compatible without supplying context.
+
+**Not yet integrated:** The authenticated `server.ts` routing-decision endpoint must supply member-scoped and consented historical feedback, plus feedback deletion/reset routes and privacy UI, without replacing the multilingual branch's existing backend. The GitHub connector returned empty content for this branch's large `server.ts` even when line-scoped; do not guess or overwrite that file. The remaining shared NHEI files are also not silently treated as merged.
+
+**Not yet verified:** TypeScript, web/native build, all tests, emulator and staging. Previously reported multilingual test success applies to its earlier source commit and does not validate these new changes.
+
+Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site execution proof. Advance the matrix as paths are audited, with explicit refs and test evidence.
