@@ -16,7 +16,7 @@ const LABELS: Record<FeedbackItem['helpfulness'], string> = {
   not_sure: 'Not sure',
 };
 
-export function AdaptiveFeedbackHistory() {
+export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   const [items, setItems] = useState<FeedbackItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -24,6 +24,7 @@ export function AdaptiveFeedbackHistory() {
   const [editValue, setEditValue] = useState<FeedbackItem['helpfulness']>('not_sure');
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const load = useCallback(async () => {
     if (!auth.currentUser) return;
     setError('');
@@ -54,6 +55,25 @@ export function AdaptiveFeedbackHistory() {
       setBusyId(null);
     }
   };
+  const resetLearning = async () => {
+    if (busyId) return;
+    setBusyId('reset');
+    setError('');
+    try {
+      const res = await secureApiFetch('/api/recovery/reset-adaptive-learning', {
+        method: 'POST', data: { confirm: 'RESET_MY_LEARNING' },
+      });
+      const result = await res.json() as { complete: boolean };
+      setConfirmReset(false);
+      setItems([]);
+      onReset?.();
+      if (!result.complete) setError('Learning is off, but some older ratings still need clearing. You can run reset again.');
+    } catch {
+      setError('Reset could not finish. Please try again.');
+    } finally {
+      setBusyId(null);
+    }
+  };
   const remove = async (id: string) => {
     if (busyId) return;
     setBusyId(id);
@@ -75,6 +95,24 @@ export function AdaptiveFeedbackHistory() {
           Review recent recovery ratings. Forgetting a rating stops it being used for future adaptive suggestions.
           Your activity record remains, but the personal helpfulness answer is removed.
         </p>
+      </div>
+      <div className="space-y-2">
+        <button type="button" className="text-xs text-red-600 underline"
+          onClick={() => setConfirmReset(value => !value)}>Reset what Nova has learned</button>
+        {confirmReset && (
+          <div className="space-y-2 p-3 border border-border rounded-lg">
+            <p className="text-xs text-text-muted">
+              This turns Adaptive Intelligence off, clears your saved module preferences,
+              and removes past helpfulness ratings. Your recovery activities stay recorded.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button type="button" disabled={busyId !== null} onClick={() => void resetLearning()}
+                className="text-xs text-red-600 underline">Confirm reset</button>
+              <button type="button" onClick={() => setConfirmReset(false)}
+                className="text-xs text-text-muted underline">Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
       <button type="button" aria-expanded={expanded}
         className="text-xs text-primary underline" onClick={() => setExpanded(v => !v)}>
