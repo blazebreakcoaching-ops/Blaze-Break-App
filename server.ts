@@ -19117,7 +19117,7 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
     // transaction (both the decision doc and the shared session counter)
     // so two concurrent requests can't both observe "not yet recorded"
     // before either commits.
-    type OutcomeResult = 'applied' | 'already_recorded' | 'not_found';
+    type OutcomeResult = 'applied' | 'already_recorded' | 'not_found' | 'feedback_withdrawn';
     let outcomeResult = 'applied' as OutcomeResult;
     await db.runTransaction(async (tx) => {
       const decisionSnap = await tx.get(decisionRef);
@@ -19126,6 +19126,22 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
         return;
       }
       const data = decisionSnap.data()!;
+
+      // A forgotten subjective rating cannot be resurrected by a delayed retry.
+      if (typedAction === 'completed' && data.feedbackWithdrawnAt) {
+        outcomeResult = 'feedback_withdrawn';
+        return;
+      }
+      // A member may correct an already completed activity's subjective rating.
+      // This is an update to the original event, NEVER another completed action.
+      if (typedAction === 'completed' && data.outcome === 'completed' && validHelpfulness) {
+        if (data.helpfulness !== validHelpfulness) {
+          tx.set(decisionRef, { helpfulness: validHelpfulness }, { merge: true });
+        } else {
+          outcomeResult = 'already_recorded';
+        }
+        return;
+      }
 
       let decisionPatch: Record<string, any>;
       let counterField: SessionCounterField;
@@ -19157,6 +19173,9 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
 
     if (outcomeResult === 'not_found') {
       return res.status(404).json({ error: 'decision not found' });
+    }
+    if (outcomeResult === 'feedback_withdrawn') {
+      return res.status(409).json({ error: 'This feedback was previously forgotten.' });
     }
     res.json({ ok: true, alreadyRecorded: outcomeResult === 'already_recorded' });
   } catch (err: any) {
