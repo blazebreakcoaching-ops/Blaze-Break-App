@@ -11,6 +11,7 @@ import { db } from '../lib/firestore';
 import { useAuth } from '../lib/auth';
 import { saveCalendarSignalConsent } from '../lib/nova-brain';
 import { hasExplicitCalendarSignalConsent } from '../lib/calendar-signal-consent';
+import { NovaAdaptiveControls } from './NovaAdaptiveControls';
 
 // Two toggle mechanisms exist side by side here, deliberately:
 // - flagId (localStorage, src/lib/feature-flags.ts) for UI-only display
@@ -171,6 +172,7 @@ export const DataPrivacyDashboard = ({
       {calendarSaveError && (
         <p role="alert" className="text-sm text-destructive">Calendar sharing could not be saved. Your previous choice remains in place.</p>
       )}
+      <NovaAdaptiveControls />
       <div className="space-y-3">
         {dataPoints.map((point) => {
           const calendarReady = calendarStatus === 'ready' &&
