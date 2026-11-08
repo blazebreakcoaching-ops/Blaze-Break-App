@@ -321,4 +321,5 @@ export const fr: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "Le sens s'estompe sous les tâches administratives.",
   "fingerprint.option.meaning.3": "Je me sens coupé de mon objectif et fonctionne en mode survie.",
   "fingerprint.option.meaning.4": "Je ne me souviens plus de ce que signifie une activité enrichissante.",
+  "fingerprint.fullEnglishNotice": "Le bilan complet de 14 questions utilise actuellement des questions et réponses en anglais. La révision des traductions est en cours.",
 };
