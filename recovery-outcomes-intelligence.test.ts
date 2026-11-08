@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { summarizeModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 
 const decision = (overrides: Partial<RoutingDecisionRecord>): RoutingDecisionRecord => ({
   selectedModule: 'breathing_reset',
@@ -83,5 +83,30 @@ describe('summarizeModuleOutcomes', () => {
     const [summary] = summarizeModuleOutcomes(decisions);
     expect(summary.sufficientSample).toBe(false);
     expect(summary.sampleThreshold).toBe(20);
+  });
+});
+
+describe('adaptive outcome measurement', () => {
+  it('hides rates below a reliable sample', () => {
+    const rows: RoutingDecisionRecord[] = [
+      { selectedModule: 'reset', outcome: 'completed', helpfulness: 'better', adaptiveLearningUsed: true },
+      { selectedModule: 'reset', outcome: 'completed', helpfulness: 'same', adaptiveLearningUsed: false },
+    ];
+    const result = summarizeAdaptiveOutcomes(rows);
+    expect(result.adapted.positiveRate).toBeNull();
+    expect(result.standard.positiveRate).toBeNull();
+    expect(result.adapted.rated).toBe(1);
+  });
+  it('excludes unsure answers and reports non-causal caveat', () => {
+    const rows: RoutingDecisionRecord[] = [
+      { selectedModule: 'reset', outcome: 'completed', helpfulness: 'better', adaptiveLearningUsed: true },
+      { selectedModule: 'reset', outcome: 'completed', helpfulness: 'not_sure', adaptiveLearningUsed: true },
+      { selectedModule: 'reset', outcome: 'completed', helpfulness: 'not_really', adaptiveLearningUsed: false },
+    ];
+    const result = summarizeAdaptiveOutcomes(rows, 1);
+    expect(result.adapted.positiveRate).toBe(1);
+    expect(result.standard.positiveRate).toBe(0);
+    expect(result.adapted.rated).toBe(1);
+    expect(result.caveat).toContain('not a causal comparison');
   });
 });
