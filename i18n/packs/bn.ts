@@ -233,4 +233,12 @@ export const bn: Partial<Record<TranslationKey, string>> = {
   "support.directoryDesc": "অন্যান্য দেশের সহায়তা সেবা খুঁজুন",
   "support.emergency": "জরুরি সেবা",
   "support.askCall": "{name}-কে আমাকে ফোন করতে বলুন",
+  "onboarding.welcomeTitle": "স্বাগতম। ধাপে ধাপে এগোই।",
+  "onboarding.welcomeQuestion": "আজ আপনি এখানে কেন এসেছেন?",
+  "onboarding.pathwayTitle": "আপনার কাজ সম্পর্কে কিছু কথা",
+  "onboarding.pathwayQuestion": "এর মধ্যে কোনটি আপনাকে সবচেয়ে ভালোভাবে বর্ণনা করে?",
+  "onboarding.pressureTitle": "কী আপনার ওপর চাপ সৃষ্টি করছে",
+  "onboarding.pressureQuestion": "এই মুহূর্তে কী আপনার শক্তি সবচেয়ে বেশি কমিয়ে দিচ্ছে?",
+  "onboarding.novaToneTitle": "নোভা কীভাবে আপনার সঙ্গে কথা বলবে",
+  "onboarding.novaToneQuestion": "আপনি চান নোভা কীভাবে আপনার সঙ্গে যোগাযোগ করুক?",
 };
