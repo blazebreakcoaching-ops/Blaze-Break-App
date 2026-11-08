@@ -8,6 +8,7 @@ import { useFeatureFlags, setFeatureFlag, FeatureFlag } from '../lib/feature-fla
 import { logAuditAction } from '../lib/audit-logger.ts';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
+import { AdaptiveFeedbackHistory } from './AdaptiveFeedbackHistory';
 
 // Two toggle mechanisms exist side by side here, deliberately:
 // - flagId (localStorage, src/lib/feature-flags.ts) for UI-only display
@@ -233,6 +234,8 @@ export const DataPrivacyDashboard = ({
         )}
         {adaptiveError && <p role="alert" className="text-xs text-red-600">{adaptiveError}</p>}
       </section>
+
+      <AdaptiveFeedbackHistory />
 
       <div className="space-y-3">
         {dataPoints.map((point) => {
