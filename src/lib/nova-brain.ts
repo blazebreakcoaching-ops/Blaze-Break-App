@@ -61,7 +61,7 @@ export const isNovaLearningAllowed = (): boolean => {
     // never assume consent to remembering personal information.
     if (!stored) return false;
     const profile = JSON.parse(stored);
-    return profile.letNovaLearn !== false;
+    return profile.letNovaLearn === true;
   } catch (e) {
     return false;
   }
