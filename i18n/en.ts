@@ -202,6 +202,15 @@ export const en = {
   'settings.useName': 'Use my preferred name in greetings',
 
   // Onboarding
+  // Core onboarding prompts: display strings only; stored answers remain stable.
+  "onboarding.welcomeTitle": "Welcome. Let's take this one step at a time.",
+  "onboarding.welcomeQuestion": "What brought you here today?",
+  "onboarding.pathwayTitle": "A bit about your work",
+  "onboarding.pathwayQuestion": "Which of these sounds most like you?",
+  "onboarding.pressureTitle": "What's weighing on you",
+  "onboarding.pressureQuestion": "What's draining you the most right now?",
+  "onboarding.novaToneTitle": "How Nova should talk to you",
+  "onboarding.novaToneQuestion": "How should Nova communicate with you?",
   'onboarding.preferredName': 'What should we call you? (Optional)',
   'onboarding.preferredNamePlaceholder': 'Your preferred name',
   'onboarding.timeZone': 'Your time zone',
