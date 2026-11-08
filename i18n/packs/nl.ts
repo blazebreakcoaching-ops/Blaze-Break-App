@@ -321,4 +321,5 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "Mijn doel raakt ondergesneeuwd door administratief werk.",
   "fingerprint.option.meaning.3": "Ik voel me volledig losgekoppeld en probeer alleen te overleven.",
   "fingerprint.option.meaning.4": "Ik weet nauwelijks nog hoe iets zinvols voelt.",
+  "fingerprint.fullEnglishNotice": "De volledige beoordeling met 14 vragen gebruikt momenteel Engelse vragen en antwoorden. Vertalingen worden nog gecontroleerd.",
 };
