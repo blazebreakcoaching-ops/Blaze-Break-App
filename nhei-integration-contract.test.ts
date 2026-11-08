@@ -33,3 +33,33 @@ describe('NHEI integration contracts', () => {
     expect(tools).toContain("privacy: 'Privacy Controls'");
   });
 });
+
+describe('Nova privacy regressions', () => {
+  it('scopes saved chat and feedback records to the authenticated account', () => {
+    const chat = source('src/components/NovaChat.tsx');
+    expect(chat).toContain('readScopedNovaStorage("nova_chat_history")');
+    expect(chat).toContain('writeScopedNovaStorage("nova_chat_history"');
+    expect(chat).not.toContain('localStorage.getItem("nova_chat_history")');
+    expect(chat).toContain("localStorage.getItem('blaze_profile_uid')");
+    const app = source('src/App.tsx');
+    expect(app).toContain("key={user?.uid ?? 'signed-out'}");
+  });
+
+  it('checks current server permissions before new memories are written', () => {
+    const rules = source('firestore.rules');
+    expect(rules).toContain("nova_permissions/current).data.allowNovaMemory == true");
+    expect(rules).toContain("nova_permissions/current).data.allowNovaUseSavedMemories == true");
+    const memory = source('src/lib/nova-brain.ts');
+    expect(memory).toContain("localStorage.getItem('blaze_profile_uid') !== uid");
+  });
+
+  it('allows users to inspect, correct, erase and reset adaptive learning', () => {
+    const server = source('server.ts');
+    expect(server).toContain('app.get("/api/recovery/my-feedback"');
+    expect(server).toContain('app.delete("/api/recovery/my-feedback/:id"');
+    expect(server).toContain('app.post("/api/recovery/reset-adaptive-learning"');
+    const ui = source('src/components/AdaptiveFeedbackHistory.tsx');
+    expect(ui).toContain('Reset what Nova has learned');
+    expect(ui).toContain('action:');
+  });
+});
