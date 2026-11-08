@@ -24,5 +24,8 @@ describe('multilingual onboarding with stable persisted answers', () => {
       expect(source).toContain(`field: "${field}"`);
     }
     expect(source).toContain('letNovaLearn: false');
+    expect(source).toContain('sendNovaNudges: false');
+    expect(source).toContain('aria-checked={profile.sendNovaNudges === true}');
+    expect(source).toContain('const next = profile.sendNovaNudges !== true;');
   });
 });
