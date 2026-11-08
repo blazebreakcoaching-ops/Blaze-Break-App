@@ -238,6 +238,7 @@ export const en = {
   "fingerprint.option.meaning.2": "Fading alignment. The vision is getting buried under administrative tax.",
   "fingerprint.option.meaning.3": "Completely disconnected. It is entirely a survival run for the paycheck or exit.",
   "fingerprint.option.meaning.4": "Crisis block. I do not remember what a meaningful activity feels like.",
+  "fingerprint.fullEnglishNotice": "The full 14-question assessment currently uses English questions and answer choices. Translation review is still in progress.",
   // Fingerprint questionnaire: wording only; never change stable question IDs or scores.
   "fingerprint.question.workload": "How often do you feel like your daily workload is physically and mentally impossible to complete?",
   "fingerprint.question.boundaries": "When someone requests a \"quick favour\" that encroaches on your focused recovery time, you:",
