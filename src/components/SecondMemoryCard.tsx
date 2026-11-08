@@ -12,6 +12,7 @@ export function SecondMemoryCard({ minimal = false }: { minimal?: boolean }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [confirmErase, setConfirmErase] = useState(false);
   const load = useCallback(async () => {
     if (!auth.currentUser) return;
     try {
@@ -47,6 +48,16 @@ export function SecondMemoryCard({ minimal = false }: { minimal?: boolean }) {
     } catch { setError('Your change was not saved.'); }
     finally { setBusy(false); }
   };
+  const eraseAll = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      await secureApiFetch('/api/nova/second-memory', { method: 'DELETE' });
+      setConfirmErase(false);
+      await load();
+    } catch { setError('Notes could not be deleted.'); }
+    finally { setBusy(false); }
+  };
   const open = items.filter(item => item.status === 'open');
   const featured = open[0] ?? null;
   return (
@@ -56,7 +67,28 @@ export function SecondMemoryCard({ minimal = false }: { minimal?: boolean }) {
         <p className="text-xs text-text-muted">A place for the things you don't want to hold in your head.</p>
       </div>
       {!enabled ? (
-        <p className="text-xs text-text-muted">Turn on Nova Memory in Privacy Controls to save private notes.</p>
+        <div className="space-y-2">
+          <p className="text-xs text-text-muted">
+            Nova Memory is off. Nothing here will be used for personalisation.
+            {items.length > 0 ? ' You can still erase your saved notes.' : ''}
+          </p>
+          {items.length > 0 && (
+            <div className="space-y-2">
+              <button type="button" disabled={busy} className="text-xs text-red-600 underline"
+                onClick={() => setConfirmErase(value => !value)}>
+                Delete all {items.length} saved notes
+              </button>
+              {confirmErase && (
+                <div className="flex items-center gap-3">
+                  <p className="text-xs text-text-muted">Permanently delete these notes?</p>
+                  <button type="button" disabled={busy} className="text-xs text-red-600"
+                    onClick={() => void eraseAll()}>Delete</button>
+                  <button type="button" className="text-xs text-text-muted" onClick={() => setConfirmErase(false)}>Cancel</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       ) : (
         <>
           {featured ? (
