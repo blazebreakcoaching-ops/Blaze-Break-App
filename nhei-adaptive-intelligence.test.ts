@@ -59,6 +59,35 @@ describe('NHEI adaptive intelligence', () => {
   });
 });
 
+describe('changing circumstances', () => {
+  it('does not generalise helpfulness from a different capacity state', () => {
+    const context = {
+      learningEnabled: true,
+      currentBandwidthBand: 'low_bandwidth' as const,
+      outcomes: Array.from({ length: 3 }, () => ({
+        sourceModule: 'recover',
+        feedback: 'better' as const,
+        bandwidthBand: 'reflective_bandwidth' as const,
+      })),
+    };
+    const changed = adaptInterventionCandidates([candidate()], context);
+    expect(changed.candidates[0].userPreferenceMatch).toBe('neutral');
+    expect(changed.explanations).toEqual([]);
+  });
+  it('can learn within repeated comparable contexts', () => {
+    const context = {
+      learningEnabled: true,
+      currentBandwidthBand: 'low_bandwidth' as const,
+      outcomes: Array.from({ length: 3 }, () => ({
+        sourceModule: 'recover',
+        feedback: 'better' as const,
+        bandwidthBand: 'low_bandwidth' as const,
+      })),
+    };
+    expect(adaptInterventionCandidates([candidate()], context).candidates[0].userPreferenceMatch).toBe('preferred');
+  });
+});
+
 describe('adaptive routing integration', () => {
   const band = { band: 'reflective_bandwidth' as const, sufficientData: true, source: 'capacity_check_in' as const };
   const other = candidate({
