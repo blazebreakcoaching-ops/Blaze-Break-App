@@ -155,3 +155,6 @@ Keep calendar, employer-sharing and proactive external actions out of this relea
 5. Wider module adapters and proactive outside-app support remain conditional on validated data mapping, explicit consent and safety review; they are not implemented by this batch.
 
 **Status:** Source code and test definitions have advanced. A complete secure production release cannot be certified without the runtime and staging checks above.
+
+### Shared memory cache follow-up (same batch)
+A later source audit identified a separate shared-cache race: async Firestore reads from a former signed-in user could overwrite the next user's in-memory Nova brain. The init lifecycle now clears the cache immediately for a new UID, uses an invalidation generation, discards obsolete responses (including failure handlers), and clears on sign-out/withdrawal. Synchronous brain reads return no data unless the cache belongs to the current Auth UID. User-facing edit/delete methods also require the active UID and an editable memory. Source contracts were added. **Execution, runtime validation and deploy remain outstanding.**
