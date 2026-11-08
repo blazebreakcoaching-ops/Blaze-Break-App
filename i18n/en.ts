@@ -201,6 +201,16 @@ export const en = {
   'settings.lowEnergyHint': 'Calmer screens: no confetti or pop-up celebrations, and gentler pacing.',
   'settings.useName': 'Use my preferred name in greetings',
 
+  // Burnout Fingerprint: text only; assessment question IDs and scores remain unchanged.
+  "fingerprint.choiceTitle": "How much time do you have right now?",
+  "fingerprint.choiceSubtitle": "Choose a shorter or longer check-in. You can change your mind.",
+  "fingerprint.quickTitle": "Quick check — about 90 seconds",
+  "fingerprint.fullTitle": "Full check-in — about 3–4 minutes",
+  "fingerprint.progress": "Question {current} of {total}",
+  "fingerprint.working": "Nova is reviewing your answers...",
+  "fingerprint.errorTitle": "We couldn't complete your check-in",
+  "fingerprint.retry": "Try again",
+
   // Onboarding
   // Core onboarding prompts: display strings only; stored answers remain stable.
   "onboarding.welcomeTitle": "Welcome. Let's take this one step at a time.",
