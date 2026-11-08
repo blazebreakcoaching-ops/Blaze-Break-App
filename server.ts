@@ -77,6 +77,7 @@ import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engi
 import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
 import { adaptInterventionCandidates } from './nhei-adaptive-intelligence';
+import { mayUseSecondMemory, normalizeOpenLoop, validateOpenLoop, MAX_OPEN_LOOPS } from './nhei-second-memory';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
@@ -14132,6 +14133,83 @@ app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, as
     res.json({ success: true });
   } catch (err: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// NHEI Second Memory: user-created, user-owned open loops. These private
+// notes are never queried by employers or used as diagnostic evidence.
+// The usual user export/erasure traverses this nested subcollection.
+const secondMemoryCollection = (uid: string) =>
+  getDb().collection("users").doc(uid).collection("nova_second_memory");
+
+const secondMemoryPermissions = async (uid: string): Promise<boolean> => {
+  const snap = await getDb().collection("users").doc(uid)
+    .collection("nova_permissions").doc("current").get();
+  return mayUseSecondMemory(snap.data());
+};
+
+app.get("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (!(await secondMemoryPermissions(user.uid))) return res.json({ enabled: false, items: [] });
+    const snap = await secondMemoryCollection(user.uid).orderBy("updatedAt", "desc").limit(MAX_OPEN_LOOPS).get();
+    const items = snap.docs.map(doc => normalizeOpenLoop({ id: doc.id, ...doc.data() }))
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    res.json({ enabled: true, items });
+  } catch (err: any) {
+    logger.error("Second Memory read failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const note = validateOpenLoop(req.body?.text);
+    if (!note) return res.status(400).json({ error: "Please enter a note of 1 to 240 characters." });
+    if (!(await secondMemoryPermissions(user.uid))) return res.status(403).json({ error: "Enable Nova Memory before saving notes." });
+    const collection = secondMemoryCollection(user.uid);
+    const current = await collection.limit(MAX_OPEN_LOOPS + 1).get();
+    if (current.size >= MAX_OPEN_LOOPS) return res.status(409).json({ error: "Your note list is full. Finish or remove a note first." });
+    const now = new Date().toISOString();
+    const ref = await collection.add({ text: note, status: "open", createdAt: now, updatedAt: now });
+    res.status(201).json({ item: { id: ref.id, text: note, status: "open", updatedAt: now } });
+  } catch (err: any) {
+    logger.error("Second Memory write failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.patch("/api/nova/second-memory/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const id = String(req.params.id ?? "");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid note ID." });
+    if (!(await secondMemoryPermissions(user.uid))) return res.status(403).json({ error: "Nova Memory is disabled." });
+    const status = req.body?.status;
+    if (status !== "open" && status !== "done") return res.status(400).json({ error: "Invalid note status." });
+    const ref = secondMemoryCollection(user.uid).doc(id);
+    const previous = await ref.get();
+    if (!previous.exists) return res.status(404).json({ error: "Note not found." });
+    await ref.update({ status, updatedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error("Second Memory update failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.delete("/api/nova/second-memory/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const id = String(req.params.id ?? "");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid note ID." });
+    // Erasure remains possible even if memory consent was withdrawn.
+    await secondMemoryCollection(user.uid).doc(id).delete();
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error("Second Memory deletion failed", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
   }
 });
