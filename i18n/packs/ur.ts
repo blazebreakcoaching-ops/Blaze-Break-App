@@ -321,4 +321,5 @@ export const ur: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "انتظامی کاموں کے بوجھ تلے مقصد دھندلا رہا ہے۔",
   "fingerprint.option.meaning.3": "مقصد سے مکمل طور پر کٹ گیا/گئی ہوں اور صرف گزارہ کر رہا/رہی ہوں۔",
   "fingerprint.option.meaning.4": "اب یاد نہیں کہ بامعنی کام کیسا محسوس ہوتا ہے۔",
+  "fingerprint.fullEnglishNotice": "مکمل 14 سوالات والے جائزے میں فی الحال انگریزی سوالات اور جوابات استعمال ہوتے ہیں۔ تراجم کا جائزہ ابھی جاری ہے۔",
 };
