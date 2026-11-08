@@ -235,7 +235,11 @@ export const DataPrivacyDashboard = ({
         {adaptiveError && <p role="alert" className="text-xs text-red-600">{adaptiveError}</p>}
       </section>
 
-      <AdaptiveFeedbackHistory />
+      <AdaptiveFeedbackHistory onReset={() => {
+        setAdaptiveAllowed(false);
+        setAdaptivePreferred([]);
+        setAdaptiveAvoided([]);
+      }} />
 
       <div className="space-y-3">
         {dataPoints.map((point) => {
