@@ -250,4 +250,10 @@ export const pt: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "A Nova está a analisar as suas respostas...",
   "fingerprint.errorTitle": "Não foi possível concluir a avaliação",
   "fingerprint.retry": "Tentar novamente",
+  "notifications.title": "Lembretes da Nova",
+  "notifications.description": "Apenas lembretes discretos na aplicação. As notificações push, e-mail, SMS e Guardian estão desativadas.",
+  "notifications.enable": "Ativar lembretes na aplicação",
+  "notifications.enableDetail": "Permitir que a Nova ofereça apoio suave durante a utilização da aplicação.",
+  "notifications.quietHours": "Horas de descanso",
+  "notifications.quietDetail": "A Nova não enviará lembretes durante estas horas.",
 };
