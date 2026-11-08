@@ -15175,7 +15175,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         consideredModules: candidates.map((c) => c.sourceModule),
         bandwidthBand: bandwidth.band,
         // Safe analytics: does not include personal feedback or memory text.
-        adaptiveLearningUsed: adaptiveContext !== undefined,
+        adaptiveLearningEnabled: adaptiveContext !== undefined,
+        adaptiveLearningUsed: selectedAdaptiveExplanation !== null,
         adaptiveBasis: selectedAdaptiveExplanation?.basis ?? null,
       });
       decisionId = ref.id;
@@ -15197,7 +15198,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       // prefers this over its generic per-reason-code fallback.
       evidenceDetail: decision.selectedCandidate?.evidence.detail ?? null,
       evidenceSource: decision.selectedCandidate?.evidence.source ?? null,
-      adaptiveLearningUsed: adaptiveContext !== undefined,
+      adaptiveLearningEnabled: adaptiveContext !== undefined,
+      adaptiveLearningUsed: selectedAdaptiveExplanation !== null,
       // Preference hints are never diagnoses; they only affect deterministic tie-breaks.
       adaptiveExplanation: selectedAdaptiveExplanation,
       // An earlier intervention the user started but never reported back
