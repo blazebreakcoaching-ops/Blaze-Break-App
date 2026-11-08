@@ -98,12 +98,12 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       </div>
       <div className="space-y-2">
         <button type="button" className="text-xs text-red-600 underline"
-          onClick={() => setConfirmReset(value => !value)}>Reset what Nova has learned</button>
+          onClick={() => setConfirmReset(value => !value)}>Reset adaptive feedback</button>
         {confirmReset && (
           <div className="space-y-2 p-3 border border-border rounded-lg">
             <p className="text-xs text-text-muted">
               This turns Adaptive Intelligence off, clears your saved module preferences,
-              and removes past helpfulness ratings. Your recovery activities stay recorded.
+              and removes past helpfulness ratings. Your recovery activities stay recorded.\n              Nova's separate saved memories and Second Memory notes are not erased here; you can manage them in Memory Centre.
             </p>
             <div className="flex flex-wrap gap-3">
               <button type="button" disabled={busyId !== null} onClick={() => void resetLearning()}
