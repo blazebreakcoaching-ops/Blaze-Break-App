@@ -20,3 +20,13 @@ describe('idempotent routing outcomes', () => {
     expect(planOutcomeTransition({}, 'completed', null, now).allowed).toBe(false);
   });
 });
+
+describe('withdrawn feedback remains forgotten', () => {
+  it('blocks stale retry from restoring forgotten feedback', () => {
+    expect(planOutcomeTransition({
+      outcome: 'completed', feedbackWithdrawnAt: '2026-11-08T10:00:00.000Z'
+    }, 'completed', 'better', now)).toMatchObject({
+      allowed: false, reason: 'This rating was forgotten.'
+    });
+  });
+});
