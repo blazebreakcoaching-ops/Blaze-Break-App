@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:nhei": "vitest run nhei-adaptive-intelligence.test.ts nhei-routing-outcome.test.ts nhei-second-memory.test.ts nhei-individual-scenarios.test.ts nhei-integration-contract.test.ts nhei-security-contract.test.ts recovery-outcomes-intelligence.test.ts",
-    "test:nhei:rules": "vitest run nhei-firestore-consent.emulator.test.ts"
+    "test:nhei:rules": "node -e \"if (!process.env.FIRESTORE_EMULATOR_HOST) { console.error('Firestore emulator required: set FIRESTORE_EMULATOR_HOST before running test:nhei:rules'); process.exit(1); }\" && vitest run nhei-firestore-consent.emulator.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
