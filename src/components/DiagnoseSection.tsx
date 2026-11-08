@@ -288,6 +288,7 @@ export const DiagnoseView = ({
     : questions;
 
   const handleAnswer = (val: number) => {
+    if (loading || error) return;
     const nextAnswers = { ...answers, [activeQuestions[step].id]: val };
     setAnswers(nextAnswers);
     if (step < activeQuestions.length - 1) {
@@ -340,7 +341,7 @@ export const DiagnoseView = ({
     }
   };
 
-  if (mode === 'choice') {
+  if (mode === 'choice' && !loading && !error) {
     return (
       <div data-nova-guide-target="checkin-content" tabIndex={-1} className="max-w-2xl mx-auto py-12 space-y-10 text-center">
         <div className="space-y-3">
@@ -428,9 +429,6 @@ export const DiagnoseView = ({
           exit={{ opacity: 0, x: -20 }}
           className="space-y-8"
         >
-          <span className="text-xs uppercase tracking-widest text-ember-accent font-bold">
-            Leak Category: {activeQuestions[step].id.toUpperCase()}
-          </span>
           <h3 className="text-3xl font-light text-text-main leading-tight">
             {t(('fingerprint.question.' + activeQuestions[step].id) as TranslationKey)}
           </h3>
