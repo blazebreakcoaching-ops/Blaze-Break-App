@@ -250,4 +250,10 @@ export const fr: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "Nova examine vos réponses...",
   "fingerprint.errorTitle": "Nous n'avons pas pu terminer votre bilan",
   "fingerprint.retry": "Réessayer",
+  "notifications.title": "Rappels de Nova",
+  "notifications.description": "Rappels discrets dans l'application uniquement. Les notifications push, e-mail, SMS et Guardian sont désactivées.",
+  "notifications.enable": "Activer les rappels dans l'application",
+  "notifications.enableDetail": "Autoriser Nova à proposer un soutien léger lorsque vous utilisez l'application.",
+  "notifications.quietHours": "Heures de tranquillité",
+  "notifications.quietDetail": "Nova ne vous enverra pas de rappel pendant ces heures.",
 };
