@@ -23,6 +23,19 @@ describe('Recovery Intelligence member separation', () => {
     expect(source).toContain('if (!decisionId || !accountUid || auth.currentUser?.uid !== accountUid) return');
   });
 
+  it('preserves feedback choices until their authenticated save succeeds', () => {
+    expect(source).toContain('const saved = await reportOutcome(');
+    expect(source).toContain('if (saved) setPendingOutcomeCheck(null)');
+    expect(source).toContain('setOutcomeError(');
+  });
+
+  it('keeps the low-energy view local and scoped to each account', () => {
+    expect(source).toContain("'blaze_floor_mode_' + accountUid");
+    expect(source).toContain("'blaze_floor_mode_' + uid");
+    expect(source).toContain('aria-pressed={floorMode}');
+    expect(source).toContain('!floorMode && auth.currentUser && <RecoveryInsightsPanel />');
+  });
+
   it('reuses the shared i18n title without changing any stored recovery data', () => {
     expect(source).toContain('t("title.recovery_intelligence")');
   });
