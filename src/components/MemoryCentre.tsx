@@ -53,7 +53,7 @@ export function MemoryCentre() {
             <Brain className="w-5 h-5 text-primary" /> Memory Centre
           </h2>
           <p className="text-sm text-text-muted mt-1 max-w-lg">
-            Nova remembers only what you explicitly approve. These coaching preferences and patterns help personalise your recovery guidance without exposing raw private data.
+            With your permission, Nova can save coaching context and preferences. Review and edit the memories shown here. Second Memory notes are managed separately below.
           </p>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 bg-success/10 text-success rounded-full text-xs font-medium border border-success/20">
