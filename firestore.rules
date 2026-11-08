@@ -995,7 +995,7 @@ service cloud.firestore {
         allow read: if isOwner(uid);
         allow delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
-            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'updatedAt'])
+            && hasOnly(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowCalendarSignals', 'allowFingerprint', 'allowOnboardingProfile', 'allowRecoveryPlanProgress', 'allowDiagnosisProgress', 'allowEnergyCommitments', 'allowStressTriggers', 'allowHabitCycles', 'allowFuelLogs', 'allowFocusSessions', 'allowSomaticResets', 'allowRecoveryAlly', 'allowNovaMemory', 'allowNovaUseSavedMemories', 'allowAdaptiveIntelligence', 'adaptivePreferredModules', 'adaptiveAvoidedModules', 'updatedAt'])
             && hasAll(['allowCheckins', 'allowEnergyBudgets', 'allowMoodPulses', 'allowBodyCheckins', 'allowWins', 'allowWeeklyReviews', 'allowBoundaryScripts', 'allowGoals', 'allowRecoveryDebt', 'allowRecoveryVelocity', 'allowEnergyTrend', 'allowMoodTrend', 'allowNovaMemory', 'allowNovaUseSavedMemories'])
             && request.resource.data.allowCheckins is bool
             && request.resource.data.allowEnergyBudgets is bool
@@ -1022,7 +1022,10 @@ service cloud.firestore {
             && (!('allowSomaticResets' in request.resource.data) || request.resource.data.allowSomaticResets is bool)
             && (!('allowRecoveryAlly' in request.resource.data) || request.resource.data.allowRecoveryAlly is bool)
             && request.resource.data.allowNovaMemory is bool
-            && request.resource.data.allowNovaUseSavedMemories is bool;
+            && request.resource.data.allowNovaUseSavedMemories is bool
+            && (!('allowAdaptiveIntelligence' in request.resource.data) || request.resource.data.allowAdaptiveIntelligence is bool)
+            && (!('adaptivePreferredModules' in request.resource.data) || (request.resource.data.adaptivePreferredModules is list && request.resource.data.adaptivePreferredModules.size() <= 14 && request.resource.data.adaptivePreferredModules.hasOnly(['guided_reset','reset_studio','anxiety_reset','one_less_thing','workload_reality_check','capacity_firewall','boundary_architect','digital_boundary_shield','recovery_fuel','my_patterns','weekly_review','action_engine','recovery_ally','support_circle'])))
+            && (!('adaptiveAvoidedModules' in request.resource.data) || (request.resource.data.adaptiveAvoidedModules is list && request.resource.data.adaptiveAvoidedModules.size() <= 14 && request.resource.data.adaptiveAvoidedModules.hasOnly(['guided_reset','reset_studio','anxiety_reset','one_less_thing','workload_reality_check','capacity_firewall','boundary_architect','digital_boundary_shield','recovery_fuel','my_patterns','weekly_review','action_engine','recovery_ally','support_circle'])));
       }
 
       // K. derived summaries
