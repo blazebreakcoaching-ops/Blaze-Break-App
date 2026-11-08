@@ -189,3 +189,41 @@ Commits: `d61b8a2` (mobile 2FA), `92c177d` (Nova/NHEI), `c71635d` (design tokens
 
 Gate: `verify:integration:offline` on `c71635d` → OFFLINE_CHECKS_PASS (vitest 5,379;
 components 144; emulator 52; Playwright preview 66, real app 38; mobile Jest 65; Functions pass).
+
+## 10. Batch 6 — Customer-first experience (2026-11-08)
+
+Commits: `d205a4f` (placeholder debts no longer shown as data), `c1e1c69` (Nova guide insights step),
+`fc932d2` (Novice / Mastering / Expert, saved preference route, simpler navigation, journey E2E),
+`3ba58cd` (mobile Tools slot shows the open tool).
+
+| Area | Item | Status |
+|---|---|---|
+| Experience | Novice / Mastering / Expert display levels, customer-chosen, saved per account, never an access gate | DONE |
+| Navigation | Quick find always visible; purpose-built 5-item mobile bar; fits at 320px | DONE |
+| Journey | Sign up → onboarding → check-in → insights → Nova → plan → progress, real backend E2E | DONE (passes) |
+| Honesty | Placeholder recovery debts shown as "highest debt", in Nova's read and as badge progress | DONE (fixed) |
+| Super Nova | Nothing exists in any branch, file, issue or PR | N/A — needs a specification |
+
+Gate on `3ba58cd` → OFFLINE_CHECKS_PASS (vitest 5,389; components 151; emulator 52; Playwright preview 66,
+real app 39; mobile Jest 65; Functions 22).
+
+## 11. Owner PRs #157 and #158 reconciled (2026-11-08)
+
+Merged (stacked) in `ac85610`; reconciliation `01675ce`, `b71bc2f`, `c465845`, `aa0024f`.
+PRs #157 / #158 remain open drafts; their branches are unchanged.
+
+| Item | Status |
+|---|---|
+| Qualitative `low_energy_checkins` kept separate; no scores derived | KEPT (tested web, native, rules) |
+| New Firestore rules tested on the emulator (10 tests, in the gate), incl. 2FA gate | DONE — **not deployed** |
+| Double-tap double save; no save confirmation; unannounced errors | DONE (fixed) |
+| Web and native stored welcome preferences in different places | DONE — one canonical record, legacy fallback, no migration |
+| Web "Use Name" switch disagreed with the greeting | DONE (fixed, opt-in) |
+| Native TypeScript and lint failures from #158 | DONE (fixed) |
+| Voice journal invented progress stages | DONE (honest, announced) |
+| Physical-device VoiceOver / TalkBack | BLOCKED — plan in docs/DEVICE_ACCESSIBILITY_TEST_PLAN.md |
+| Languages beyond English | OPEN by design — needs reviewed translations |
+| Per-account low-energy mode / pacing / reduced-motion override | OPEN — needs owner decision |
+
+Gate on `aa0024f` → OFFLINE_CHECKS_PASS (vitest 5,411; components 156; emulator 62; Playwright preview 66,
+real app 39; mobile Jest 69; Functions 22).
