@@ -1692,7 +1692,7 @@ export default function App() {
       // already-onboarded users (a fresh onboarding flow creates its own
       // via initNovaPermissionsForNewUser).
       if (user && loadedStats.profile?.fullName) {
-        ensureNovaPermissionsExist(user.uid, loadedStats.profile?.letNovaLearn !== false);
+        ensureNovaPermissionsExist(user.uid, loadedStats.profile?.letNovaLearn === true);
       }
 
       // Firestore is the real source of truth now. localStorage is only
@@ -2315,7 +2315,7 @@ export default function App() {
             // finds Settings > Nova Privacy Controls. Memory specifically
             // carries through whatever the user chose on the consent step.
             if (user) {
-              initNovaPermissionsForNewUser(user.uid, profile.letNovaLearn !== false);
+              initNovaPermissionsForNewUser(user.uid, profile.letNovaLearn === true);
             }
 
             updateNovaMemoryBySourceAndType("Onboarding Telemetry", "profile", {
@@ -2333,7 +2333,7 @@ export default function App() {
               action: "Completed onboarding",
               target: "onboarding_consent",
               status: "authorised",
-              details: `useNameInGreetings=${profile.useNameInGreetings !== false}, letNovaLearn=${profile.letNovaLearn !== false}, sendNovaNudges=${profile.sendNovaNudges !== false}`,
+              details: `useNameInGreetings=${profile.useNameInGreetings !== false}, letNovaLearn=${profile.letNovaLearn === true}, sendNovaNudges=${profile.sendNovaNudges !== false}`,
             });
           }}
         />
@@ -3181,7 +3181,7 @@ export default function App() {
                 // Firestore on the next debounced save.
                 localStorage.setItem("blaze_profile", JSON.stringify(profile));
                 if (user) {
-                  setNovaMemoryConsent(user.uid, profile.letNovaLearn !== false);
+                  setNovaMemoryConsent(user.uid, profile.letNovaLearn === true);
                 }
               }}
               onOpenPrivacyCentre={() => {
