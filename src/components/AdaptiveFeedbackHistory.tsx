@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
 import { moduleDisplayName } from '../../recovery-decision-copy';
 import { auth } from '../lib/firebase';
+import { useAuth } from '../lib/auth';
 
 interface FeedbackItem {
   id: string;
@@ -17,6 +18,8 @@ const LABELS: Record<FeedbackItem['helpfulness'], string> = {
 };
 
 export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
   const [items, setItems] = useState<FeedbackItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -26,17 +29,21 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const load = useCallback(async () => {
-    if (!auth.currentUser) return;
+    if (!uid || auth.currentUser?.uid !== uid) return;
     setError('');
     try {
       const res = await secureApiFetch('/api/recovery/my-feedback');
       const data = await res.json() as { items?: FeedbackItem[] };
+      if (auth.currentUser?.uid !== uid) return;
       setItems(data.items ?? []);
       setLoaded(true);
     } catch {
       setError('Feedback history is unavailable. Please try again.');
     }
-  }, []);
+  }, [uid]);
+  useEffect(() => {
+    setItems([]); setLoaded(false); setExpanded(false); setEditingId(null); setConfirmReset(false);
+  }, [uid]);
   useEffect(() => { if (expanded && !loaded) void load(); }, [expanded, loaded, load]);
   const correct = async (id: string) => {
     if (busyId) return;
