@@ -103,3 +103,12 @@ The build and tests **have not been executed in this GitHub-only working environ
 - Privacy-reviewed proactive assistance outside an actively opened app (requires explicit permission and scheduling controls).
 - Longitudinal evaluation with consenting beta participants, human oversight and measured improvement.
 - Global localisation end-to-end verification, native app usability, resilience and accessibility testing.
+
+## Follow-on integrity and rights fixes — 8 November 2026
+- **Atomic Second Memory creation:** the backend reads current member consent and bounded note count within one Firestore transaction before creating a note. This prevents concurrent requests from bypassing the note cap or relying on an outdated permission read. A real concurrency test is still needed.
+- **Durable feedback withdrawal:** forgetting or resetting subjective ratings adds a `feedbackWithdrawnAt` marker. A delayed repeat outcome request cannot silently reintroduce a rating the person erased.
+- **Member rights after opt-out:** Memory Centre now offers an explicit, on-demand review of all persisted Nova memories through the user's own Firestore read permissions, independently of the active coaching memory cache. Editable entries can be corrected or forgotten, without re-enabling learning.
+- **Actual feature suggestions:** Nova's server tool description now matches the existing validated destination list, including Recovery Intelligence and Privacy Controls. This avoids offering only outdated feature choices.
+- **Regression contracts:** `nhei-security-contract.test.ts` adds targeted source-level checks. Unit, rules emulator and full E2E tests still require execution and review.
+
+**Do not call the system production-ready on the basis of these commits alone.** Verify the Firestore transaction, memory permission rules, signed-in account isolation, feedback withdrawal, client rendering and build on staging. Keep privacy-sensitive functionality gated until those checks pass.
