@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Loader2, HeartPulse } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n-react';
+import type { TranslationKey } from '../../i18n/en';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaRecommendationCard } from './NovaRecommendationCard';
 import { SecondMemoryCard } from './SecondMemoryCard';
@@ -320,7 +321,7 @@ export const RecoveryIntelligenceHub = () => {
           onClick={() => setShowExplore((v) => !v)}
           className="w-full flex items-center justify-between p-5 text-xs font-bold uppercase tracking-widest text-text-muted hover:text-text-main transition-colors"
         >
-          Explore All Tools
+          {t('nav.exploreAll')}
           {showExplore ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
         {showExplore && (
@@ -335,7 +336,7 @@ export const RecoveryIntelligenceHub = () => {
                     onClick={() => tool.kind === 'navigate' ? navigateToTab(tool.tab) : setExpandedTool(isExpanded ? null : tool.id)}
                     className="w-full text-left py-2.5 px-3.5 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors flex items-center justify-between"
                   >
-                    {tool.label}
+                    {tool.kind === 'navigate' ? t(('nav.' + tool.tab) as TranslationKey) : tool.label}
                     {tool.kind === 'inline' && (isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
                   </button>
                   {isExpanded && InlineComponent && (
