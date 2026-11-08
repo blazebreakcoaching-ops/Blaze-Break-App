@@ -466,10 +466,15 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                     <input id="blaze-timezone" type="text" maxLength={80}
                       value={profile.timeZone || ''} onChange={e => setProfile(p => ({ ...p, timeZone: e.target.value }))}
                       aria-invalid={!validTimeZone(profile.timeZone || '')}
-                      aria-describedby="blaze-timezone-hint"
+                      aria-describedby={validTimeZone(profile.timeZone || '') ? "blaze-timezone-hint" : "blaze-timezone-hint blaze-timezone-error"}
                       className="w-full bg-background border border-border rounded-xl px-5 py-4 text-text-main"
                       placeholder="Europe/London" />
                     <p id="blaze-timezone-hint" className="text-xs text-text-muted">Suggested from your device. Change it if needed. No location tracking.</p>
+                    {!validTimeZone(profile.timeZone || '') && (
+                      <p id="blaze-timezone-error" role="alert" className="text-xs text-ember-danger">
+                        Enter a time zone such as Europe/London or America/New_York.
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-3">
                     <label htmlFor="blaze-language" className="block text-xs font-bold text-text-muted">App language</label>

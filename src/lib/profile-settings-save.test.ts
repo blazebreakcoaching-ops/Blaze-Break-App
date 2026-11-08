@@ -35,7 +35,7 @@ describe('verified settings and consent persistence', () => {
   it('commits profile and Nova memory permissions in one atomic batch', async () => {
     await saveVerifiedProfileSettings('account-A', profile);
     expect(mocks.commit).toHaveBeenCalledOnce();
-    expect(mocks.set).toHaveBeenCalledTimes(2);
+    expect(mocks.set).toHaveBeenCalledTimes(4);
     expect(mocks.set).toHaveBeenCalledWith(
       'users/account-A/user_stats/core',
       expect.objectContaining({ profile: expect.objectContaining({
@@ -78,7 +78,7 @@ describe('verified settings and consent persistence', () => {
     expect(mocks.commit).toHaveBeenCalledOnce();
     const saved = mocks.set.mock.calls.find(([path]) => path === 'users/account-A/user_stats/core')?.[1];
     expect(saved).toHaveProperty('lastSeenChangelogVersion', 'beta-release');
-    expect(mocks.set).toHaveBeenCalledTimes(2);
+    expect(mocks.set).toHaveBeenCalledTimes(4);
   });
 
   it('does not reset an existing account\'s other Nova privacy choices', async () => {
@@ -123,5 +123,32 @@ describe('verified settings and consent persistence', () => {
     expect(stored).not.toHaveProperty('novaTone');
     expect(stored).not.toHaveProperty('subscription');
     expect(stored).toHaveProperty('questioningStyle', null);
+  });
+
+  it('writes welcome preferences to the canonical web + native documents in the same batch', async () => {
+    mocks.getDoc.mockResolvedValue({ exists: () => true });
+    await saveVerifiedProfileSettings('account-A', {
+      ...profile, preferredName: 'Sam', timeZone: 'Asia/Tokyo', region: 'Japan',
+      greetingTone: 'direct', useNameInGreetings: true, greetingEnabled: true,
+    } as any);
+    expect(mocks.commit).toHaveBeenCalledOnce();
+    const root = mocks.set.mock.calls.find(([path]) => path === 'users/account-A')?.[1];
+    expect(root).toEqual({ preferredName: 'Sam', timezone: 'Asia/Tokyo', country: 'Japan', locale: 'en', updatedAt: expect.any(String) });
+    const ui = mocks.set.mock.calls.find(([path]) => path === 'users/account-A/preferences/ui')?.[1];
+    expect(ui).toEqual({ greetingEnabled: true, usePreferredName: true, greetingTone: 'direct', localePreference: 'en' });
+  });
+
+  it('creates the root document with createdAt only when it does not exist yet', async () => {
+    mocks.getDoc.mockImplementation(async (ref: string) => ({ exists: () => ref !== 'users/account-A' }));
+    await saveVerifiedProfileSettings('account-A', profile);
+    const root = mocks.set.mock.calls.find(([path]) => path === 'users/account-A')?.[1];
+    expect(root).toHaveProperty('createdAt');
+  });
+
+  it('never writes an invalid time zone to the canonical record (falls back to the device zone)', async () => {
+    await saveVerifiedProfileSettings('account-A', { ...profile, timeZone: 'Mars/Base' } as any);
+    const root = mocks.set.mock.calls.find(([path]) => path === 'users/account-A')?.[1];
+    expect(root.timezone).not.toBe('Mars/Base');
+    expect(typeof root.timezone).toBe('string');
   });
 });

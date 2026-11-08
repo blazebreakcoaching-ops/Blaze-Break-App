@@ -128,6 +128,7 @@ import { useAuth } from "./lib/auth.tsx";
 import { isCustomerRole, shouldShowCustomerNavTab, MOBILE_PRIMARY_TAB_IDS } from "./lib/customer-navigation";
 import { useExperienceLevel } from "./hooks/useExperienceLevel";
 import { recordedSleepShortfall } from "./lib/recorded-debts";
+import { resolvePersonalPreferences, webProfileFieldsFrom } from "../personal-preferences";
 import { ExperienceLevelSwitcher } from "./components/ExperienceLevelSwitcher";
 import type { ExperienceLevel } from "../experience-level";
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
@@ -839,7 +840,7 @@ const Header = ({
   const [dashboardWelcome] = useState(() => personalWelcome({
     now: new Date(),
     timeZone: profile?.timeZone,
-    preferredName: profile?.preferredName || userName || null,
+    preferredName: profile?.preferredName || (userName ? userName.split(" ")[0] : null),
     allowName: profile?.useNameInGreetings === true,
     tone: profile?.greetingTone,
     locale: profile?.language,
@@ -1810,6 +1811,26 @@ export default function App() {
             setStatsLoadError(true);
           }
           return;
+        }
+        // Personal welcome preferences: the canonical documents shared with
+        // the Expo app win; older web-only profile fields are the fallback.
+        // Non-critical - on failure the saved web profile is used as is.
+        try {
+          const db = await getDb();
+          const { doc, getDoc } = await import("firebase/firestore");
+          const [rootSnap, uiSnap] = await Promise.all([
+            getDoc(doc(db, "users", user.uid)),
+            getDoc(doc(db, "users", user.uid, "preferences", "ui")),
+          ]);
+          if (loadedStats.profile && (rootSnap.exists() || uiSnap.exists())) {
+            const merged = resolvePersonalPreferences({
+              root: rootSnap.data(), ui: uiSnap.data(),
+              legacyProfile: loadedStats.profile as unknown as Record<string, unknown>,
+            });
+            loadedStats = { ...loadedStats, profile: { ...loadedStats.profile, ...webProfileFieldsFrom(merged) } };
+          }
+        } catch {
+          // Keep the saved web profile's own welcome fields.
         }
       }
       if (!mayApplyAccountLoad(requestUid, auth.currentUser?.uid ?? null, cancelled)) return;

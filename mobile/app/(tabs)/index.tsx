@@ -174,7 +174,7 @@ export default function PulseScreen() {
           </TouchableOpacity>
         </View>
 
-        {welcomeProfile?.uid === user?.uid && welcomeProfile.value.enabled && (() => {
+        {welcomeProfile && welcomeProfile.uid === user?.uid && welcomeProfile.value.enabled && (() => {
           const greeting = personalWelcome({
             now: welcomeTime,
             timeZone: welcomeProfile.value.timeZone,

@@ -3,7 +3,7 @@ import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-nat
 import { Text, TextInput } from '../lib/native-ui';
 import { useNativeTheme } from '../lib/native-theme';
 import type { NativeThemeColors } from '../lib/native-theme-palette';
-import { emptyPersonalProfile, readPersonalProfile, savePersonalProfile, type PersonalProfile } from '../lib/personal-profile';
+import { readPersonalProfile, savePersonalProfile, type PersonalProfile } from '../lib/personal-profile';
 
 export function PersonalWelcomeSettings({ uid }: { uid: string }) {
   const { colors } = useNativeTheme();

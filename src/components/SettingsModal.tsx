@@ -443,10 +443,10 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       value={formData.timeZone || deviceTimeZone()}
                       onChange={e => setFormData({ ...formData, timeZone: e.target.value })}
                       aria-invalid={!!errors.timeZone}
-                      aria-describedby="settings-time-zone-help"
+                      aria-describedby={errors.timeZone ? "settings-time-zone-help settings-time-zone-error" : "settings-time-zone-help"}
                       className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-main" />
                     <p id="settings-time-zone-help" className="text-xs text-text-muted">Suggested from your device. No precise location is collected.</p>
-                    {errors.timeZone && <p role="alert" className="text-xs text-destructive">{errors.timeZone}</p>}
+                    {errors.timeZone && <p id="settings-time-zone-error" role="alert" className="text-xs text-ember-danger">{errors.timeZone}</p>}
                   </div>
                   <div className="space-y-1.5">
                     <label htmlFor="settings-language" className="block text-xs font-bold text-text-muted">Language</label>
@@ -605,10 +605,10 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                    <div className="flex items-center justify-between">
                      <h4 className="text-sm font-bold text-text-main">Use Name</h4>
                      <button onClick={() => {
-                        const next = { ...formData, useNameInGreetings: formData.useNameInGreetings === false ? true : false };
+                        const next = { ...formData, useNameInGreetings: formData.useNameInGreetings !== true };
                         savePreference(next);
-                     }} role="switch" aria-checked={formData.useNameInGreetings !== false} aria-label="Use Name" className={cn("w-10 h-6 rounded-full transition-colors relative", formData.useNameInGreetings !== false ? "bg-success" : "bg-surface dark:bg-surface")}>
-                        <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", formData.useNameInGreetings !== false ? "left-5" : "left-1")} />
+                     }} role="switch" aria-checked={formData.useNameInGreetings === true} aria-label="Use Name" className={cn("w-10 h-6 rounded-full transition-colors relative", formData.useNameInGreetings === true ? "bg-success" : "bg-surface dark:bg-surface")}>
+                        <div className={cn("w-4 h-4 rounded-full bg-white absolute top-1 transition-transform", formData.useNameInGreetings === true ? "left-5" : "left-1")} />
                      </button>
                    </div>
                    <p className="text-xs text-text-muted">Allow Nova to use your preferred name in greetings.</p>
