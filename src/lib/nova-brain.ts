@@ -40,6 +40,8 @@ export interface NovaMemory {
 let cachedBrain: NovaMemory[] = [];
 let cachedUid: string | null = null;
 let initPromise: Promise<void> | null = null;
+// Identity generation prevents an old asynchronous load from restoring another account's cache.
+let brainGeneration = 0;
 
 const memoriesCollection = async (uid: string) => {
   const db = await getDb();
@@ -204,36 +206,47 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
 
 export const initNovaBrain = (uid: string): Promise<void> => {
   if (cachedUid === uid && initPromise) return initPromise;
+  brainGeneration += 1;
+  const generation = brainGeneration;
   cachedUid = uid;
+  cachedBrain = [];
+  window.dispatchEvent(new Event('nova-brain-updated'));
   initPromise = (async () => {
     try {
       const { getDocs, getDoc, doc, query, orderBy } = await import('firebase/firestore');
       const db = await getDb();
       const permissionSnap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
+      if (generation !== brainGeneration || cachedUid !== uid || auth.currentUser?.uid !== uid) return;
       const permitted = permissionSnap.exists() &&
         permissionSnap.data().allowNovaMemory === true &&
         permissionSnap.data().allowNovaUseSavedMemories === true;
-      if (permitted && auth.currentUser?.uid === uid) {
+      if (permitted) {
         const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
-        if (auth.currentUser?.uid === uid) cachedBrain = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
+        if (generation !== brainGeneration || cachedUid !== uid || auth.currentUser?.uid !== uid) return;
+        cachedBrain = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
       } else {
         cachedBrain = [];
       }
-    } catch (e) {
-      // Leaves the cache empty rather than pretending memories loaded.
+    } catch {
+      if (generation !== brainGeneration || cachedUid !== uid || auth.currentUser?.uid !== uid) return;
+      // On failure we do not use stale memory as a fallback.
       cachedBrain = [];
+    } finally {
+      if (generation === brainGeneration && cachedUid === uid && auth.currentUser?.uid === uid) {
+        window.dispatchEvent(new Event('nova-brain-updated'));
+      }
     }
-    window.dispatchEvent(new Event('nova-brain-updated'));
   })();
   return initPromise;
 };
 
-// Called on sign-out so the next user's session never sees a stale cache
-// from whoever was signed in before them.
+// Called on sign-out, identity switch, or consent withdrawal.
 export const clearNovaBrainCache = () => {
+  brainGeneration += 1;
   cachedBrain = [];
   cachedUid = null;
   initPromise = null;
+  window.dispatchEvent(new Event('nova-brain-updated'));
 };
 
 const persistMemory = (uid: string, memory: NovaMemory) => {
