@@ -233,4 +233,12 @@ export const zh: Partial<Record<TranslationKey, string>> = {
   "support.directoryDesc": "查找其他国家的支持服务",
   "support.emergency": "紧急服务",
   "support.askCall": "请 {name} 给我打电话",
+  "onboarding.welcomeTitle": "欢迎。我们一步一步来。",
+  "onboarding.welcomeQuestion": "今天是什么原因让你来到这里？",
+  "onboarding.pathwayTitle": "聊聊你的工作",
+  "onboarding.pathwayQuestion": "以下哪项最符合你的情况？",
+  "onboarding.pressureTitle": "让你感到压力的事",
+  "onboarding.pressureQuestion": "目前什么最消耗你的精力？",
+  "onboarding.novaToneTitle": "Nova 应该如何与你交谈",
+  "onboarding.novaToneQuestion": "你希望 Nova 以什么方式与你沟通？",
 };
