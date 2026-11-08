@@ -27,6 +27,7 @@ import { BurnoutFingerprint } from "../types";
 import { secureApiFetch } from "../lib/secure-api";
 import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 import { useI18n } from '../lib/i18n-react';
+import type { TranslationKey } from '../../i18n/en';
 
 const questions = [
   {
@@ -413,7 +414,7 @@ export const DiagnoseView = ({
             Leak Category: {activeQuestions[step].id.toUpperCase()}
           </span>
           <h3 className="text-3xl font-light text-text-main leading-tight">
-            {activeQuestions[step].text}
+            {t(('fingerprint.question.' + activeQuestions[step].id) as TranslationKey)}
           </h3>
 
           <div className="grid grid-cols-1 gap-4">
