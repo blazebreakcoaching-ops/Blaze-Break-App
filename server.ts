@@ -15147,6 +15147,10 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       adaptiveContext = undefined;
     }
     const decision = selectRoute(candidates, bandwidth, sessionState, adaptiveContext);
+    const selectedAdaptiveExplanation = adaptiveContext
+      ? adaptInterventionCandidates(candidates, adaptiveContext).explanations
+          .find(item => item.candidateId === decision.selectedCandidate?.candidateId) ?? null
+      : null;
 
     // Only a real "selected"/"needs_clarification" outcome counts as a
     // recommendation actually having been offered - NONE outcomes (nothing
@@ -15169,6 +15173,9 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         confidence: decision.confidence,
         consideredModules: candidates.map((c) => c.sourceModule),
         bandwidthBand: bandwidth.band,
+        // Safe analytics: does not include personal feedback or memory text.
+        adaptiveLearningUsed: adaptiveContext !== undefined,
+        adaptiveBasis: selectedAdaptiveExplanation?.basis ?? null,
       });
       decisionId = ref.id;
     } catch (e) {
@@ -15191,7 +15198,7 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       evidenceSource: decision.selectedCandidate?.evidence.source ?? null,
       adaptiveLearningUsed: adaptiveContext !== undefined,
       // Preference hints are never diagnoses; they only affect deterministic tie-breaks.
-      adaptiveExplanation: adaptiveContext ? adaptInterventionCandidates(candidates, adaptiveContext).explanations.find(e => e.candidateId === decision.selectedCandidate?.candidateId) ?? null : null,
+      adaptiveExplanation: selectedAdaptiveExplanation,
       // An earlier intervention the user started but never reported back
       // on (within the last 24h) - the Hub asks the one lightweight
       // outcome question about this before showing anything new.
