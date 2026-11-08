@@ -109,3 +109,10 @@ Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site
 - Existing source catalogue increases from 232 to **240** keys. Subtitles and answer labels remain untranslated; the eleven new draft additions have not been reviewed by qualified humans. Do not mark locales reviewed.
 - **Verification:** Code committed to integration branch only; source inspection and commit acknowledgements are not TypeScript, Vitest, emulator, authenticated E2E or staging proof. No merge, GitHub Actions or production deployment performed.
 - **Remaining:** complete high-impact display strings and notification/report/billing/privacy translations; reconcile `main` NHEI Floor Mode/resume prompts, outstanding memory guards and feedback resets by behaviour, not bulk overwrites; test account-switch races, revoked learning consent and data erasure with emulators; staging sign-in, App Check, accessibility/RTL and safety copy approval before release.
+
+## Continuation — Floor Mode and feedback durability
+
+- Ported an account-scoped, client-only low-energy view to the multilingual Recovery Intelligence Hub. It hides the optional tool grid, insights and memory prompt while keeping one recommendation and any pending helpfulness answer available. The switch is voluntary and stores only a display preference, under a UID-scoped local key.
+- Unlike the previous fire-and-forget flow, the pending helpfulness prompt now clears only after the authenticated outcome request succeeds. A failure leaves the choice visible for retry and displays an error; late responses are invalidated on account changes.
+- Updated the source-contract regression file. These tests have not been executed; they do not replace real HTTP, mobile/browser, accessibility and account-switch E2E validation.
+- Guardrails unchanged: no unapproved NHEI modes, no database schema or permission changes in this batch, no deployment, no merge to main.
