@@ -126,3 +126,12 @@ Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site
 - English source now has 254 keys; eleven additional packs contain matching unreviewed machine-draft entries. Question/answer wording, result reports and many customer screens are still English.
 - Attempted local GitHub checkout but container DNS could not resolve github.com. GitHub connector source checks confirm the catalogue keys and commits, not an executable build or QA pass. No Actions, staging/production deployment or merge to main.
 - Next required checks: complete integrated build/test, Firestore emulator, authenticated staging flows, human safety review, RTL and screen readers. Reconcile remaining branch-only NHEI work before main merge.
+
+## Batch 10 — question prompts, account-switch protection and unfinished-work handoff
+
+- Added fourteen Fingerprint question translations in all 12 catalogues (268 total keys per language). English source questions match the original text. In the existing `DiagnoseSection.tsx`, visible question prompts now use the catalogue while numeric answer values and stable IDs remain unchanged.
+- Hardened assessment state across Firebase UID changes: clears private answers, invalidates in-flight submissions, prevents late onComplete from displaying another person's results, and only shows errors from a currently owned request. Updated the static consent boundary test.
+- Connected `/api/user/resume-prompt` to the existing Recovery Intelligence Hub, using only real incomplete activity already detected by the server. Restricts permitted route destinations to `plan`, `diagnose`, `recover`; clears on identity change; hides in the optional Floor Mode; always dismissible. No new recommendation engine or Firestore writes.
+- Added `i18n/fingerprint-question-prompts.test.ts` and extended `nhei-recovery-account-isolation-contract.test.ts`. GitHub source reads confirm 268 distinct-looking catalogue entries and all fourteen new question keys in every pack, but the tests have **not been run**.
+- Blockers: translate every Fingerprint answer option before claiming full alternate-language assessment; conduct human review of translation meaning and safety, measurement equivalence, RTL/layout, accessibility; run TypeScript, Vitest, Firestore emulator and authenticated staging E2E at exact integrated SHA. Other pending features include billing, reports, privacy, notifications, and remaining NHEI branch reconciliation.
+- No Actions, main merge, backend migration or deployment.
