@@ -74,6 +74,21 @@ export function SecondMemoryCard({ minimal = false }: { minimal?: boolean }) {
           </p>
           {items.length > 0 && (
             <div className="space-y-2">
+              <button type="button" aria-expanded={expanded}
+                onClick={() => setExpanded(value => !value)} className="text-xs text-primary underline">
+                {expanded ? 'Hide saved notes' : 'Review saved notes'}
+              </button>
+              {expanded && (
+                <ul className="space-y-2">
+                  {items.map(item => (
+                    <li key={item.id} className="flex items-center justify-between gap-2 text-xs border-b border-border pb-2">
+                      <span className="text-text-main break-words">{item.text}</span>
+                      <button type="button" disabled={busy} className="text-red-600 underline"
+                        onClick={() => void change(item.id, 'delete')}>Delete</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <button type="button" disabled={busy} className="text-xs text-red-600 underline"
                 onClick={() => setConfirmErase(value => !value)}>
                 Delete all {items.length} saved notes
