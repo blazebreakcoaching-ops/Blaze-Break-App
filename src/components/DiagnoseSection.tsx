@@ -250,7 +250,7 @@ export const DiagnoseView = ({
 }: {
   onComplete: (f: BurnoutFingerprint) => void;
 }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const requestGeneration = useRef(0);
   const [mode, setMode] = useState<'choice' | 'quick' | 'full'>('choice');
@@ -430,7 +430,9 @@ export const DiagnoseView = ({
           className="space-y-8"
         >
           <h3 className="text-3xl font-light text-text-main leading-tight">
-            {t(('fingerprint.question.' + activeQuestions[step].id) as TranslationKey)}
+            {mode === 'quick' || locale === 'en'
+              ? t(('fingerprint.question.' + activeQuestions[step].id) as TranslationKey)
+              : activeQuestions[step].text}
           </h3>
 
           <div className="grid grid-cols-1 gap-4">
@@ -441,7 +443,9 @@ export const DiagnoseView = ({
                 className="group flex items-center justify-between p-6 bg-card border border-border rounded-xl text-left hover:border-primary hover:shadow-md transition-all cursor-pointer"
               >
                 <span className="text-lg text-text-muted font-medium">
-                  {option.text}
+                  {mode === 'quick'
+                    ? t(('fingerprint.option.' + activeQuestions[step].id + '.' + option.value) as TranslationKey)
+                    : option.text}
                 </span>
                 <div className="w-6 h-6 rounded-full border border-border flex items-center justify-center group-hover:bg-primary group-hover:border-primary transition-all">
                   <ArrowRight className="w-4 h-4 text-text-main opacity-0 group-hover:opacity-100" />
