@@ -242,4 +242,12 @@ export const ar: Partial<Record<TranslationKey, string>> = {
   "onboarding.novaToneTitle": "كيف ينبغي أن تتحدث نوفا معك",
   "onboarding.novaToneQuestion": "كيف تفضل أن تتواصل نوفا معك؟",
 
+  "fingerprint.choiceTitle": "كم لديك من الوقت الآن؟",
+  "fingerprint.choiceSubtitle": "اختر فحصًا قصيرًا أو أطول. يمكنك تغيير رأيك.",
+  "fingerprint.quickTitle": "فحص سريع — نحو 90 ثانية",
+  "fingerprint.fullTitle": "فحص كامل — نحو 3 إلى 4 دقائق",
+  "fingerprint.progress": "السؤال {current} من {total}",
+  "fingerprint.working": "نوفا تراجع إجاباتك...",
+  "fingerprint.errorTitle": "تعذر إكمال الفحص",
+  "fingerprint.retry": "حاول مرة أخرى",
 };
