@@ -15233,24 +15233,43 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
     const typedAction = action as RoutingOutcomeAction;
     // Transaction ensures retries do not duplicate a completed event.
     // Users may correct a past helpfulness answer without a new count.
+    const sessionRef = db.collection('users').doc(user.uid)
+      .collection('recovery_routing').doc('session_state');
+    const counterMap: Record<RoutingOutcomeAction, SessionCounterField> = {
+      started: 'interventionsStarted',
+      declined: 'recommendationsDeclined',
+      completed: 'interventionsCompleted',
+      abandoned: 'interventionsAbandoned',
+    };
     const transition = await db.runTransaction(async tx => {
+      // Read before writing: the routing outcome and its daily counter
+      // commit atomically, so retries never duplicate either.
       const existing = await tx.get(decisionRef);
       if (!existing.exists) return { allowed: false as const, changed: false as const, reason: 'decision not found' };
       const plan = planOutcomeTransition(existing.data() || {}, typedAction, validHelpfulness, nowIso);
-      if (plan.allowed && plan.changed) tx.update(decisionRef, plan.patch);
+      if (!plan.allowed || !plan.changed) return plan;
+      const sessionSnap = plan.counter ? await tx.get(sessionRef) : null;
+      tx.update(decisionRef, plan.patch);
+      if (plan.counter) {
+        const today = todayUtcDateKey();
+        const state = sessionSnap?.exists && sessionSnap.data()?.day === today
+          ? sessionSnap.data()! : { ...EMPTY_SESSION_STATE };
+        const field = counterMap[plan.counter];
+        tx.set(sessionRef, {
+          day: today,
+          recommendationsOffered: state.recommendationsOffered || 0,
+          recommendationsDeclined: state.recommendationsDeclined || 0,
+          interventionsStarted: state.interventionsStarted || 0,
+          interventionsCompleted: state.interventionsCompleted || 0,
+          interventionsAbandoned: state.interventionsAbandoned || 0,
+          [field]: (state[field] || 0) + 1,
+          updatedAt: nowIso,
+        }, { merge: true });
+      }
       return plan;
     });
     if (!transition.allowed) {
       return res.status(409).json({ error: transition.reason });
-    }
-    if (transition.counter) {
-      const counterMap: Record<RoutingOutcomeAction, SessionCounterField> = {
-        started: 'interventionsStarted',
-        declined: 'recommendationsDeclined',
-        completed: 'interventionsCompleted',
-        abandoned: 'interventionsAbandoned',
-      };
-      await incrementSessionCounter(db, user.uid, counterMap[transition.counter]);
     }
 
     res.json({ ok: true });
