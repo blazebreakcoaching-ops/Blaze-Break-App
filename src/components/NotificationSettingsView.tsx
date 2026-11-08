@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Bell, Moon, Clock, Settings, Brain, Activity, Heart, Bookmark, Eye, Apple } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n-react';
 import { cn } from '../lib/utils';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firestore';
@@ -13,6 +14,7 @@ export type { NudgePreferences } from '../lib/notification-preferences';
 
 export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: () => void }) => {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [prefs, setPrefs] = useState<NudgePreferences>(defaultNudgePreferences);
   const [prefsOwnerUid, setPrefsOwnerUid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,10 +108,10 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h3 className="text-lg font-bold flex items-center gap-2 text-text-main">
-            <Bell className="w-5 h-5 text-primary" /> Nova Nudges
+            <Bell className="w-5 h-5 text-primary" /> {t("notifications.title")}
           </h3>
           <p className="text-xs text-text-muted max-w-sm leading-relaxed">
-            Supportive, quiet reminders. No shame, no pressure, in-app only. Live push, email, SMS, and Guardian remain disabled.
+            {t('notifications.description')}
           </p>
         </div>
         <button
@@ -124,15 +126,15 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
       <div className="p-4 bg-surface dark:bg-card border border-border rounded-xl space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="font-bold text-sm">Turn on in-app nudges</h4>
-            <p className="text-xs text-text-muted">Allow Nova to offer gentle, contextual support while you use the app.</p>
+            <h4 className="font-bold text-sm">{t('notifications.enable')}</h4>
+            <p className="text-xs text-text-muted">{t('notifications.enableDetail')}</p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
             <input 
               type="checkbox" 
               checked={prefs.notificationsEnabled}
               onChange={e => setPrefs(p => ({ ...p, notificationsEnabled: e.target.checked }))}
-              aria-label="Turn on in-app nudges"
+              aria-label={t('notifications.enable')}
               className="sr-only peer"
             />
             <div className="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
@@ -144,8 +146,8 @@ export const NotificationSettingsView = ({ onSaveSuccess }: { onSaveSuccess?: ()
         
         {/* Quiet Hours */}
         <div className="p-4 bg-surface dark:bg-card border border-border rounded-xl space-y-4">
-          <h4 className="font-bold text-sm flex items-center gap-2"><Moon className="w-4 h-4 text-primary" /> Quiet Hours</h4>
-          <p className="text-xs text-text-muted">Nova will never nudge you during these hours.</p>
+          <h4 className="font-bold text-sm flex items-center gap-2"><Moon className="w-4 h-4 text-primary" /> {t("notifications.quietHours")}</h4>
+          <p className="text-xs text-text-muted">{t('notifications.quietDetail')}</p>
           <div className="flex items-center gap-4">
             <div className="space-y-1">
               <label htmlFor="quiet-hours-start" className="text-[10px] uppercase font-bold text-text-muted">Start</label>
