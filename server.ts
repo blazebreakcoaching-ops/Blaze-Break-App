@@ -157,6 +157,7 @@ import { formatDataProvenance } from './data-provenance';
 import { buildFinancialRangeEstimate } from './executive-work-design';
 import { logger, errorFields } from './logger';
 import { describeTrend, toCustomerInsight, CUSTOMER_INSIGHT_TYPES } from './recovery-insights';
+import { buildDiagnoseFallbackAnalysis } from './diagnose-fallback';
 import { resolveServerFirebaseTarget } from './firebase-runtime-target';
 
 dotenv.config();
@@ -3791,7 +3792,15 @@ app.post("/api/nova/diagnose", novaDiagnoseLimiter, verifyAppCheck, authenticate
 
     // Default static fallback if Gemini fails or is not configured
     if (!analysis) {
-      analysis = `Having analysed your metrics, your primary energy leak is completely clear. With a workload score of ${workloadScore}/4, a boundaries rating of ${boundariesScore}/4, and a sleep disruption score of ${sleepScore}/4, you are trying to rationalise a metabolic deficit that is biologically impossible to sustain. We need to focus on establishing baseline stability and boundary rehearsals immediately. Let's patch this leak.`;
+      analysis = buildDiagnoseFallbackAnalysis(profile, [
+        { label: 'Workload', score: workloadScore }, { label: 'Boundaries', score: boundariesScore },
+        { label: 'People-pleasing', score: peoplePleasingScore }, { label: 'Guilt', score: guiltScore },
+        { label: 'Sleep', score: sleepScore }, { label: 'Emotional overload', score: emotionalScore },
+        { label: 'Sense of meaning', score: meaningScore }, { label: 'Self-doubt', score: selfDoubtScore },
+        { label: 'Delegation and control', score: delegationControlScore }, { label: 'Masking load', score: maskingLoadScore },
+        { label: 'Caregiving load', score: caregivingLoadScore }, { label: 'Crisis dependency', score: crisisDependencyScore },
+        { label: 'Emotional performance', score: emotionalPerformanceScore }, { label: 'Responsibility creep', score: responsibilityCreepScore },
+      ]);
     }
 
     // The blend: rather than reducing someone to one label, show the real mix.

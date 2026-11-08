@@ -118,7 +118,11 @@ describe('POST /api/nova/diagnose — safety floor', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await request(app).post('/api/nova/diagnose').set(auth('person_8')).send({ answers: {} });
     expect(res.status).toBe(200);
-    expect(res.body.analysis).toContain('Having analysed your metrics');
+    // Honest, score-based fallback: never claims Nova analysed anything,
+    // never a fixed conclusion or a medical-sounding claim.
+    expect(res.body.analysis).toContain("Nova's written analysis isn't available right now");
+    expect(res.body.analysis).toMatch(/not a medical assessment/);
+    expect(res.body.analysis).not.toMatch(/Having analysed|biologically|metabolic/i);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });
