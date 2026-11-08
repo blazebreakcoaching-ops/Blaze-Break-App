@@ -14199,12 +14199,24 @@ app.post("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, as
     const user = requireAuth(req);
     const note = validateOpenLoop(req.body?.text);
     if (!note) return res.status(400).json({ error: "Please enter a note of 1 to 240 characters." });
-    if (!(await secondMemoryPermissions(user.uid))) return res.status(403).json({ error: "Enable Nova Memory before saving notes." });
     const collection = secondMemoryCollection(user.uid);
-    const current = await collection.limit(MAX_OPEN_LOOPS + 1).get();
-    if (current.size >= MAX_OPEN_LOOPS) return res.status(409).json({ error: "Your note list is full. Finish or remove a note first." });
+    const permissionsRef = getDb().collection("users").doc(user.uid).collection("nova_permissions").doc("current");
+    const ref = collection.doc();
     const now = new Date().toISOString();
-    const ref = await collection.add({ text: note, status: "open", createdAt: now, updatedAt: now });
+    // Read consent and available space in the same transaction that creates
+    // the note. Concurrent requests cannot silently bypass the cap.
+    const result = await getDb().runTransaction(async transaction => {
+      const [permissionSnap, current] = await Promise.all([
+        transaction.get(permissionsRef),
+        transaction.get(collection.limit(MAX_OPEN_LOOPS)),
+      ]);
+      if (!mayUseSecondMemory(permissionSnap.data())) return 'disabled' as const;
+      if (current.size >= MAX_OPEN_LOOPS) return 'full' as const;
+      transaction.create(ref, { text: note, status: "open", createdAt: now, updatedAt: now });
+      return 'saved' as const;
+    });
+    if (result === 'disabled') return res.status(403).json({ error: "Enable Nova Memory before saving notes." });
+    if (result === 'full') return res.status(409).json({ error: "Your note list is full. Finish or remove a note first." });
     res.status(201).json({ item: { id: ref.id, text: note, status: "open", updatedAt: now } });
   } catch (err: any) {
     logger.error("Second Memory write failed", errorFields(err));
