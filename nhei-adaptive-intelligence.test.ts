@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { adaptInterventionCandidates } from './nhei-adaptive-intelligence';
-import { NO_INTERVENTION_CANDIDATE, type InterventionCandidate } from './recovery-routing-engine';
+import { NO_INTERVENTION_CANDIDATE, selectRoute, EMPTY_SESSION_STATE, type InterventionCandidate } from './recovery-routing-engine';
 
 const candidate = (overrides: Partial<InterventionCandidate> = {}): InterventionCandidate => ({
   ...NO_INTERVENTION_CANDIDATE,
@@ -56,5 +56,36 @@ describe('NHEI adaptive intelligence', () => {
       learningEnabled: true, outcomes: [], avoidedModules: ['recover'],
     });
     expect(result.candidates[0].userPreferenceMatch).toBeUndefined();
+  });
+});
+
+describe('adaptive routing integration', () => {
+  const band = { band: 'reflective_bandwidth' as const, sufficientData: true, source: 'capacity_check_in' as const };
+  const other = candidate({
+    candidateId: 'other-1', sourceModule: 'my_patterns',
+    routeType: 'UNDERSTAND', urgency: 'low',
+  });
+  it('favours known helpful options among otherwise equivalent candidates', () => {
+    const a = candidate({ candidateId: 'a-recover' });
+    const b = candidate({ candidateId: 'b-recover', sourceModule: 'my_patterns' });
+    const decision = selectRoute([a, b], band, EMPTY_SESSION_STATE, {
+      learningEnabled: true,
+      outcomes: Array.from({ length: 3 }, () => ({ sourceModule: 'my_patterns', feedback: 'better' as const })),
+    });
+    expect(decision.selectedCandidate?.sourceModule).toBe('my_patterns');
+  });
+  it('never lets a learned preference bypass privacy restrictions', () => {
+    const restricted = candidate({ candidateId: 'preferred-restricted', eligibleForPrivacyZone: false, urgency: 'high' });
+    const decision = selectRoute([restricted, other], band, EMPTY_SESSION_STATE, {
+      learningEnabled: true, outcomes: [], preferredModules: ['recover'],
+    });
+    expect(decision.selectedCandidate?.candidateId).toBe('other-1');
+  });
+  it('does not override a higher-urgency need with past preferences', () => {
+    const urgent = candidate({ candidateId: 'urgent', urgency: 'high' });
+    const decision = selectRoute([urgent, other], band, EMPTY_SESSION_STATE, {
+      learningEnabled: true, outcomes: [], preferredModules: ['my_patterns'],
+    });
+    expect(decision.selectedCandidate?.candidateId).toBe('urgent');
   });
 });
