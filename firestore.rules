@@ -1109,6 +1109,8 @@ service cloud.firestore {
             && (!('canonicalKey' in request.resource.data) || request.resource.data.canonicalKey == null || isStringWithMax(request.resource.data.canonicalKey, 300))
             && (!('dataZone' in request.resource.data) || request.resource.data.dataZone == 'private_recovery_vault');
         allow update: if isOwner(uid)
+            && resource.data.canEdit == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt'])
             && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit', 'canonicalKey', 'dataZone'])
             && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
             && request.resource.data.type in ['profile', 'trigger', 'state', 'rule', 'preference']
@@ -1119,13 +1121,7 @@ service cloud.firestore {
             && request.resource.data.createdAt == resource.data.createdAt
             && (!('canonicalKey' in request.resource.data) || request.resource.data.canonicalKey == null || isStringWithMax(request.resource.data.canonicalKey, 300))
             && (!('dataZone' in request.resource.data) || request.resource.data.dataZone == 'private_recovery_vault')
-            && (
-              (exists(/databases/$(database)/documents/users/$(uid)/nova_permissions/current)
-               && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaMemory == true
-               && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaUseSavedMemories == true)
-              || (resource.data.canEdit == true
-                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt']))
-            );
+            && request.resource.data.canEdit == resource.data.canEdit;
       }
 
       // M. nudge_history
