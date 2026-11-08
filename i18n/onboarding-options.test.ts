@@ -15,6 +15,15 @@ describe('multilingual onboarding with stable persisted answers', () => {
     }
     expect(Object.keys(en).length).toBeGreaterThanOrEqual(291);
   });
+  it('invalidates delayed onboarding selections and drafts on an account change', () => {
+    expect(source).toContain("freshOnboardingProfile(currentLocaleRef.current)");
+    expect(source).toContain('previousUidRef.current !== user?.uid');
+    expect(source).toContain('clearTimeout(autoAdvanceRef.current)');
+    expect(source).toContain('auth.currentUser?.uid === uid');
+    expect(source).toContain('setStep(0)');
+    expect(source).toContain('setSaveError(false)');
+  });
+
   it('renders translated labels while selecting and saving canonical English options', () => {
     for (const v of variants) expect(source).toContain(`display: t('onboarding.choice.${v}')`);
     expect(source).toContain('{opt.display ?? opt.label}');
