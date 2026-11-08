@@ -1091,6 +1091,11 @@ service cloud.firestore {
         // console or any other direct Firestore client.
         allow delete: if isOwner(uid) && resource.data.canEdit == true;
         allow create, update: if isOwner(uid)
+            // Re-check live consent on every write, including from an old
+            // signed-in device whose local cache has not updated yet.
+            && exists(/databases/$(database)/documents/users/$(uid)/nova_permissions/current)
+            && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaMemory == true
+            && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaUseSavedMemories == true
             && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit', 'canonicalKey', 'dataZone'])
             && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
             && request.resource.data.type in ['profile', 'trigger', 'state', 'rule', 'preference']
