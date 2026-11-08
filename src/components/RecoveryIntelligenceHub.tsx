@@ -42,6 +42,14 @@ interface PendingOutcomeCheck {
   selectedModule: string | null;
 }
 
+interface ResumePrompt {
+  hasIncomplete: boolean;
+  tab?: string;
+  title?: string;
+  message?: string;
+}
+const RESUME_TABS = new Set(['plan', 'diagnose', 'recover']);
+
 interface AdaptiveExplanation {
   basis: 'explicit_preference' | 'confirmed_outcomes';
   preference: 'preferred' | 'avoided' | 'neutral';
@@ -122,6 +130,7 @@ export const RecoveryIntelligenceHub = () => {
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [showMoodCheck, setShowMoodCheck] = useState(false);
   const [pendingOutcomeCheck, setPendingOutcomeCheck] = useState<PendingOutcomeCheck | null>(null);
+  const [resumePrompt, setResumePrompt] = useState<ResumePrompt | null>(null);
   const [outcomeError, setOutcomeError] = useState('');
   const [floorMode, setFloorMode] = useState(false);
 
@@ -182,12 +191,22 @@ export const RecoveryIntelligenceHub = () => {
 
   useEffect(() => {
     requestGeneration.current += 1;
-    setDecision(null); setDirection(null); setPendingOutcomeCheck(null);
+    setDecision(null); setDirection(null); setPendingOutcomeCheck(null); setResumePrompt(null);
     setError(''); setOutcomeError(''); setDismissed(false); setLoading(!!accountUid);
     const uid = auth.currentUser?.uid;
     if (!uid || uid !== accountUid) return;
     const generation = requestGeneration.current;
     void fetchDecision();
+    void secureApiFetch('/api/user/resume-prompt')
+      .then(response => response.json())
+      .then((data: ResumePrompt) => {
+        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+          setResumePrompt(data?.hasIncomplete && typeof data.tab === 'string' && RESUME_TABS.has(data.tab) ? data : null);
+        }
+      })
+      .catch(() => {
+        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setResumePrompt(null);
+      });
     void secureApiFetch('/api/recovery/direction')
       .then((res) => res.json())
       .then((data: RecoveryDirectionResponse) => {
@@ -269,6 +288,18 @@ export const RecoveryIntelligenceHub = () => {
       </div>
       {floorMode && <p className="text-xs text-text-muted">A quieter view. No extra tasks. You can switch back anytime.</p>}
       {outcomeError && <p role="alert" className="text-xs text-red-600">{outcomeError}</p>}
+      {!loading && !error && resumePrompt?.hasIncomplete && resumePrompt.tab && !floorMode && (
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-text-main">{resumePrompt.title || 'Pick up where you left off'}</h3>
+          {resumePrompt.message && <p className="text-xs text-text-muted">{resumePrompt.message}</p>}
+          <div className="flex flex-wrap gap-4">
+            <button type="button" className="text-xs font-semibold text-primary underline" onClick={() => { if (resumePrompt.tab && RESUME_TABS.has(resumePrompt.tab)) navigateToTab(resumePrompt.tab); }}>
+              Continue when ready
+            </button>
+            <button type="button" className="text-xs text-text-muted underline" onClick={() => setResumePrompt(null)}>Not now</button>
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center justify-center py-12">
