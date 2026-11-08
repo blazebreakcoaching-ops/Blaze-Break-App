@@ -41,11 +41,53 @@ export const DataPrivacyDashboard = ({
   // Defaults to true, matching NOVA_PERMISSION_DEFAULTS.allowCalendarSignals
   // (src/lib/nova-brain.ts) until the real doc loads.
   const [allowCalendarSignals, setAllowCalendarSignals] = useState(true);
+  const [adaptiveAllowed, setAdaptiveAllowed] = useState(false);
+  const [adaptivePreferred, setAdaptivePreferred] = useState<string[]>([]);
+  const [adaptiveAvoided, setAdaptiveAvoided] = useState<string[]>([]);
+  const [adaptiveSaving, setAdaptiveSaving] = useState(false);
+  const [adaptiveError, setAdaptiveError] = useState('');
+  const adaptiveModules = [
+    { id: 'guided_reset', label: 'Guided Reset' },
+    { id: 'one_less_thing', label: 'One Less Thing' },
+    { id: 'capacity_firewall', label: 'Capacity Firewall' },
+    { id: 'recovery_fuel', label: 'Recovery Fuel' },
+    { id: 'my_patterns', label: 'My Patterns' },
+  ];
+  const saveAdaptivePreferences = async (changes: {
+    allowAdaptiveIntelligence?: boolean;
+    adaptivePreferredModules?: string[];
+    adaptiveAvoidedModules?: string[];
+  }) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || adaptiveSaving) return;
+    setAdaptiveSaving(true);
+    setAdaptiveError('');
+    try {
+      await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+        ...changes, updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      if (typeof changes.allowAdaptiveIntelligence === 'boolean') setAdaptiveAllowed(changes.allowAdaptiveIntelligence);
+      if (changes.adaptivePreferredModules) setAdaptivePreferred(changes.adaptivePreferredModules);
+      if (changes.adaptiveAvoidedModules) setAdaptiveAvoided(changes.adaptiveAvoidedModules);
+    } catch {
+      setAdaptiveError('Could not save this preference. Please try again.');
+    } finally {
+      setAdaptiveSaving(false);
+    }
+  };
+
 
   useEffect(() => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     getDoc(doc(db, 'users', uid, 'nova_permissions', 'current')).then((snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setAdaptiveAllowed(data.allowAdaptiveIntelligence === true);
+        const known = new Set(['guided_reset', 'one_less_thing', 'capacity_firewall', 'recovery_fuel', 'my_patterns']);
+        setAdaptivePreferred(Array.isArray(data.adaptivePreferredModules) ? data.adaptivePreferredModules.filter((v: unknown) => typeof v === 'string' && known.has(v)) : []);
+        setAdaptiveAvoided(Array.isArray(data.adaptiveAvoidedModules) ? data.adaptiveAvoidedModules.filter((v: unknown) => typeof v === 'string' && known.has(v)) : []);
+      }
       if (snap.exists() && typeof snap.data().allowCalendarSignals === 'boolean') {
         setAllowCalendarSignals(snap.data().allowCalendarSignals);
       }
@@ -136,6 +178,56 @@ export const DataPrivacyDashboard = ({
           <p className="text-xs text-text-muted mt-1">Granular controls over how Nova uses your signals.</p>
         </div>
       </div>
+
+      <section className="rounded-xl border border-border p-4 space-y-3" aria-label="Adaptive Intelligence settings">
+        <div className="flex justify-between items-start gap-3">
+          <div>
+            <h4 className="font-semibold text-text-main">Nova Adaptive Intelligence</h4>
+            <p className="text-xs text-text-muted mt-1">
+              Optional. Use your past feedback to help Nova suggest what suits you.
+              Your choices stay private and never override safety or what you ask for.
+              This also requires Nova memory to be enabled.
+            </p>
+          </div>
+          <button type="button" role="switch" aria-checked={adaptiveAllowed}
+            aria-label="Allow Nova to learn from my feedback"
+            disabled={adaptiveSaving}
+            onClick={() => saveAdaptivePreferences({ allowAdaptiveIntelligence: !adaptiveAllowed })}
+            className={cn("rounded-full px-3 py-1 text-xs font-semibold border",
+              adaptiveAllowed ? "bg-primary text-white border-primary" : "bg-surface text-text-muted border-border")}>
+            {adaptiveAllowed ? 'On' : 'Off'}
+          </button>
+        </div>
+        {adaptiveAllowed && (
+          <div className="space-y-2">
+            <p className="text-xs text-text-muted">Optional choices. Nova can also learn from your feedback. You can change these anytime.</p>
+            {adaptiveModules.map(module => (
+              <div key={module.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="text-text-main">{module.label}</span>
+                <div className="flex gap-1">
+                  {(['neutral','preferred','avoided'] as const).map(choice => {
+                    const selected = choice === 'preferred' ? adaptivePreferred.includes(module.id)
+                      : choice === 'avoided' ? adaptiveAvoided.includes(module.id)
+                      : !adaptivePreferred.includes(module.id) && !adaptiveAvoided.includes(module.id);
+                    return (
+                      <button key={choice} type="button" disabled={adaptiveSaving}
+                        aria-pressed={selected}
+                        className={cn("rounded-md border px-2 py-1", selected ? "border-primary bg-primary/10 text-text-main" : "border-border text-text-muted")}
+                        onClick={() => saveAdaptivePreferences({
+                          adaptivePreferredModules: [...adaptivePreferred.filter(id => id !== module.id), ...(choice === 'preferred' ? [module.id] : [])],
+                          adaptiveAvoidedModules: [...adaptiveAvoided.filter(id => id !== module.id), ...(choice === 'avoided' ? [module.id] : [])],
+                        })}>
+                        {choice === 'neutral' ? 'No preference' : choice === 'preferred' ? 'More' : 'Less'}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {adaptiveError && <p role="alert" className="text-xs text-red-600">{adaptiveError}</p>}
+      </section>
 
       <div className="space-y-3">
         {dataPoints.map((point) => {
