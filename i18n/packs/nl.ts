@@ -242,4 +242,12 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   "onboarding.novaToneTitle": "Hoe Nova met je moet praten",
   "onboarding.novaToneQuestion": "Hoe wil je dat Nova met je communiceert?",
 
+  "fingerprint.choiceTitle": "Hoeveel tijd heb je nu?",
+  "fingerprint.choiceSubtitle": "Kies een korte of langere check-in. Je kunt nog van gedachten veranderen.",
+  "fingerprint.quickTitle": "Korte check-in — ongeveer 90 seconden",
+  "fingerprint.fullTitle": "Volledige check-in — ongeveer 3–4 minuten",
+  "fingerprint.progress": "Vraag {current} van {total}",
+  "fingerprint.working": "Nova bekijkt je antwoorden...",
+  "fingerprint.errorTitle": "Je check-in kon niet worden afgerond",
+  "fingerprint.retry": "Opnieuw proberen",
 };
