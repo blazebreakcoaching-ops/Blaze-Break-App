@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
 import { ArrowRight, ChevronLeft, X, Sparkles } from 'lucide-react';
 import { useFocusTrap } from '../lib/useFocusTrap';
@@ -25,6 +25,13 @@ export const NovaCoachMarks = ({ page, onClose }: NovaCoachMarksProps) => {
   const reducedMotion = useReducedMotion();
   const currentTargetRef = useRef<HTMLElement | null>(null);
   const step = steps[stepIndex];
+  const [measuredHeight, setMeasuredHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = (dialogRef as { current: HTMLElement | null }).current;
+    if (!el) return;
+    const h = Math.round(el.getBoundingClientRect().height);
+    if (h && h !== measuredHeight) setMeasuredHeight(h);
+  });
 
   useEffect(() => {
     if (!step) return;
@@ -121,16 +128,21 @@ export const NovaCoachMarks = ({ page, onClose }: NovaCoachMarksProps) => {
   const isLast = stepIndex === steps.length - 1;
 
   // On small viewports prefer a safe bottom sheet; at larger widths put
-  // the explanation on the opposite side of the highlighted control.
+  // the explanation on the opposite side of the highlighted control. Uses
+  // the card's REAL height (longer text or a translation can make it taller
+  // than the old 270px guess) and always keeps the whole card - including
+  // its buttons - inside the viewport.
   const cardWidth = Math.min(360, Math.max(240, window.innerWidth - 24));
+  const cardHeight = measuredHeight || 285;
   const roomBelow = highlight ? window.innerHeight - (highlight.top + highlight.height) : 0;
   const roomAbove = highlight?.top ?? 0;
+  const maxTop = Math.max(12, window.innerHeight - cardHeight - 12);
   const cardTop = highlight && window.innerWidth >= 640 && window.innerHeight >= 560
-    ? (roomBelow >= 280
-      ? Math.min(window.innerHeight - 270, highlight.top + highlight.height + 12)
-      : roomAbove >= 280
-        ? Math.max(12, highlight.top - 275)
-        : Math.max(12, window.innerHeight - 285))
+    ? Math.min(maxTop, roomBelow >= cardHeight + 24
+      ? highlight.top + highlight.height + 12
+      : roomAbove >= cardHeight + 24
+        ? highlight.top - cardHeight - 12
+        : maxTop)
     : null;
   const cardLeft = highlight && window.innerWidth >= 640 && window.innerHeight >= 560
     ? Math.max(12, Math.min(highlight.left, window.innerWidth - cardWidth - 12))
