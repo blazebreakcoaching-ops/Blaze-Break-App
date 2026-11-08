@@ -233,4 +233,13 @@ export const hi: Partial<Record<TranslationKey, string>> = {
   "support.directoryDesc": "अन्य देशों में सहायता सेवाएँ खोजें",
   "support.emergency": "आपातकालीन सेवाएँ",
   "support.askCall": "{name} से मुझे फ़ोन करने को कहें",
+  "onboarding.welcomeTitle": "स्वागत है। एक बार में एक कदम आगे बढ़ते हैं।",
+  "onboarding.welcomeQuestion": "आज आप यहाँ क्यों आए हैं?",
+  "onboarding.pathwayTitle": "आपके काम के बारे में थोड़ा",
+  "onboarding.pathwayQuestion": "इनमें से कौन सा विवरण आप पर सबसे अधिक लागू होता है?",
+  "onboarding.pressureTitle": "आप पर क्या बोझ है",
+  "onboarding.pressureQuestion": "इस समय आपकी ऊर्जा सबसे ज़्यादा किस बात से कम हो रही है?",
+  "onboarding.novaToneTitle": "नोवा आपसे कैसे बात करे",
+  "onboarding.novaToneQuestion": "आप चाहते हैं कि नोवा आपसे कैसे संवाद करे?",
+
 };
