@@ -35,7 +35,7 @@ describe('native one-question check-in', () => {
     const onComplete = jest.fn();
     let r!: ReactTestRenderer;
     await act(async () => { r = create(<DailyCheckInModal visible onClose={jest.fn()} onComplete={onComplete} />); });
-    await press(r, 'One question check-in');
+    await press(r, 'One-question check-in');
     await press(r, "I'm running low");
     expect(mockSetDoc).toHaveBeenCalledTimes(1);
     const [path, data] = mockSetDoc.mock.calls[0];
@@ -50,7 +50,7 @@ describe('native one-question check-in', () => {
     mockSetDoc.mockImplementationOnce(() => new Promise<void>((res) => { resolve = res; }));
     let r!: ReactTestRenderer;
     await act(async () => { r = create(<DailyCheckInModal visible onClose={jest.fn()} onComplete={jest.fn()} />); });
-    await press(r, 'One question check-in');
+    await press(r, 'One-question check-in');
     const option = buttons(r).find((n) => n.props.accessibilityLabel === "I'm managing")!;
     await act(async () => { void option.props.onPress(); void option.props.onPress(); });
     await act(async () => { resolve(); });
@@ -62,17 +62,17 @@ describe('native one-question check-in', () => {
     const onComplete = jest.fn();
     let r!: ReactTestRenderer;
     await act(async () => { r = create(<DailyCheckInModal visible onClose={jest.fn()} onComplete={onComplete} />); });
-    await press(r, 'One question check-in');
+    await press(r, 'One-question check-in');
     await press(r, "I'm not sure");
     const alert = r.root.findAll((n) => n.props.accessibilityRole === 'alert' && typeof n.props.children === 'string');
-    expect(alert[0].props.children).toMatch(/Could not save/);
+    expect(alert[0].props.children).toMatch(/could not be saved/);
     expect(onComplete).not.toHaveBeenCalled();
   });
 
   it('every choice is a labelled button with a hint', async () => {
     let r!: ReactTestRenderer;
     await act(async () => { r = create(<DailyCheckInModal visible onClose={jest.fn()} onComplete={jest.fn()} />); });
-    await press(r, 'One question check-in');
+    await press(r, 'One-question check-in');
     const labels = buttons(r).filter((n) => n.props.accessibilityHint === 'Save this private, qualitative check-in').map((n) => n.props.accessibilityLabel);
     expect([...new Set(labels)]).toEqual(["I'm doing okay", "I'm managing", "I'm running low", "I'm not sure"]);
   });

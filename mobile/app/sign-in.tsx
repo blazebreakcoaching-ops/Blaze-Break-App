@@ -1,3 +1,4 @@
+import { useNativeI18n } from '../src/lib/i18n';
 import React, { useState } from 'react';
 import { TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
 import { Text, TextInput } from '../src/lib/native-ui';
@@ -13,10 +14,11 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const { t, tag, dir } = useNativeI18n();
 
   const handleSubmit = async () => {
     if (!email.trim() || !password) {
-      setFormError('Enter your email and password to sign in.');
+      setFormError(t('auth.missingFields'));
       return;
     }
     setFormError('');
@@ -36,12 +38,12 @@ export default function SignInScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title} accessibilityRole="header">Welcome back</Text>
+      <ScrollView contentContainerStyle={[styles.container, { direction: dir }]} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title} accessibilityRole="header" accessibilityLanguage={tag}>{t('auth.welcomeBack')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="Email"
-          accessibilityLabel="Email address"
+          placeholder={t('auth.email')}
+          accessibilityLabel={t('auth.email')}
           autoComplete="email"
           textContentType="username"
           returnKeyType="next"
@@ -52,8 +54,8 @@ export default function SignInScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Password"
-          accessibilityLabel="Password"
+          placeholder={t('auth.password')}
+          accessibilityLabel={t('auth.password')}
           autoComplete="current-password"
           textContentType="password"
           secureTextEntry
@@ -61,11 +63,11 @@ export default function SignInScreen() {
           onChangeText={setPassword}
         />
         {formError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{formError}</Text> : null}
-        <TouchableOpacity style={styles.button} accessibilityRole="button" accessibilityLabel="Sign in" accessibilityState={{ disabled: submitting, busy: submitting }} onPress={handleSubmit} disabled={submitting}>
-          {submitting ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>Sign in</Text>}
+        <TouchableOpacity style={styles.button} accessibilityRole="button" accessibilityLabel={t('auth.signIn')} accessibilityState={{ disabled: submitting, busy: submitting }} onPress={handleSubmit} disabled={submitting}>
+          {submitting ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>{t('auth.signIn')}</Text>}
         </TouchableOpacity>
-        <TouchableOpacity accessibilityRole="link" accessibilityLabel="Create an account" style={styles.linkTouch} onPress={() => router.replace('/sign-up')}>
-          <Text style={styles.link}>Don&apos;t have an account? Sign up</Text>
+        <TouchableOpacity accessibilityRole="link" accessibilityLabel={t('auth.createAccount')} style={styles.linkTouch} onPress={() => router.replace('/sign-up')}>
+          <Text style={styles.link}>{t('auth.noAccount')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

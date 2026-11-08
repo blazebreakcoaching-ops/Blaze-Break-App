@@ -4,10 +4,13 @@ import { Text, TextInput } from '../lib/native-ui';
 import { useNativeTheme } from '../lib/native-theme';
 import type { NativeThemeColors } from '../lib/native-theme-palette';
 import { readPersonalProfile, savePersonalProfile, type PersonalProfile } from '../lib/personal-profile';
+import { useNativeI18n } from '../lib/i18n';
+import { SUPPORTED_LOCALES } from '../../../i18n';
 
 export function PersonalWelcomeSettings({ uid }: { uid: string }) {
   const { colors } = useNativeTheme();
   const styles = React.useMemo(() => makeStyles(colors), [colors]);
+  const { t, setLocale, dir } = useNativeI18n();
   const [state, setState] = useState<{ uid: string; profile: PersonalProfile } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -37,6 +40,7 @@ export function PersonalWelcomeSettings({ uid }: { uid: string }) {
     setSaved(false);
     try {
       await savePersonalProfile(uid, profile);
+      setLocale(profile.language);
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save your preferences.');
@@ -46,51 +50,67 @@ export function PersonalWelcomeSettings({ uid }: { uid: string }) {
   };
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { direction: dir }]}>
       <Text style={styles.heading} accessibilityRole="header">Your welcome</Text>
       <Text style={styles.hint}>Make Blaze Break feel comfortable for you. You can change this later.</Text>
       {!profile ? (
         <Text style={styles.hint}>{error || 'Loading preferences…'}</Text>
       ) : (
         <>
-          <Text style={styles.label}>What should we call you? (Optional)</Text>
+          <Text style={styles.label}>{t('onboarding.preferredName')}</Text>
           <TextInput style={styles.input} accessibilityLabel="Preferred name"
             value={profile.preferredName} onChangeText={preferredName => patch({ preferredName })}
-            maxLength={60} placeholder="Preferred name" autoCapitalize="words" />
-          <Text style={styles.label}>Time zone</Text>
+            maxLength={60} placeholder={t('onboarding.preferredNamePlaceholder')} autoCapitalize="words" />
+          <Text style={styles.label}>{t('settings.timeZone')}</Text>
           <TextInput style={styles.input} accessibilityLabel="Your time zone"
             value={profile.timeZone} onChangeText={timeZone => patch({ timeZone })}
             autoCapitalize="none" autoCorrect={false} placeholder="Europe/London" />
-          <Text style={styles.hint}>Suggested by your device; no GPS used.</Text>
-          <Text style={styles.label}>Country or region (optional)</Text>
+          <Text style={styles.hint}>{t('settings.timeZoneHelp')}</Text>
+          <Text style={styles.label}>{t('settings.region')}</Text>
           <TextInput style={styles.input} accessibilityLabel="Country or region"
             value={profile.region} onChangeText={region => patch({ region })} maxLength={60} />
-          <Text style={styles.label}>Language</Text>
-          <Text style={styles.hint}>English — the currently supported translation. More languages are planned.</Text>
-          <Text style={styles.label}>Welcome style</Text>
+          <Text style={styles.label}>{t('settings.language')}</Text>
+          <View style={styles.options} accessibilityRole="radiogroup">
+            {SUPPORTED_LOCALES.map(l => (
+              <TouchableOpacity key={l.code} style={[styles.option, profile.language === l.code && styles.active]}
+                accessibilityRole="radio" accessibilityState={{ checked: profile.language === l.code }}
+                accessibilityLabel={`${l.nativeName}, ${l.englishName}`} accessibilityLanguage={l.intl}
+                onPress={() => { patch({ language: l.code }); setLocale(l.code); }}>
+                <Text style={styles.optionText}>{l.nativeName}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {profile.language !== 'en' ? <Text style={styles.hint}>{t('settings.languageDraft')}</Text> : null}
+          <Text style={styles.label}>{t('settings.welcomeStyle')}</Text>
           <View style={styles.options} accessibilityRole="radiogroup">
             {(['warm', 'simple', 'direct'] as const).map(tone => (
               <TouchableOpacity key={tone} style={[styles.option, profile.tone === tone && styles.active]}
                 accessibilityRole="radio" accessibilityState={{ checked: profile.tone === tone }}
                 onPress={() => patch({ tone })}>
-                <Text style={styles.optionText}>{tone[0].toUpperCase() + tone.slice(1)}</Text>
+                <Text style={styles.optionText}>{t(`settings.tone.${tone}`)}</Text>
               </TouchableOpacity>
             ))}
           </View>
           <TouchableOpacity style={styles.switchRow} accessibilityRole="switch"
             accessibilityState={{ checked: profile.enabled }} onPress={() => patch({ enabled: !profile.enabled })}>
-            <Text style={styles.optionText}>Show personal welcome messages</Text>
+            <Text style={styles.optionText}>{t('settings.showWelcome')}</Text>
             <Text style={styles.optionText}>{profile.enabled ? 'On' : 'Off'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.switchRow} accessibilityRole="switch"
             accessibilityState={{ checked: profile.useName }} onPress={() => patch({ useName: !profile.useName })}>
-            <Text style={styles.optionText}>Use my preferred name</Text>
+            <Text style={styles.optionText}>{t('settings.useName')}</Text>
             <Text style={styles.optionText}>{profile.useName ? 'On' : 'Off'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.switchRow} accessibilityRole="switch"
+            accessibilityState={{ checked: profile.lowEnergyMode }} accessibilityHint={t('settings.lowEnergyHint')}
+            onPress={() => patch({ lowEnergyMode: !profile.lowEnergyMode })}>
+            <Text style={styles.optionText}>{t('settings.lowEnergy')}</Text>
+            <Text style={styles.optionText}>{profile.lowEnergyMode ? 'On' : 'Off'}</Text>
           </TouchableOpacity>
           {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
           {saved ? <Text accessibilityLiveRegion="polite" style={styles.hint}>Your settings have been saved.</Text> : null}
           <TouchableOpacity style={styles.save} accessibilityRole="button" disabled={busy} onPress={() => { void save(); }}>
-            {busy ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.saveText}>Save preferences</Text>}
+            {busy ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.saveText}>{t('common.save')}</Text>}
           </TouchableOpacity>
         </>
       )}

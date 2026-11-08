@@ -18,6 +18,7 @@ import { secureApiFetch } from '../../src/lib/secure-api';
 import { DailyCheckInModal } from '../../src/components/DailyCheckInModal';
 import { readPersonalProfile, type PersonalProfile } from '../../src/lib/personal-profile';
 import { personalWelcome } from '../../../personal-welcome';
+import { useNativeI18n } from '../../src/lib/i18n';
 
 type Recommendation = {
   tool: string;
@@ -45,6 +46,7 @@ const TAB_ROUTES: Record<string, string> = {
 export default function PulseScreen() {
   const styles = useThemedStyles();
   const { user } = useAuth();
+  const { locale: uiLanguage, tag: uiTag } = useNativeI18n();
   const [welcomeProfile, setWelcomeProfile] = useState<{ uid: string; value: PersonalProfile } | null>(null);
   const [welcomeTime, setWelcomeTime] = useState(() => new Date());
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
@@ -181,13 +183,13 @@ export default function PulseScreen() {
             preferredName: welcomeProfile.value.preferredName,
             allowName: welcomeProfile.value.useName,
             tone: welcomeProfile.value.tone,
-            locale: welcomeProfile.value.language,
+            locale: uiLanguage,
             seed: user?.uid || 'welcome',
           });
           return (
             <View style={styles.welcome}>
-              <Text style={styles.welcomeTitle} accessibilityRole="header">{greeting.greeting}</Text>
-              <Text style={styles.welcomeMessage}>{greeting.message}</Text>
+              <Text style={styles.welcomeTitle} accessibilityRole="header" accessibilityLanguage={uiTag}>{greeting.greeting}</Text>
+              <Text style={styles.welcomeMessage} accessibilityLanguage={uiTag}>{greeting.message}</Text>
             </View>
           );
         })()}

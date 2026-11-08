@@ -13,6 +13,7 @@ import Slider from '@react-native-community/slider';
 import { doc, setDoc } from 'firebase/firestore';
 import { getDb, auth } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
+import { useNativeI18n } from '../lib/i18n';
 
 interface DailyCheckInModalProps {
   visible: boolean;
@@ -31,6 +32,7 @@ const SLIDERS: { key: 'energyLevel' | 'focusLevel' | 'detachmentLevel' | 'stress
 
 export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckInModalProps) {
   const styles = useThemedStyles();
+  const { t, tag, dir } = useNativeI18n();
   const [values, setValues] = useState({ energyLevel: 5, focusLevel: 5, detachmentLevel: 5, stressLoad: 5 });
   const [mode, setMode] = useState<'choice' | 'quick' | 'full'>('choice');
   const [saving, setSaving] = useState(false);
@@ -41,7 +43,7 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
   const saveQuickResponse = async (response: LowEnergyResponse) => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
-      setError('Please sign in to save a check-in.');
+      setError(t('checkin.low.signIn'));
       return;
     }
     if (quickSavingRef.current) return;
@@ -60,11 +62,11 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
       // Do not notify scoring, weekly recap, NHEI, or Nova; this is a
       // qualitative answer, not a numerical energy/stress measurement.
       // Spoken confirmation for VoiceOver / TalkBack before the sheet closes.
-      AccessibilityInfo.announceForAccessibility('Saved. Thank you for checking in.');
+      AccessibilityInfo.announceForAccessibility(t('checkin.low.saved'));
       setMode('choice');
       onComplete();
     } catch {
-      setError('Could not save your answer. Please check your connection and try again.');
+      setError(t('checkin.low.saveError'));
     } finally {
       quickSavingRef.current = false;
       setSaving(false);
@@ -106,42 +108,43 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
       // Each opening starts at the choice screen, not wherever it was left.
       onShow={() => { setMode('choice'); setError(null); }}
     >
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.container, { direction: dir }]}>
         {mode === 'choice' ? (
           <>
-            <Text style={styles.title} accessibilityRole="header">How would you like to check in?</Text>
-            <Text style={styles.subtitle}>Choose what works for you today. You can skip.</Text>
+            <Text style={styles.title} accessibilityRole="header" accessibilityLanguage={tag}>{t('checkin.choice.title')}</Text>
+            <Text style={styles.subtitle}>{t('checkin.choice.sub')}</Text>
             <TouchableOpacity style={styles.choice} accessibilityRole="button"
-              accessibilityLabel="One question check-in" onPress={() => { setError(null); setMode('quick'); }}>
-              <Text style={styles.choiceTitle}>One question</Text>
-              <Text style={styles.choiceHint}>One tap. No scores or follow-up questions.</Text>
+              accessibilityLabel={t('checkin.low.entry')} onPress={() => { setError(null); setMode('quick'); }}>
+              <Text style={styles.choiceTitle}>{t('checkin.choice.quick')}</Text>
+              <Text style={styles.choiceHint}>{t('checkin.choice.quickHint')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.choice} accessibilityRole="button"
-              accessibilityLabel="Full check-in, four sliders" onPress={() => { setError(null); setMode('full'); }}>
-              <Text style={styles.choiceTitle}>Full check-in</Text>
-              <Text style={styles.choiceHint}>Four sliders for energy, focus, detachment and stress.</Text>
+              accessibilityLabel={t('checkin.choice.full')} onPress={() => { setError(null); setMode('full'); }}>
+              <Text style={styles.choiceTitle}>{t('checkin.choice.full')}</Text>
+              <Text style={styles.choiceHint}>{t('checkin.choice.fullHint')}</Text>
             </TouchableOpacity>
           </>
         ) : mode === 'quick' ? (
           <>
-            <Text style={styles.title} accessibilityRole="header">How are you feeling right now?</Text>
-            <Text style={styles.subtitle}>Choose what feels closest. There is no wrong answer.</Text>
+            <Text style={styles.title} accessibilityRole="header" accessibilityLanguage={tag}>{t('checkin.low.question')}</Text>
+            <Text style={styles.subtitle}>{t('checkin.low.sub')}</Text>
             {LOW_ENERGY_OPTIONS.map((option) => (
               <TouchableOpacity key={option.id} style={styles.choice}
                 accessibilityRole="button"
-                accessibilityLabel={option.label}
-                accessibilityHint="Save this private, qualitative check-in"
+                accessibilityLabel={t(`checkin.low.${option.id}`)}
+                accessibilityHint={t('checkin.low.saveHint')}
+                accessibilityLanguage={tag}
                 disabled={saving} onPress={() => { void saveQuickResponse(option.id); }}>
-                <Text style={styles.choiceTitle}>{option.label}</Text>
-                <Text style={styles.choiceHint}>{option.description}</Text>
+                <Text style={styles.choiceTitle}>{t(`checkin.low.${option.id}`)}</Text>
+                <Text style={styles.choiceHint}>{t(`checkin.low.${option.id}.desc`)}</Text>
               </TouchableOpacity>
             ))}
-            <Text style={styles.privacyNote}>Your answer stays private. It does not create a recovery score.</Text>
+            <Text style={styles.privacyNote}>{t('checkin.low.privacy')}</Text>
           </>
         ) : (
           <>
-            <Text style={styles.title} accessibilityRole="header">Claim your Pulse</Text>
-            <Text style={styles.subtitle}>Four sliders. Take your time.</Text>
+            <Text style={styles.title} accessibilityRole="header" accessibilityLanguage={tag}>{t('checkin.full.title')}</Text>
+            <Text style={styles.subtitle}>{t('checkin.full.sub')}</Text>
             {SLIDERS.map((s) => (
               <View key={s.key} style={styles.sliderRow}>
                 <View style={styles.sliderHeader}>
@@ -164,17 +167,17 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
         {error && <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="assertive">{error}</Text>}
         {mode === 'full' && (
           <TouchableOpacity style={styles.button} accessibilityRole="button" onPress={handleSubmit} disabled={saving}>
-            {saving ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>Save Pulse</Text>}
+            {saving ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>{t('checkin.full.save')}</Text>}
           </TouchableOpacity>
         )}
-        {saving && mode === 'quick' && <ActivityIndicator accessibilityLabel="Saving your answer" />}
+        {saving && mode === 'quick' && <ActivityIndicator accessibilityLabel={t('checkin.saving')} />}
         {mode !== 'choice' && (
           <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={() => { setError(null); setMode('choice'); }} style={styles.secondaryAction}>
-            <Text style={styles.cancel}>Go back</Text>
+            <Text style={styles.cancel}>{t('common.goBack')}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity accessibilityRole="button" onPress={onClose} disabled={saving} style={styles.secondaryAction}>
-          <Text style={styles.cancel}>Not today</Text>
+          <Text style={styles.cancel}>{t('common.notToday')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </Modal>

@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'rea
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/lib/auth-context';
+import { NativeI18nProvider } from '../src/lib/i18n';
 import { NativeThemeProvider, useNativeTheme } from '../src/lib/native-theme';
 import { MfaChallengeScreen } from '../src/components/MfaChallengeScreen';
 
@@ -88,8 +89,10 @@ export default function RootLayout() {
   return (
     <NativeThemeProvider>
       <AuthProvider>
-        <RootNavigator />
-        <ThemedStatusBar />
+        <NativeI18nProvider>
+          <RootNavigator />
+          <ThemedStatusBar />
+        </NativeI18nProvider>
       </AuthProvider>
     </NativeThemeProvider>
   );
