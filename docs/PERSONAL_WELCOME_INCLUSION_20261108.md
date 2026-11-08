@@ -27,3 +27,9 @@ Implementation branch: `feature/personal-welcome-global-inclusion-20261108`, bas
 
 ## Engineering handoff
 Review this branch as a draft onto PR #157 and then reconcile with Claude's active accessibility work branch. Preserve PR #157's qualitative check-in segregation and owner-only Firestore security. Check builds and regression tests before any merge; no direct main merge. The owner's priority is simple, low-energy, inclusive and independently usable onboarding, not an artificially chatty interface.
+
+## Reconciliation status (Claude, 8 Nov 2026)
+- Gap 3 (cross-platform parity): DONE. `personal-preferences.ts` is the one canonical record (`users/{uid}` + `preferences/ui`), shared by web and Expo; the web profile is read as a fallback, so no migration is needed. Web writes it in the same atomic batch as the profile.
+- Gap 8 (consent alignment): DONE. An explicit opt-out on either platform wins; name use is opt-in; the web "Use Name" switch now shows that same state.
+- Gap 1 (verification): emulator rules tests added and passing; full offline gate run (see status doc). Device QA still open.
+- Gap 4 (languages): unchanged by design. English only; no unreviewed language offered.

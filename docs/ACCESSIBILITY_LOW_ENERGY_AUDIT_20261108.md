@@ -38,3 +38,14 @@ Scope: repository review of web **ConnectedDailyCheckIn**, Expo **DailyCheckInMo
 - Work is isolated on `feature/accessible-low-energy-checkin-20261108`; do not merge into Claude's moving work branch without comparing heads.
 - **Do not report this feature deployed.** Owner approval is required before merging Firestore rules or deploying the app.
 - The existing numeric check-in and business intelligence remain unchanged.
+
+## Reconciliation status (Claude, 8 Nov 2026)
+Merged with the Batch 6 branch (`claude/funny-wright-0p84gv`); see docs/CTO_CONSOLIDATION_STATUS.md section 11.
+| Item | Status |
+|---|---|
+| Cross-user / malformed-answer emulator tests | DONE: `welcome-and-low-energy-rules.emulator.test.ts` (10 tests, runs in the release gate), incl. the 2FA session gate |
+| Duplicate-tap handling | DONE: synchronous guard on web and native, tested |
+| Feedback after save | DONE: web role=status confirmation + Done; native AccessibilityInfo announcement; errors are alerts |
+| Voice journal fake progress | DONE: replaced by one honest, announced status; typing alternative offered |
+| Native welcome / sign-in / check-in on a real device | NOT RUN: see docs/DEVICE_ACCESSIBILITY_TEST_PLAN.md |
+| Per-account low-energy mode, slower pacing, reduced-motion override | OPEN: needs an owner decision (new settings); OS reduced-motion is already honoured |

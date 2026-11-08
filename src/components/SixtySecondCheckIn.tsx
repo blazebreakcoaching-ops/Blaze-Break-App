@@ -147,7 +147,7 @@ export const SixtySecondCheckIn = ({
 
     } catch (e: any) {
       console.error("Microphone access failed:", e);
-      setError("Unable to access microphone. Please ensure permissions are granted.");
+      setError("Unable to access the microphone. You can allow it in your browser settings, or type to Nova instead in the Nova tab.");
     }
   };
 
@@ -186,28 +186,14 @@ export const SixtySecondCheckIn = ({
     if (!uid) return;
     setIsAnalyzing(true);
     setError(null);
-    setAnalysisStatus("Decompressing raw signal feed...");
+    // One honest status. The previous rotating, timer-driven messages
+    // described processing steps that do not exist and changed silently
+    // for screen readers (see voice-journal-honesty.test.ts).
+    setAnalysisStatus("Nova is listening to your recording and writing a short summary. This can take up to a minute.");
 
     try {
       const base64Audio = await convertBlobToBase64(audioBlob);
       const mimeType = audioBlob.type;
-
-      // Metacognitive stages
-      const statusSteps = [
-        "Aligning emotional frequencies...",
-        "Nova Brain scanning for latent loops...",
-        "Decoding lexical biomarkers...",
-        "Evaluating cognitive fatigue index...",
-        "Formulating recovery advice..."
-      ];
-
-      let step = 0;
-      const statusInterval = setInterval(() => {
-        if (step < statusSteps.length) {
-          setAnalysisStatus(statusSteps[step]);
-          step++;
-        }
-      }, 2500);
 
       const response = await secureApiFetch("/api/nova/voice-journal", {
         method: "POST",
@@ -217,7 +203,6 @@ export const SixtySecondCheckIn = ({
         }
       });
 
-      clearInterval(statusInterval);
       const result = await response.json();
 
       if (result.error) throw new Error(result.error);
@@ -467,8 +452,8 @@ export const SixtySecondCheckIn = ({
                   <Sparkles className="w-6 h-6 text-primary absolute inset-0 m-auto animate-pulse" />
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-text-main font-mono">Nova Brain Syncing</h4>
-                  <p className="text-xs text-text-muted max-w-[200px] animate-pulse">{analysisStatus}</p>
+                  <h4 className="text-sm font-bold text-text-main font-mono">Working on it</h4>
+                  <p role="status" aria-live="polite" className="text-xs text-text-muted max-w-[220px]">{analysisStatus}</p>
                 </div>
               </div>
             ) : pendingResult ? (
@@ -545,7 +530,7 @@ export const SixtySecondCheckIn = ({
                     <div className="space-y-1 max-w-[240px]">
                       <h4 className="text-sm font-bold text-text-main">Tap to record</h4>
                       <p className="text-xs text-text-muted leading-relaxed">
-                        Nova listens, transcribes, and extracts recurring stress & boundaries loops automatically.
+                        Nova transcribes what you say and suggests recurring patterns for you to review. You see the full text before anything is saved. Prefer typing? Use the Nova tab.
                       </p>
                       {isDemoSession && (
                         <p className="text-[10px] font-bold text-text-muted/80 pt-1">
