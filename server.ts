@@ -78,6 +78,7 @@ import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
 import { adaptInterventionCandidates } from './nhei-adaptive-intelligence';
 import { mayUseSecondMemory, normalizeOpenLoop, validateOpenLoop, MAX_OPEN_LOOPS } from './nhei-second-memory';
+import { planOutcomeTransition } from './nhei-routing-outcome';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
@@ -15189,19 +15190,26 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
 
     const nowIso = new Date().toISOString();
     const typedAction = action as RoutingOutcomeAction;
-
-    if (typedAction === 'started') {
-      await decisionRef.set({ startedAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'interventionsStarted');
-    } else if (typedAction === 'declined') {
-      await decisionRef.set({ outcome: 'declined', outcomeAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'recommendationsDeclined');
-    } else if (typedAction === 'completed') {
-      await decisionRef.set({ outcome: 'completed', helpfulness: validHelpfulness, outcomeAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'interventionsCompleted');
-    } else {
-      await decisionRef.set({ outcome: 'abandoned', outcomeAt: nowIso }, { merge: true });
-      await incrementSessionCounter(db, user.uid, 'interventionsAbandoned');
+    // Transaction ensures retries do not duplicate a completed event.
+    // Users may correct a past helpfulness answer without a new count.
+    const transition = await db.runTransaction(async tx => {
+      const existing = await tx.get(decisionRef);
+      if (!existing.exists) return { allowed: false as const, changed: false as const, reason: 'decision not found' };
+      const plan = planOutcomeTransition(existing.data() || {}, typedAction, validHelpfulness, nowIso);
+      if (plan.allowed && plan.changed) tx.update(decisionRef, plan.patch);
+      return plan;
+    });
+    if (!transition.allowed) {
+      return res.status(409).json({ error: transition.reason });
+    }
+    if (transition.counter) {
+      const counterMap: Record<RoutingOutcomeAction, SessionCounterField> = {
+        started: 'interventionsStarted',
+        declined: 'recommendationsDeclined',
+        completed: 'interventionsCompleted',
+        abandoned: 'interventionsAbandoned',
+      };
+      await incrementSessionCounter(db, user.uid, counterMap[transition.counter]);
     }
 
     res.json({ ok: true });
