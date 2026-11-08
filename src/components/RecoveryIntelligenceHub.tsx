@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback, type ComponentType } from 'react';
+import { useEffect, useState, useCallback, useRef, type ComponentType } from 'react';
 import { ChevronDown, ChevronUp, Loader2, HeartPulse } from 'lucide-react';
 import { auth } from '../lib/firebase';
+import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n-react';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaRecommendationCard } from './NovaRecommendationCard';
 import { SecondMemoryCard } from './SecondMemoryCard';
@@ -106,6 +108,10 @@ const navigateToTab = (tab: string) => {
 };
 
 export const RecoveryIntelligenceHub = () => {
+  const { user } = useAuth();
+  const { t } = useI18n();
+  const accountUid = user?.uid ?? null;
+  const requestGeneration = useRef(0);
   const [decision, setDecision] = useState<RoutingDecisionResponse | null>(null);
   const [direction, setDirection] = useState<RecoveryDirectionResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,38 +123,50 @@ export const RecoveryIntelligenceHub = () => {
   const [pendingOutcomeCheck, setPendingOutcomeCheck] = useState<PendingOutcomeCheck | null>(null);
 
   const reportOutcome = useCallback((decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string) => {
-    if (!decisionId || !auth.currentUser) return;
-    secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } }).catch(() => {
-      // Non-fatal - the primary recommendation flow isn't blocked by the outcome write failing.
+    if (!decisionId || !accountUid || auth.currentUser?.uid !== accountUid) return;
+    void secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } }).catch(() => {
+      // Non-fatal for navigation; persistence is verified separately in the feedback screen.
     });
-  }, []);
+  }, [accountUid]);
 
   const fetchDecision = useCallback(async (body: Record<string, unknown> = {}) => {
-    if (!auth.currentUser) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid || uid !== accountUid) return;
+    const generation = requestGeneration.current;
     setLoading(true);
     setError('');
     setDismissed(false);
     try {
       const res = await secureApiFetch('/api/recovery/routing-decision', { method: 'POST', data: body });
-      const data = await res.json();
+      const data = await res.json() as RoutingDecisionResponse;
+      if (auth.currentUser?.uid !== uid || generation !== requestGeneration.current) return;
       setDecision(data);
       setPendingOutcomeCheck(data.pendingOutcomeCheck ?? null);
-    } catch (e) {
-      setError('Your latest recommendation isn\'t available yet.');
+    } catch {
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+        setError('Your latest recommendation isn\'t available yet.');
+      }
+    } finally {
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setLoading(false);
     }
-    setLoading(false);
-  }, []);
+  }, [accountUid]);
 
   useEffect(() => {
-    fetchDecision();
-    if (!auth.currentUser) return;
-    secureApiFetch('/api/recovery/direction')
+    requestGeneration.current += 1;
+    setDecision(null); setDirection(null); setPendingOutcomeCheck(null);
+    setError(''); setDismissed(false); setLoading(!!accountUid);
+    const uid = auth.currentUser?.uid;
+    if (!uid || uid !== accountUid) return;
+    const generation = requestGeneration.current;
+    void fetchDecision();
+    void secureApiFetch('/api/recovery/direction')
       .then((res) => res.json())
-      .then(setDirection)
-      .catch(() => {
-        // Non-fatal - "Your Direction" simply doesn't render below.
-      });
-  }, [fetchDecision]);
+      .then((data: RecoveryDirectionResponse) => {
+        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setDirection(data);
+      })
+      .catch(() => { /* Optional: do not display outdated direction after an account switch. */ });
+    return () => { requestGeneration.current += 1; };
+  }, [accountUid, fetchDecision]);
 
   const handleStart = () => {
     if (!decision?.selectedModule) return;
@@ -211,7 +229,7 @@ export const RecoveryIntelligenceHub = () => {
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
       <div>
-        <h2 className="text-2xl font-display font-black text-text-main">Recovery Intelligence</h2>
+        <h2 className="text-2xl font-display font-black text-text-main">{t("title.recovery_intelligence")}</h2>
         <p className="text-xs text-text-muted mt-1">One useful next step, not a wall of tools.</p>
       </div>
 
