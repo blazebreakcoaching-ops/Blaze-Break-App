@@ -14,7 +14,12 @@ import type { BandwidthBand } from '../../recovery-capacity-gate';
 // renders the result and reports back what the person chose.
 
 interface NovaRecommendationCardProps {
-  decision: DecisionCopyInput;
+  decision: DecisionCopyInput & {
+    adaptiveExplanation?: {
+      basis: 'explicit_preference' | 'confirmed_outcomes';
+      preference: 'preferred' | 'avoided' | 'neutral';
+    } | null;
+  };
   onStart: () => void;
   onSomethingElse: (intent: { label: string; routeType: RouteType | 'browse' }) => void;
   onNotNow: () => void;
@@ -90,7 +95,17 @@ export const NovaRecommendationCard = ({
       )}
 
       {showWhyThis && (
-        <p className="text-xs text-text-muted leading-relaxed p-3.5 bg-card/40 rounded-lg border border-white/5">{copy.whyThis}</p>
+        <div className="space-y-2 p-3.5 bg-card/40 rounded-lg border border-white/5 text-xs text-text-muted leading-relaxed">
+          <p>{copy.whyThis}</p>
+          {decision.adaptiveExplanation && (
+            <p>
+              {decision.adaptiveExplanation.basis === 'explicit_preference'
+                ? 'Your saved preference was considered.'
+                : 'Your previous feedback was considered.'}
+              {' '}Your current needs and choices always come first.
+            </p>
+          )}
+        </div>
       )}
 
       {showSomethingElse && (
