@@ -250,4 +250,10 @@ export const es: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "Nova está revisando tus respuestas...",
   "fingerprint.errorTitle": "No pudimos completar tu revisión",
   "fingerprint.retry": "Volver a intentarlo",
+  "notifications.title": "Recordatorios de Nova",
+  "notifications.description": "Solo recordatorios tranquilos dentro de la aplicación. Las notificaciones push, por correo, SMS y Guardian están desactivadas.",
+  "notifications.enable": "Activar recordatorios en la aplicación",
+  "notifications.enableDetail": "Permitir que Nova ofrezca apoyo suave mientras usas la aplicación.",
+  "notifications.quietHours": "Horas de descanso",
+  "notifications.quietDetail": "Nova no enviará recordatorios durante estas horas.",
 };
