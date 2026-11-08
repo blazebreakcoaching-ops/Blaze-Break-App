@@ -59,7 +59,7 @@ describe('Nova privacy regressions', () => {
     expect(server).toContain('app.delete("/api/recovery/my-feedback/:id"');
     expect(server).toContain('app.post("/api/recovery/reset-adaptive-learning"');
     const ui = source('src/components/AdaptiveFeedbackHistory.tsx');
-    expect(ui).toContain('Reset what Nova has learned');
+    expect(ui).toContain('Reset adaptive feedback');
     expect(ui).toContain('action:');
   });
 });
