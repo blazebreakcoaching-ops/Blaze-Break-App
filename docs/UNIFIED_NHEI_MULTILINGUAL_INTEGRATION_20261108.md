@@ -71,3 +71,25 @@ Completed on this integration branch:
 **Not yet verified:** TypeScript, web/native build, all tests, emulator and staging. Previously reported multilingual test success applies to its earlier source commit and does not validate these new changes.
 
 Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site execution proof. Advance the matrix as paths are audited, with explicit refs and test evidence.
+
+## Phase 1–4 engineering checkpoint — subsequent integration batch
+
+**Committed to protected integration branch (not merged or deployed):**
+- Extended existing recovery routing with opt-in learning hints; retained atomic recommendation reservation and suppression on transaction conflicts.
+- Reconciled `server.ts` for account-owned feedback history, correction, erasure and learning reset, including forgotten-rating immutability and accurate attribution. Did **not** replace the multilingual branch's large server implementation.
+- Added `NovaAdaptiveControls` to the existing Data Privacy Dashboard, using `users/{uid}/nova_permissions/current`; preserves calendar and gated NHEI permissions.
+- Strengthened `nova_memories` Firestore rules: creation requires both memory permissions, corrections remain possible after opt-out for editable records only; system-managed records cannot be deleted by clients.
+- Made Nova's memory cache check the active account and memory permissions before loading saved records; withdrawn consent clears local cache.
+- Ported Second Memory validation, transactional user-owned CRUD server routes, Memory Centre access and post-opt-out Past Memory review. The Recovery Hub shows a compact note and an explanation only when learning actually influenced a recommendation.
+- Added support-directory labels in twelve catalogues without changing phone numbers or provider destinations; native Expo tab labels now use the shared catalogue. `docs/I18N_TRANSLATION_STATUS.md` updated to 232 source keys.
+- Added source-level and emulator test definitions; **no execution claims** for this combined branch.
+
+**Feature-level concerns still to reconcile/verify:**
+- `server.ts` is now integrated at the source level but needs TypeScript and full HTTP/emulator runs. Review any other memory-context consumer that may use older permission semantics.
+- Verify complete member data export and erasure with new nested `users/{uid}/nova_second_memory` documents (the repo's generic nested-subcollection walk is documented in `user-data-collections.ts`; run actual account fixture tests).
+- The majority of web screens listed in the multilingual report are still English: marketing/auth, remaining onboarding choices, fingerprint, individual tools, privacy/billing/reports/PDF, server errors/messages and notifications. Newly translated safety labels are **unreviewed drafts**.
+- Confirm the native app's sign-in, account and NHEI routes with device/screen reader and RTL tests.
+- Compare the full NHEI change-set from `main` by file, not just the selected routes: new feedback reset tests, privacy guard contracts, Second Memory account isolation and additional Nova chat wiring need review. No claim of complete merge.
+- Do not enable gated NHEI Educational, Personal Reflection, Longitudinal or external agentic actions without independent human governance approvals.
+
+**Next acceptance stages:** run clean checkout and builds (web/Expo/functions), full unit/component tests, rules emulator, Firebase-authenticated staging E2E, account/data-rights scenarios and native-speaker/safety review. Only then merge to main and plan deployment. The earlier multilingual Batch 7 test pass does not apply to the integration branch after these changes.
