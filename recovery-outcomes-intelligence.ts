@@ -28,6 +28,7 @@ export interface RoutingDecisionRecord {
   selectedModule: string | null;
   outcome?: RoutingOutcome;
   helpfulness?: RoutingHelpfulness;
+  adaptiveLearningUsed?: boolean;
 }
 
 export interface ModuleOutcomeSummary {
@@ -96,4 +97,41 @@ export function summarizeModuleOutcomes(
   // Most-recommended module first - that's what a reader scanning the
   // list cares about seeing immediately, not alphabetical order.
   return summaries.sort((a, b) => b.recommended - a.recommended);
+}
+
+// Observational product-health metric. Never infer that adaptation CAUSED an
+// outcome from these groups; people opt in non-randomly, and case-mix differs.
+export interface AdaptiveFeedbackGroup {
+  rated: number;
+  positive: number;
+  positiveRate: number | null;
+  sufficientSample: boolean;
+}
+export interface AdaptiveOutcomeComparison {
+  adapted: AdaptiveFeedbackGroup;
+  standard: AdaptiveFeedbackGroup;
+  caveat: string;
+}
+export function summarizeAdaptiveOutcomes(
+  decisions: RoutingDecisionRecord[],
+  minRatedSample = DEFAULT_OUTCOME_SAMPLE_THRESHOLD,
+): AdaptiveOutcomeComparison {
+  const calc = (adapted: boolean): AdaptiveFeedbackGroup => {
+    const ratings = decisions.filter(d =>
+      d.adaptiveLearningUsed === adapted && d.outcome === 'completed' &&
+      (d.helpfulness === 'better' || d.helpfulness === 'same' || d.helpfulness === 'not_really'));
+    const rated = ratings.length;
+    const positive = ratings.filter(d => d.helpfulness === 'better').length;
+    return {
+      rated,
+      positive,
+      positiveRate: rated >= minRatedSample ? positive / rated : null,
+      sufficientSample: rated >= minRatedSample,
+    };
+  };
+  return {
+    adapted: calc(true),
+    standard: calc(false),
+    caveat: 'Observational, not a causal comparison. Small samples hide rates; differences may reflect who opted in.',
+  };
 }
