@@ -1668,6 +1668,29 @@ export default function App() {
           // Leaves the honest defaults in place rather than pretending progress loaded.
         }
       }
+      // Restore account-specific preferences on a new device only after
+      // checking the server's memory-consent record. A browser cache from
+      // another account must never grant learning permission.
+      if (user) {
+        let memoryPermitted = false;
+        try {
+          const db = await getDb();
+          const { doc, getDoc } = await import('firebase/firestore');
+          const permissionSnap = await getDoc(doc(db, 'users', user.uid, 'nova_permissions', 'current'));
+          memoryPermitted = permissionSnap.exists() &&
+            permissionSnap.data().allowNovaMemory === true &&
+            permissionSnap.data().allowNovaUseSavedMemories === true;
+        } catch { /* If permissions cannot be confirmed, learning remains off. */ }
+        try {
+          localStorage.setItem('blaze_profile_uid', user.uid);
+          localStorage.setItem('blaze_profile', JSON.stringify({
+            ...loadedStats.profile,
+            letNovaLearn: loadedStats.profile?.letNovaLearn === true && memoryPermitted,
+          }));
+        } catch { /* Storage is optional. */ }
+      } else {
+        try { localStorage.removeItem('blaze_profile_uid'); } catch { /* Storage is optional. */ }
+      }
       setStats(loadedStats);
       statsLoadedRef.current = true;
       setStatsLoaded(true);
@@ -2284,6 +2307,7 @@ export default function App() {
           onComplete={async (profile) => {
             setStats((prev) => ({ ...prev, profile }));
             localStorage.setItem("blaze_profile", JSON.stringify(profile));
+            if (user) localStorage.setItem('blaze_profile_uid', user.uid);
             setFlow("app");
             setActiveTab("home");
             setPostOnboardingProfile(profile);
@@ -3181,6 +3205,7 @@ export default function App() {
                 // Firestore on the next debounced save.
                 localStorage.setItem("blaze_profile", JSON.stringify(profile));
                 if (user) {
+                  localStorage.setItem('blaze_profile_uid', user.uid);
                   setNovaMemoryConsent(user.uid, profile.letNovaLearn === true);
                 }
               }}
