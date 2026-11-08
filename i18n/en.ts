@@ -210,6 +210,18 @@ export const en = {
   'onboarding.language': 'App language',
   'onboarding.welcomeStyle': 'Welcome style',
 
+  // Onboarding consent: keep stored choices separate from translated labels
+  'onboarding.privacyTitle': "Your privacy",
+  'onboarding.privacySubtitle': "Your information stays yours. Choose what Nova may use.",
+  'onboarding.protectionTitle': "How your information is protected",
+  'onboarding.protectionBody': "Your personal entries stay private. An employer cannot see your individual entries.",
+  'onboarding.greetingConsent': "Personalised greetings",
+  'onboarding.greetingConsentDetail': "Allow Nova to use your preferred name.",
+  'onboarding.learningConsent': "Personalised learning",
+  'onboarding.learningConsentDetail': "Allow Nova to adapt suggestions using your check-ins.",
+  'onboarding.remindersConsent': "Gentle reminders",
+  'onboarding.remindersConsentDetail': "Allow occasional check-in reminders.",
+
   // Account and sign-in
   'auth.welcomeBack': 'Welcome back',
   'auth.email': 'Email address',
