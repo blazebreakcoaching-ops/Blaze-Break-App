@@ -242,4 +242,12 @@ export const hi: Partial<Record<TranslationKey, string>> = {
   "onboarding.novaToneTitle": "नोवा आपसे कैसे बात करे",
   "onboarding.novaToneQuestion": "आप चाहते हैं कि नोवा आपसे कैसे संवाद करे?",
 
+  "fingerprint.choiceTitle": "अभी आपके पास कितना समय है?",
+  "fingerprint.choiceSubtitle": "छोटी या लंबी जाँच चुनें। आप अपना निर्णय बदल सकते हैं।",
+  "fingerprint.quickTitle": "त्वरित जाँच — लगभग 90 सेकंड",
+  "fingerprint.fullTitle": "पूरी जाँच — लगभग 3–4 मिनट",
+  "fingerprint.progress": "प्रश्न {current} / {total}",
+  "fingerprint.working": "नोवा आपके उत्तर देख रहा है...",
+  "fingerprint.errorTitle": "आपकी जाँच पूरी नहीं हो सकी",
+  "fingerprint.retry": "फिर से कोशिश करें",
 };
