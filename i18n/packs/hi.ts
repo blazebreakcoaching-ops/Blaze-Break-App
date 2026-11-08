@@ -250,4 +250,10 @@ export const hi: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "नोवा आपके उत्तर देख रहा है...",
   "fingerprint.errorTitle": "आपकी जाँच पूरी नहीं हो सकी",
   "fingerprint.retry": "फिर से कोशिश करें",
+  "notifications.title": "नोवा रिमाइंडर",
+  "notifications.description": "केवल ऐप के भीतर शांत रिमाइंडर। पुश, ईमेल, एसएमएस और Guardian सूचनाएँ बंद हैं।",
+  "notifications.enable": "ऐप में रिमाइंडर चालू करें",
+  "notifications.enableDetail": "ऐप इस्तेमाल करते समय नोवा को हल्की सहायता देने की अनुमति दें।",
+  "notifications.quietHours": "शांत समय",
+  "notifications.quietDetail": "इन घंटों में नोवा रिमाइंडर नहीं भेजेगा।",
 };
