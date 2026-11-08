@@ -325,22 +325,22 @@ export const DiagnoseView = ({
     return (
       <div data-nova-guide-target="checkin-content" tabIndex={-1} className="max-w-2xl mx-auto py-12 space-y-10 text-center">
         <div className="space-y-3">
-          <h2 className="text-3xl font-light text-text-main">How much time do you have right now?</h2>
-          <p className="text-text-muted">Either way gets you a real result — the difference is how much of the picture it covers.</p>
+          <h2 className="text-3xl font-light text-text-main">{t('fingerprint.choiceTitle')}</h2>
+          <p className="text-text-muted">{t('fingerprint.choiceSubtitle')}</p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
             onClick={() => setMode('quick')}
             className="p-6 rounded-2xl border border-border bg-card hover:border-primary transition-all text-left space-y-2"
           >
-            <span className="text-xs font-black uppercase tracking-widest text-ember-accent">Quick Check — ~90 seconds</span>
+            <span className="text-xs font-black uppercase tracking-widest text-ember-accent">{t('fingerprint.quickTitle')}</span>
             <p className="text-sm text-text-muted leading-relaxed">7 questions. Covers the 5 core burnout patterns — Founder on Fire, Over-Giver, Silent Resenter, Manager in the Middle, High-Functioning Exhausted.</p>
           </button>
           <button
             onClick={() => setMode('full')}
             className="p-6 rounded-2xl border border-primary bg-primary/5 hover:bg-primary/10 transition-all text-left space-y-2"
           >
-            <span className="text-xs font-black uppercase tracking-widest text-ember-accent">Full Assessment — ~3-4 minutes</span>
+            <span className="text-xs font-black uppercase tracking-widest text-ember-accent">{t('fingerprint.fullTitle')}</span>
             <p className="text-sm text-text-muted leading-relaxed">14 questions. Also checks for Impostor Syndrome, Perfectionism, Crisis Dependency, and 4 more patterns — plus your full blend, not just one label.</p>
           </button>
         </div>
@@ -358,7 +358,7 @@ export const DiagnoseView = ({
           <RefreshCcw className="w-12 h-12 text-primary" />
         </motion.div>
         <p className="text-xl text-text-muted text-center italic">
-          Nova is analysing your burnout fingerprint...
+          {t('fingerprint.working')}
           <br />
           <span className="text-sm font-bold uppercase tracking-widest  not-italic">
             Connecting dots in your energy patterns
@@ -373,11 +373,11 @@ export const DiagnoseView = ({
       <div className="card border-destructive/20 bg-destructive/10 flex flex-col items-center text-center p-6 sm:p-8 md:p-12 gap-6">
         <AlertCircle className="w-12 h-12 text-destructive" />
         <h3 className="font-display text-2xl font-bold">
-          Something went wrong
+          {t('fingerprint.errorTitle')}
         </h3>
         <p role="alert" className="font-display text-lg opacity-60">{error}</p>
         <button onClick={() => { setError(null); setLoading(false); setStep(0); setMode('choice'); }} className="btn-primary bg-destructive">
-          {t('common.tryAgain')}
+          {t('fingerprint.retry')}
         </button>
       </div>
     );
@@ -388,7 +388,7 @@ export const DiagnoseView = ({
       <div className="mb-12">
         <div className="flex justify-between items-end mb-4 text-xs uppercase tracking-widest font-black text-text-muted" role="status" aria-live="polite" aria-atomic="true">
           <span>
-            Question {step + 1} of {activeQuestions.length}
+            {t('fingerprint.progress', { current: step + 1, total: activeQuestions.length })}
           </span>
           <span>{Math.round(((step + 1) / activeQuestions.length) * 100)}%</span>
         </div>
