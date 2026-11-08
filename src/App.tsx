@@ -1685,7 +1685,8 @@ export default function App() {
           localStorage.setItem('blaze_profile_uid', user.uid);
           localStorage.setItem('blaze_profile', JSON.stringify({
             ...loadedStats.profile,
-            letNovaLearn: loadedStats.profile?.letNovaLearn === true && memoryPermitted,
+            // The Firestore consent record is authoritative across devices.
+            letNovaLearn: memoryPermitted,
           }));
         } catch { /* Storage is optional. */ }
       } else {
