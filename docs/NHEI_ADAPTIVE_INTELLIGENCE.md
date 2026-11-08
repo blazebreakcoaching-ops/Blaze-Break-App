@@ -61,3 +61,45 @@ The live routing backend now supports consented feedback adaptation and privacy 
 5. Expand actual feature adapters based on validated information from modules not yet wired into the existing router. Avoid speculative classifications or broad private-data sharing.
 6. Test proactive **in-app** assistance with users. Background reminders, calendar integrations and external actions require separate explicit permission and safety review.
 7. Validate real-world benefit, retention and trust before describing the system as clinically effective or continuously self-learning.
+
+## Integrated follow-on batch — security, customer control and contextual learning
+The following changes are committed to the same main branch, but not yet compiled or deployed:
+
+1. **Feedback transparency:** a member-only API lists recent completed-module ratings. The Data Privacy Dashboard can show, correct and forget each rating. The correction uses the existing authenticated outcome endpoint; forgetting removes the subjective helpfulness field while preserving the activity event.
+2. **Learning reset:** a deliberately confirmed API disables adaptation, clears saved module preferences and erases past helpfulness ratings in bounded batches. An incomplete erasure is reported for retry. The Recovery Hub and privacy UI do not disclose ratings to employers.
+3. **True attribution:** audit fields distinguish learning *enabled* from a recommendation actually influenced by a preference or outcome. The platform outcome report uses the latter and explicitly warns that observational results are not proof of causation.
+4. **Context-sensitive outcomes:** repeated helpfulness only influences a new recommendation when it was observed at the same user-reported/calculated capacity band. Missing capacity metadata does not establish a matched context. Existing explicit user preferences remain higher priority than historical feedback.
+5. **Onboarding consent reliability:** permissions creation is awaitable before onboarding memories are written; Firestore rules recheck active memory consent at write time. Missing permission, unknown account or failed consent reads disable memory rather than silently enabling it.
+6. **Cross-device/account isolation:** client profile memory is restored from the authenticated person's Firestore permission state; per-account local storage keys isolate Nova chat history, voice preference, ratings and feedback. The Nova chat component remounts when signed-in UID changes. Legacy unscoped local history is not auto-imported.
+7. **Joined-up experience:** Nova chat links to the one-step Recovery Hub and optionally opens Second Memory. The main Nova coaching instructions recognise unusual or changing needs, ask rather than assume, and avoid compulsory framework journeys.
+8. **User agency after opt-out:** members can still inspect and erase old Second Memory notes after disabling learning, without restoring learning consent.
+9. **Regression coverage:** scenario tests and source-level contract tests cover privacy boundaries, low capacity, explicit requests, feedback quality, account isolation and reset controls.
+
+## Staging acceptance gate (not performed)
+Run these commands in a trusted checkout of the latest main branch:
+- `npm ci --legacy-peer-deps`
+- `npm run lint` (TypeScript)
+- `npm test` (Vitest)
+- `npm run build`
+
+Then run Firebase Firestore rules emulator tests against memory consent, private notes, cross-account denial and owner-only deletes; validate the authenticated API routes using test accounts.
+
+For each flow below, verify correct UI, database state, response status, accessibility, and no cross-account or employer information leakage:
+- New user opts OUT and IN, refreshes and changes device; no memory created or read without permission.
+- User changes preference, then requests a different tool; their request wins if eligible.
+- User reports a helpful activity repeatedly, then reports lower capacity; old capacity-specific feedback must not override the new context.
+- User corrects or forgets a helpfulness rating; the next recommendation must use the changed history.
+- User resets learning; further adaptation stops and ratings are cleared, or incomplete erasure is explicitly reported.
+- Two accounts use the same browser; chat and feedback from account A never appear under account B.
+- User creates notes, disables memory, reviews old notes, then deletes them.
+- Floor Mode displays one task at a time, including unfinished-work prompts when appropriate.
+- Backend or Firestore is offline; the interface shows a failure and does not claim data was saved.
+- Nova handles ambiguous or culturally specific situations without claiming a diagnosis or inventing available tools.
+
+The build and tests **have not been executed in this GitHub-only working environment**. Keep staging gated until checks pass, and do not use real customer data for tests.
+
+## Later product scope, not silently claimed as implemented
+- Wider automatic routing adapters across all existing modules, once inputs and outcome mappings are verified.
+- Privacy-reviewed proactive assistance outside an actively opened app (requires explicit permission and scheduling controls).
+- Longitudinal evaluation with consenting beta participants, human oversight and measured improvement.
+- Global localisation end-to-end verification, native app usability, resilience and accessibility testing.
