@@ -1188,12 +1188,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                             <button
                               onClick={() => {
                                 onNavigate(activeToolSuggestion.tab!);
-                                if (onAwardPoints) {
-                                  onAwardPoints(
-                                    10,
-                                    `Navigated to ${activeToolSuggestion.name} via Coach Nudge`,
-                                  );
-                                }
+                                // Accessing support is not a points-based task.
                               }}
                               className="px-4 py-2 bg-primary/10 hover:bg-primary hover:text-primary-foreground font-medium text-[11px] uppercase tracking-wider rounded-lg transition-colors text-[#9a3412] dark:text-primary border border-primary/25 cursor-pointer"
                             >
