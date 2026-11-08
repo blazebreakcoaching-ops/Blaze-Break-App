@@ -250,4 +250,10 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "Nova bekijkt je antwoorden...",
   "fingerprint.errorTitle": "Je check-in kon niet worden afgerond",
   "fingerprint.retry": "Opnieuw proberen",
+  "notifications.title": "Nova-herinneringen",
+  "notifications.description": "Alleen rustige herinneringen in de app. Push-, e-mail-, sms- en Guardian-meldingen staan uit.",
+  "notifications.enable": "Herinneringen in de app inschakelen",
+  "notifications.enableDetail": "Laat Nova tijdens het gebruik van de app rustige ondersteuning aanbieden.",
+  "notifications.quietHours": "Stille uren",
+  "notifications.quietDetail": "Nova stuurt tijdens deze uren geen herinneringen.",
 };
