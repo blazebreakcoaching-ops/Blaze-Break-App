@@ -3370,19 +3370,29 @@ export default function App() {
                   if (toolsRendered) return null;
                   toolsRendered = true;
                   const isGroupActive = sheetIds.has(activeTab);
+                  // Wayfinding: while a tool from the sheet is open, this
+                  // slot names it (and is the current page) so the bar
+                  // always shows where the customer is. It still opens
+                  // the sheet, keeping the bar at five fixed items.
+                  const activeSheetTab = isCustomerRole(effectiveRole)
+                    ? mobileSheetTabs.find((t) => t.id === activeTab)
+                    : undefined;
+                  const SlotIcon = activeSheetTab ? activeSheetTab.icon : Compass;
                   return (
                     <button
                       key="mobile-tools"
                       onClick={() => setShowMobileToolsSheet((v) => !v)}
                       aria-expanded={showMobileToolsSheet}
+                      aria-current={activeSheetTab ? 'page' : undefined}
+                      aria-label={activeSheetTab ? `${activeSheetTab.label}, open tools` : undefined}
                       className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                     >
                       <div
                         className={`p-1.5 rounded-full transition-all ${isGroupActive || showMobileToolsSheet ? "bg-primary/10" : ""}`}
                       >
-                        <Compass className="w-5 h-5" />
+                        <SlotIcon className="w-5 h-5" />
                       </div>
-                      <span className="text-[11px] font-bold tracking-wide">Tools</span>
+                      <span className="text-[11px] font-bold tracking-wide max-w-[48px] min-[360px]:max-w-[72px] truncate">{activeSheetTab ? activeSheetTab.label : "Tools"}</span>
                     </button>
                   );
                 }
