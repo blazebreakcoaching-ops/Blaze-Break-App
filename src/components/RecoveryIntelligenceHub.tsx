@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, type ComponentType } from 'react';
+import { useEffect, useState, useCallback, useRef, type ComponentType } from 'react';
 import { ChevronDown, ChevronUp, Loader2, HeartPulse } from 'lucide-react';
 import { auth } from '../lib/firebase';
+import { useAuth } from '../lib/auth';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaRecommendationCard } from './NovaRecommendationCard';
 import { SecondMemoryCard } from './SecondMemoryCard';
@@ -114,6 +115,9 @@ const navigateToTab = (tab: string) => {
 };
 
 export const RecoveryIntelligenceHub = () => {
+  const { user } = useAuth();
+  const accountUid = user?.uid ?? null;
+  const requestGeneration = useRef(0);
   const [decision, setDecision] = useState<RoutingDecisionResponse | null>(null);
   const [direction, setDirection] = useState<RecoveryDirectionResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,10 +133,10 @@ export const RecoveryIntelligenceHub = () => {
   // The account-specific key is a display preference, not recovery history.
   // It remains local so enabling Floor Mode sends no new wellbeing data.
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    try { setFloorMode(localStorage.getItem('blaze_floor_mode_' + uid) === 'true'); } catch { /* storage optional */ }
-  }, []);
+    setFloorMode(false);
+    if (!accountUid || auth.currentUser?.uid !== accountUid) return;
+    try { setFloorMode(localStorage.getItem('blaze_floor_mode_' + accountUid) === 'true'); } catch { /* storage optional */ }
+  }, [accountUid]);
   const toggleFloorMode = () => {
     setFloorMode(prev => {
       const next = !prev;
@@ -144,47 +148,67 @@ export const RecoveryIntelligenceHub = () => {
 
 
   const reportOutcome = useCallback(async (decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string): Promise<boolean> => {
-    if (!decisionId || !auth.currentUser) return false;
+    const uid = auth.currentUser?.uid;
+    if (!decisionId || !uid || uid !== accountUid) return false;
+    const generation = requestGeneration.current;
     setOutcomeError('');
     try {
       await secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } });
-      return true;
+      return auth.currentUser?.uid === uid && generation === requestGeneration.current;
     } catch {
-      setOutcomeError('Your feedback could not be saved. Please try again.');
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setOutcomeError('Your feedback could not be saved. Please try again.');
       return false;
     }
-  }, []);
+  }, [accountUid]);
 
   const fetchDecision = useCallback(async (body: Record<string, unknown> = {}) => {
-    if (!auth.currentUser) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid || uid !== accountUid) return;
+    const generation = requestGeneration.current;
     setLoading(true);
     setError('');
     setDismissed(false);
     try {
       const res = await secureApiFetch('/api/recovery/routing-decision', { method: 'POST', data: body });
-      const data = await res.json();
+      const data = await res.json() as RoutingDecisionResponse;
+      if (auth.currentUser?.uid !== uid || generation !== requestGeneration.current) return;
       setDecision(data);
       setPendingOutcomeCheck(data.pendingOutcomeCheck ?? null);
-    } catch (e) {
-      setError('Your latest recommendation isn\'t available yet.');
+    } catch {
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+        setError('Your latest recommendation isn\'t available yet.');
+      }
+    } finally {
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setLoading(false);
     }
-    setLoading(false);
-  }, []);
+  }, [accountUid]);
 
   useEffect(() => {
-    fetchDecision();
-    if (!auth.currentUser) return;
-    secureApiFetch('/api/user/resume-prompt')
+    requestGeneration.current += 1;
+    setDecision(null); setDirection(null); setPendingOutcomeCheck(null); setResumePrompt(null);
+    setError(''); setOutcomeError(''); setDismissed(false); setLoading(!!accountUid);
+    const uid = auth.currentUser?.uid;
+    if (!uid || uid !== accountUid) return;
+    const generation = requestGeneration.current;
+    void fetchDecision();
+    void secureApiFetch('/api/user/resume-prompt')
       .then(response => response.json())
-      .then((data: ResumePrompt) => setResumePrompt(data.hasIncomplete ? data : null))
-      .catch(() => setResumePrompt(null));
-    secureApiFetch('/api/recovery/direction')
-      .then((res) => res.json())
-      .then(setDirection)
+      .then((data: ResumePrompt) => {
+        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+          setResumePrompt(data.hasIncomplete ? data : null);
+        }
+      })
       .catch(() => {
-        // Non-fatal - "Your Direction" simply doesn't render below.
+        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setResumePrompt(null);
       });
-  }, [fetchDecision]);
+    void secureApiFetch('/api/recovery/direction')
+      .then(response => response.json())
+      .then((data: RecoveryDirectionResponse) => {
+        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setDirection(data);
+      })
+      .catch(() => { /* Non-fatal: direction is optional. */ });
+    return () => { requestGeneration.current += 1; };
+  }, [accountUid, fetchDecision]);
 
   const handleStart = () => {
     if (!decision?.selectedModule) return;
