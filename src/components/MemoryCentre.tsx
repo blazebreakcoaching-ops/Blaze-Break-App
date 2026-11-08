@@ -3,6 +3,7 @@ import { useAuth } from '../lib/auth';
 import { Shield, Brain, Trash2, Edit2 } from 'lucide-react';
 import { getNovaBrain, deleteNovaMemory, editNovaMemoryContent, NovaMemory } from '../lib/nova-brain';
 import { ConfirmDialog } from './ConfirmDialog';
+import { SecondMemoryCard } from './SecondMemoryCard';
 
 export function MemoryCentre() {
   const { user } = useAuth();
@@ -130,6 +131,10 @@ export function MemoryCentre() {
           ))}
         </div>
       )}
+
+      <div className="mt-5">
+        <SecondMemoryCard />
+      </div>
 
       <ConfirmDialog
         open={confirmingPurge}
