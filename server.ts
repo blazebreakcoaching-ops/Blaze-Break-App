@@ -38,7 +38,7 @@ import { effectiveConsentStatus, canRespondToConsent, computeInviteExpiresAt, is
 import { guardianSupportInvitationEnabled, validateGuardianSupportOffer, isValidGuardianSupportEventType, isValidGuardianSupportTemplateId, buildGuardianSupportMessage } from './guardian-support-invitation';
 import { quietHoursCheckPasses } from './ally-nudge-quiet-hours';
 import { collectionsForExport, collectionsForErasure, userIdFieldsFor } from './user-data-collections';
-import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { summarizeModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
 import {
@@ -6730,13 +6730,14 @@ app.get("/api/admin/recovery-outcomes", verifyAppCheck, authenticateFirebaseUser
       .get();
     const decisions: RoutingDecisionRecord[] = snap.docs.map((d: any) => {
       const data = d.data();
-      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness };
+      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness, adaptiveLearningUsed: data.adaptiveLearningUsed === true };
     });
 
     res.json({
       lookbackDays,
       generatedAt: new Date().toISOString(),
       modules: summarizeModuleOutcomes(decisions),
+      adaptiveComparison: summarizeAdaptiveOutcomes(decisions),
     });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
