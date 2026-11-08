@@ -53,6 +53,20 @@ export function validTimeZone(zone: string | null | undefined): boolean {
   catch { return false; }
 }
 
+export function formatLocalDate(date: Date, timeZone: string, locale?: string | null): string {
+  const zone = validTimeZone(timeZone) ? timeZone : 'UTC';
+  // Only reviewed English formatting is released today; the interface can
+  // safely expand after adding translated packs and locale-specific QA.
+  void resolveLanguage(locale);
+  return new Intl.DateTimeFormat('en-GB', { timeZone: zone, dateStyle: 'medium' }).format(date);
+}
+
+export function checkInCountLabel(count: number, locale?: string | null): string {
+  void resolveLanguage(locale);
+  const safeCount = Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+  return `${safeCount} ${new Intl.PluralRules('en-GB').select(safeCount) === 'one' ? 'check-in' : 'check-ins'}`;
+}
+
 export function localTimeParts(date: Date, zone: string): { hour: number; day: string } {
   const valid = validTimeZone(zone) ? zone : 'UTC';
   const parts = new Intl.DateTimeFormat('en-GB', {
