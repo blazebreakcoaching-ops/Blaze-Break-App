@@ -382,7 +382,7 @@ export const MovementSnacks = ({ fingerprint: _fingerprint, onAwardPoints }: Mov
                   <button
                     key={q.seconds}
                     onClick={() => handleQuickPick(q.seconds)}
-                    className="px-5 py-3 rounded-xl bg-success/10 text-[#166534] dark:text-[#4ade80] font-black text-sm uppercase tracking-widest flex items-center gap-2 hover:bg-success/20 transition-colors"
+                    className="px-5 py-3 rounded-xl bg-success/10 text-ember-success font-black text-sm uppercase tracking-widest flex items-center gap-2 hover:bg-success/20 transition-colors"
                   >
                     <Timer className="w-4 h-4" /> {q.label}
                   </button>

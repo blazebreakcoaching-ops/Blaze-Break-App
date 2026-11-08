@@ -63,7 +63,7 @@ export const RecommendationLedger = () => {
                    {entry.status === 'verified' ? (
                      <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-success dark:text-[#4ade80] bg-success/10 px-2 py-1 rounded w-fit"><CheckCircle2 className="w-3 h-3"/> Verified</span>
                    ) : (
-                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-destructive dark:text-[#f87171] bg-destructive/10 px-2 py-1 rounded w-fit"><AlertTriangle className="w-3 h-3"/> Rejected</span>
+                     <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-ember-danger bg-destructive/10 px-2 py-1 rounded w-fit"><AlertTriangle className="w-3 h-3"/> Rejected</span>
                    )}
                 </td>
                 <td className="px-4 py-3 text-text-muted max-w-sm truncate" title={entry.content}>{entry.content}</td>
@@ -76,7 +76,7 @@ export const RecommendationLedger = () => {
                 </td>
                 <td className="px-4 py-3 text-xs text-text-muted">
                    {entry.status === 'rejected' ? (
-                      <span className="text-destructive dark:text-[#f87171]">{entry.explanation}</span>
+                      <span className="text-ember-danger">{entry.explanation}</span>
                    ) : entry.userHelpful ? (
                       <span className="text-success dark:text-[#4ade80] cursor-default" title="User marked this as helpful">♥ Helpful</span>
                    ) : entry.userDismissed ? (

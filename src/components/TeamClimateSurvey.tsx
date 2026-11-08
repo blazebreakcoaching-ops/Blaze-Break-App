@@ -125,7 +125,7 @@ export const TeamClimateSurvey = ({ organisationName }: { organisationName?: str
       </div>
 
       {error && (
-        <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{error}</div>
+        <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{error}</div>
       )}
 
       <div className="space-y-5">

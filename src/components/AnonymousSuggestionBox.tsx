@@ -46,7 +46,7 @@ export const AnonymousSuggestionBox = ({ orgId, organisationName }: { orgId: str
       </div>
 
       {error && (
-        <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-lg">{error}</div>
+        <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-lg">{error}</div>
       )}
 
       {justSubmitted ? (

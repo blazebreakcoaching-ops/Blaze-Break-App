@@ -30,7 +30,7 @@ export const FeatureFlagsView = () => {
         {/* Overload Shield */}
         <div className="bg-surface dark:bg-surface/50 border border-border dark:border-border rounded-xl p-5 flex gap-4 items-start transition-all hover:border-primary/30">
           <div className="bg-primary/10 p-2 rounded-lg shrink-0 mt-0.5">
-            <ShieldAlert className="w-5 h-5 text-[#9a3412] dark:text-primary" />
+            <ShieldAlert className="w-5 h-5 text-ember-accent" />
           </div>
           <div className="flex-1 space-y-1">
             <div className="flex justify-between items-center group">
@@ -55,7 +55,7 @@ export const FeatureFlagsView = () => {
         {/* Guardian Protocol */}
         <div className="bg-surface dark:bg-surface/50 border border-border dark:border-border rounded-xl p-5 flex gap-4 items-start transition-all hover:border-primary/30">
           <div className="bg-primary/10 p-2 rounded-lg shrink-0 mt-0.5">
-            <Cpu className="w-5 h-5 text-[#9a3412] dark:text-primary" />
+            <Cpu className="w-5 h-5 text-ember-accent" />
           </div>
           <div className="flex-1 space-y-1">
             <div className="flex justify-between items-center group">
@@ -80,7 +80,7 @@ export const FeatureFlagsView = () => {
         {/* Nova Voice */}
         <div className="bg-surface dark:bg-surface/50 border border-border dark:border-border rounded-xl p-5 flex gap-4 items-start transition-all hover:border-primary/30">
           <div className="bg-primary/10 p-2 rounded-lg shrink-0 mt-0.5">
-            <Cpu className="w-5 h-5 text-[#9a3412] dark:text-primary" />
+            <Cpu className="w-5 h-5 text-ember-accent" />
           </div>
           <div className="flex-1 space-y-1">
             <div className="flex justify-between items-center group">

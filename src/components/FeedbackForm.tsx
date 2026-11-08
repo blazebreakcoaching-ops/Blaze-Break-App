@@ -124,7 +124,7 @@ export const FeedbackForm = () => {
                   aria-pressed={rating >= star}
                   className={cn(
                     'p-1.5 rounded-lg transition-all',
-                    rating >= star ? 'text-[#9a3412] dark:text-warning' : 'text-text-muted hover:text-warning/50'
+                    rating >= star ? 'text-ember-warning' : 'text-text-muted hover:text-warning/50'
                   )}
                 >
                   <Star className={cn('w-5 h-5', rating >= star && 'fill-current')} />
@@ -177,7 +177,7 @@ export const FeedbackForm = () => {
           </p>
         )}
         {status === 'error' && (
-          <p role="alert" className="text-xs font-semibold text-destructive dark:text-[#f87171]">
+          <p role="alert" className="text-xs font-semibold text-ember-danger">
             Couldn't send that just now. You can also email us directly at support@blazebreak.app
           </p>
         )}

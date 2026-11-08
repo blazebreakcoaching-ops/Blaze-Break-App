@@ -180,17 +180,17 @@ const INCIDENT_STATUS_OPTIONS = ['open', 'investigating', 'monitoring', 'resolve
 const INCIDENT_SEVERITY_OPTIONS = ['low', 'medium', 'high', 'critical'] as const;
 
 const INCIDENT_STATUS_STYLES: Record<string, string> = {
-  open: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
-  investigating: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  open: 'bg-destructive/10 text-ember-danger',
+  investigating: 'bg-warning/10 text-ember-warning',
   monitoring: 'bg-primary/10 text-primary',
   resolved: 'bg-success/10 text-success dark:text-[#4ade80]',
 };
 
 const INCIDENT_SEVERITY_STYLES: Record<string, string> = {
   low: 'bg-background text-text-muted',
-  medium: 'bg-warning/10 text-[#9a3412] dark:text-warning',
-  high: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
-  critical: 'bg-destructive/20 text-destructive dark:text-[#f87171]',
+  medium: 'bg-warning/10 text-ember-warning',
+  high: 'bg-destructive/10 text-ember-danger',
+  critical: 'bg-destructive/20 text-ember-danger',
 };
 
 const BILLING_SOURCE_LABELS: Record<string, string> = {
@@ -1566,7 +1566,7 @@ export const AdminDashboard = () => {
             Required: Platform Admin Role
           </p>
           <p className="text-sm text-text-muted leading-relaxed">
-            Your current account role (<span className="text-[#9a3412] dark:text-primary font-bold font-mono">{appRole}</span>) is unauthorised to read platform security custom claims or audit logs. Ask a Platform Owner to grant you a Command Centre role.
+            Your current account role (<span className="text-ember-accent font-bold font-mono">{appRole}</span>) is unauthorised to read platform security custom claims or audit logs. Ask a Platform Owner to grant you a Command Centre role.
           </p>
         </div>
       </motion.div>
@@ -1625,7 +1625,7 @@ export const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }} 
             exit={{ opacity: 0, y: -10 }}
             role="alert"
-            className="p-4 bg-destructive/10 border border-destructive/30 text-destructive dark:text-[#f87171] rounded-xl text-sm font-bold flex items-center gap-2"
+            className="p-4 bg-destructive/10 border border-destructive/30 text-ember-danger rounded-xl text-sm font-bold flex items-center gap-2"
           >
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
@@ -1637,7 +1637,7 @@ export const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }} 
             exit={{ opacity: 0, y: -10 }}
             role="alert"
-            className="p-4 bg-destructive/10 border border-destructive/30 text-destructive dark:text-[#f87171] rounded-xl text-sm font-bold flex items-center justify-between gap-2"
+            className="p-4 bg-destructive/10 border border-destructive/30 text-ember-danger rounded-xl text-sm font-bold flex items-center justify-between gap-2"
           >
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1705,7 +1705,7 @@ export const AdminDashboard = () => {
           <div className="flex justify-between items-start">
             <div className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Somatic Safety Alerts</span>
-              <h4 className="text-3xl font-display font-black text-destructive dark:text-[#f87171] flex items-baseline gap-2">
+              <h4 className="text-3xl font-display font-black text-ember-danger flex items-baseline gap-2">
                 {safetyEventsCount}
                 <span className="text-xs text-text-muted font-normal">Active Resets</span>
               </h4>
@@ -1951,7 +1951,7 @@ export const AdminDashboard = () => {
                 <button
                   onClick={saveCurrentView}
                   disabled={!newViewName.trim()}
-                  className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40"
+                  className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-ember-accent text-[10px] font-black uppercase tracking-widest rounded-lg transition-all disabled:opacity-40"
                 >
                   Save View
                 </button>
@@ -1996,8 +1996,8 @@ export const AdminDashboard = () => {
                           <td className="py-4">
                             <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
                               lifecycle.tone === 'active' ? 'bg-success/10 text-success dark:text-[#4ade80]'
-                              : lifecycle.tone === 'destructive' ? 'bg-destructive/10 text-destructive dark:text-[#f87171]'
-                              : lifecycle.tone === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                              : lifecycle.tone === 'destructive' ? 'bg-destructive/10 text-ember-danger'
+                              : lifecycle.tone === 'warning' ? 'bg-warning/10 text-ember-warning'
                               : 'bg-surface text-text-muted'
                             }`}>
                               {lifecycle.label}
@@ -2009,7 +2009,7 @@ export const AdminDashboard = () => {
                               u.plan === 'executive' ? 'bg-primary/10 text-primary'
                               : u.plan === 'performance' ? 'bg-success/10 text-success dark:text-[#4ade80]'
                               : u.plan === 'core' ? 'bg-info/10 text-info'
-                              : u.plan === 'legacy_premium' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                              : u.plan === 'legacy_premium' ? 'bg-warning/10 text-ember-warning'
                               : 'bg-surface text-text-muted'
                             }`}>
                               {u.plan ? PLAN_LABELS[u.plan] || u.plan : 'Unknown'}
@@ -2023,7 +2023,7 @@ export const AdminDashboard = () => {
                           <td className="py-4 text-right">
                             <button
                               onClick={() => openAccountDrawer(u)}
-                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-ember-accent text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                             >
                               Manage Account
                             </button>
@@ -2100,7 +2100,7 @@ export const AdminDashboard = () => {
                                   u.storedPlan === 'executive' ? 'bg-primary/10 text-primary'
                                   : u.storedPlan === 'performance' ? 'bg-success/10 text-success dark:text-[#4ade80]'
                                   : u.storedPlan === 'core' ? 'bg-info/10 text-info'
-                                  : u.storedPlan === 'legacy_premium' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                                  : u.storedPlan === 'legacy_premium' ? 'bg-warning/10 text-ember-warning'
                                   : 'bg-surface text-text-muted'
                                 }`}>
                                   {u.storedPlan ? PLAN_LABELS[u.storedPlan] || u.storedPlan : 'Unknown'}
@@ -2109,7 +2109,7 @@ export const AdminDashboard = () => {
                               <td className="py-4">
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
                                   effective.tone === 'active' ? 'bg-success/10 text-success dark:text-[#4ade80]'
-                                  : effective.tone === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                                  : effective.tone === 'warning' ? 'bg-warning/10 text-ember-warning'
                                   : 'bg-surface text-text-muted'
                                 }`}>
                                   {effective.label}
@@ -2133,7 +2133,7 @@ export const AdminDashboard = () => {
                                   </button>
                                   <button
                                     onClick={() => openAccountDrawer(u)}
-                                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-ember-accent text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                                   >
                                     Manage
                                   </button>
@@ -2264,7 +2264,7 @@ export const AdminDashboard = () => {
                   </div>
                   {admins.length > 0 && (
                     <div className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${
-                      admins.every((a) => a.mfaEnabled) ? 'text-success dark:text-[#4ade80]' : 'text-[#9a3412] dark:text-warning'
+                      admins.every((a) => a.mfaEnabled) ? 'text-success dark:text-[#4ade80]' : 'text-ember-warning'
                     }`}>
                       {admins.filter((a) => a.mfaEnabled).length} / {admins.length} have MFA enabled
                     </div>
@@ -2359,22 +2359,22 @@ export const AdminDashboard = () => {
                         <td className="py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                             adminUser.role === 'platform_owner'
-                              ? 'bg-destructive/10 text-destructive dark:text-[#f87171] border border-destructive/20'
+                              ? 'bg-destructive/10 text-ember-danger border border-destructive/20'
                               : adminUser.role === 'platform_admin'
-                              ? 'bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/20'
+                              ? 'bg-primary/10 text-ember-accent border border-primary/20'
                               : 'bg-accent/10 text-[#9a3412] dark:text-[#fdba74] border border-accent/20'
                           }`}>
                             {adminUser.role.replace('_', ' ')}
                           </span>
                           {adminUser.expiresAt && (
-                            <span className={`block text-[10px] mt-1.5 font-bold uppercase tracking-wide ${isExpired ? 'text-destructive dark:text-[#f87171]' : 'text-text-muted normal-case'}`}>
+                            <span className={`block text-[10px] mt-1.5 font-bold uppercase tracking-wide ${isExpired ? 'text-ember-danger' : 'text-text-muted normal-case'}`}>
                               {isExpired ? 'Escalation expired - access already revoked' : `Expires ${new Date(adminUser.expiresAt).toLocaleString()}`}
                             </span>
                           )}
                         </td>
                         <td className="py-4">
                           <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
-                            adminUser.mfaEnabled ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                            adminUser.mfaEnabled ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-warning/10 text-ember-warning'
                           }`}>
                             {adminUser.mfaEnabled ? 'Enabled' : 'Not enabled'}
                           </span>
@@ -2388,7 +2388,7 @@ export const AdminDashboard = () => {
                                 setChangeRoleReason('');
                                 setChangeRoleEscalationHours('');
                               }}
-                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-ember-accent text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                             >
                               Change Role
                             </button>
@@ -2432,7 +2432,7 @@ export const AdminDashboard = () => {
                   : 'Creates a new customer organisation. If you designate an initial admin, they must already have a Blaze Break account under that email.'}
               </p>
               {orgFormError && (
-                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{orgFormError}</div>
+                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{orgFormError}</div>
               )}
               <div className="space-y-4">
                 <div>
@@ -2551,7 +2551,7 @@ export const AdminDashboard = () => {
                       </div>
                       <div className="mt-3 flex items-center gap-2 pt-3 border-t border-border">
                         <span className="text-[11px] uppercase font-bold tracking-widest text-text-muted">Join Code</span>
-                        <span className="font-mono text-sm font-bold text-[#9a3412] dark:text-primary bg-primary/10 px-3 py-1 rounded-lg tracking-widest">{org.joinCode}</span>
+                        <span className="font-mono text-sm font-bold text-ember-accent bg-primary/10 px-3 py-1 rounded-lg tracking-widest">{org.joinCode}</span>
                         <button
                           onClick={() => { navigator.clipboard.writeText(org.joinCode); showSuccess('Join code copied'); }}
                           aria-label={`Copy join code for ${org.name}`}
@@ -2569,7 +2569,7 @@ export const AdminDashboard = () => {
                         </button>
                         <button
                           onClick={() => toggleOrgDetail(org.id)}
-                          className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+                          className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-ember-accent text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
                         >
                           {expandedOrgId === org.id ? 'Hide Detail' : 'View Detail'}
                         </button>
@@ -2748,7 +2748,7 @@ export const AdminDashboard = () => {
                   </div>
                   <div className="card p-6 bg-surface dark:bg-card border border-border rounded-2xl">
                     <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block mb-1">Eligible for Deletion Next Sweep</span>
-                    <span className="text-3xl font-display font-black text-destructive dark:text-[#f87171]">{retentionQueue.eligibleForDeletion.length}</span>
+                    <span className="text-3xl font-display font-black text-ember-danger">{retentionQueue.eligibleForDeletion.length}</span>
                     <p className="text-[10px] text-text-muted mt-1">Grace period has elapsed - the next sweep run will erase these accounts</p>
                   </div>
                 </div>
@@ -2829,7 +2829,7 @@ export const AdminDashboard = () => {
                           <span className="text-xs text-text-main font-semibold block">{ks.label}</span>
                           <span className="text-[10px] text-text-muted">Default: {ks.defaultPolarity}</span>
                         </div>
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${ks.enabled ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-destructive/10 text-destructive dark:text-[#f87171]'}`}>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${ks.enabled ? 'bg-success/10 text-success dark:text-[#4ade80]' : 'bg-destructive/10 text-ember-danger'}`}>
                           {ks.enabled ? 'On' : 'Off'}
                         </span>
                       </div>
@@ -3536,7 +3536,7 @@ export const AdminDashboard = () => {
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">Average Entry Intensity</span>
-                <h3 className="text-3xl font-display font-bold text-destructive dark:text-[#f87171]">{metrics.avgStartIntensity} <span className="text-xs text-text-muted">/10</span></h3>
+                <h3 className="text-3xl font-display font-bold text-ember-danger">{metrics.avgStartIntensity} <span className="text-xs text-text-muted">/10</span></h3>
                 <span className="text-[10px] text-text-muted">Subjective GAD Stress Baseline</span>
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
@@ -3546,7 +3546,7 @@ export const AdminDashboard = () => {
               </div>
               <div className="p-5 bg-surface dark:bg-card border border-border rounded-2xl space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-text-muted block">System Effectiveness</span>
-                <h3 className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">{metrics.avgReduction} <span className="text-xs text-text-muted">pts</span></h3>
+                <h3 className="text-3xl font-display font-bold text-ember-accent">{metrics.avgReduction} <span className="text-xs text-text-muted">pts</span></h3>
                 <span className="text-[10px] text-success dark:text-[#4ade80] font-semibold">Average Arousal Drop (0-10 scale)</span>
               </div>
             </div>
@@ -3661,8 +3661,8 @@ export const AdminDashboard = () => {
 
               <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${
                 lifecycleOf(selectedUser).tone === 'active' ? 'bg-success/10 text-success dark:text-[#4ade80]'
-                : lifecycleOf(selectedUser).tone === 'destructive' ? 'bg-destructive/10 text-destructive dark:text-[#f87171]'
-                : lifecycleOf(selectedUser).tone === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning'
+                : lifecycleOf(selectedUser).tone === 'destructive' ? 'bg-destructive/10 text-ember-danger'
+                : lifecycleOf(selectedUser).tone === 'warning' ? 'bg-warning/10 text-ember-warning'
                 : 'bg-background text-text-muted'
               }`}>
                 {lifecycleOf(selectedUser).label}
@@ -3762,13 +3762,13 @@ export const AdminDashboard = () => {
               {/* Suspension section */}
               <div className="space-y-3 pt-4 border-t border-white/5">
                 <h5 className="font-display text-sm font-bold text-text-main flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-destructive dark:text-[#f87171]" /> Access
+                  <Lock className="w-4 h-4 text-ember-danger" /> Access
                 </h5>
                 <button
                   onClick={() => setPendingAction({ type: 'suspend', uid: selectedUser.uid, email: selectedUser.email, currentlyActive: selectedUser.accessStatus === 'active' })}
                   className={`w-full px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${
                     selectedUser.accessStatus === 'active'
-                      ? 'bg-destructive/10 hover:bg-destructive/20 text-destructive dark:text-[#f87171]'
+                      ? 'bg-destructive/10 hover:bg-destructive/20 text-ember-danger'
                       : 'bg-success/10 hover:bg-success/20 text-success dark:text-[#4ade80]'
                   }`}
                 >
@@ -3784,7 +3784,7 @@ export const AdminDashboard = () => {
       <div className="bg-primary/5 border border-primary/20 p-5 rounded-2xl text-xs text-text-muted flex gap-3">
         <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
         <div>
-          <strong className="text-[#9a3412] dark:text-primary block mb-1">Privacy & Role Hierarchy Guideline</strong> 
+          <strong className="text-ember-accent block mb-1">Privacy & Role Hierarchy Guideline</strong> 
           Every administrative claim promotion (e.g. `platform_owner`, `platform_admin`, etc.) overrides the token claims in Firebase. Under GDPR, NICE, and standard professional guidelines, this board enforces complete isolation of clinical records—no clinical diagnosis data of Generalised Anxiety Disorder (GAD) is ever logged or exposed to organisation-level dashboards.
         </div>
       </div>

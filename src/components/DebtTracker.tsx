@@ -146,7 +146,7 @@ export const DebtTracker = ({ isDemoSession }: { isDemoSession?: boolean }) => {
         <div className="space-y-4">
           <div className="flex justify-between items-end">
             <div className="space-y-1">
-              <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5"><Moon className="w-3.5 h-3.5" /> Sleep Shortfall</span>
+              <span className="text-[11px] font-black uppercase tracking-widest text-ember-accent flex items-center gap-1.5"><Moon className="w-3.5 h-3.5" /> Sleep Shortfall</span>
               {sleepShortfall !== null ? (
                 <div className="flex items-baseline gap-1">
                   <span className="text-4xl font-light text-text-main tabular-nums tracking-tighter">{sleepShortfall}</span>
@@ -232,7 +232,7 @@ const DebtRow = ({
 }) => (
   <div className="space-y-4 pt-2 border-t border-border/40">
     <div className="space-y-1">
-      <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5">{icon} {label}</span>
+      <span className="text-[11px] font-black uppercase tracking-widest text-ember-accent flex items-center gap-1.5">{icon} {label}</span>
       {display !== null ? (
         <p className="text-2xl font-light text-text-main tracking-tight">{display}</p>
       ) : (
@@ -248,14 +248,14 @@ const NovaRead = ({ text, counterMove }: { text: string; counterMove: string }) 
   <div className="p-5 bg-primary/5 rounded-xl border border-primary/10 relative overflow-hidden flex flex-col gap-3">
     <div className="relative z-10 space-y-2">
       <div className="flex items-center gap-2">
-        <Sparkles className="w-3.5 h-3.5 text-[#9a3412] dark:text-primary" />
-        <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Nova's Read</span>
+        <Sparkles className="w-3.5 h-3.5 text-ember-accent" />
+        <span className="text-[11px] font-black uppercase tracking-widest text-ember-accent">Nova's Read</span>
       </div>
       <p className="text-sm text-text-main font-medium leading-relaxed">{text}</p>
     </div>
     <div className="pt-3 border-t border-primary/5 relative z-10">
       <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">Suggested Counter-Move</span>
-      <p className="text-xs font-bold text-[#9a3412] dark:text-primary mt-1">{counterMove}</p>
+      <p className="text-xs font-bold text-ember-accent mt-1">{counterMove}</p>
     </div>
   </div>
 );

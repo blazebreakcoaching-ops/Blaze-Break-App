@@ -167,7 +167,7 @@ export const NovaFeedbackModal = () => {
                         aria-pressed={rating >= star}
                         className={cn(
                           "p-2 rounded-lg transition-all",
-                          rating >= star ? "text-[#9a3412] dark:text-warning" : "text-text-muted hover:text-warning/50"
+                          rating >= star ? "text-ember-warning" : "text-text-muted hover:text-warning/50"
                         )}
                       >
                         <Star className={cn("w-6 h-6", rating >= star && "fill-current")} />

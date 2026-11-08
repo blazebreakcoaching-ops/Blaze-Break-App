@@ -198,7 +198,7 @@ export const FrictionFinder = ({ fingerprint, onAwardPoints, onNavigate }: Frict
                      </div>
                      <div>
                        <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova Noticed</h3>
-                       <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">What's Actually Going On</p>
+                       <p className="text-[11px] uppercase tracking-[0.2em] font-black text-ember-accent">What's Actually Going On</p>
                      </div>
                    </div>
 
@@ -228,7 +228,7 @@ export const FrictionFinder = ({ fingerprint, onAwardPoints, onNavigate }: Frict
                      </div>
 
                      <div className="space-y-2 p-4 bg-primary/10 border border-primary/20 rounded-xl">
-                       <h4 className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-2 mb-2">
+                       <h4 className="text-xs font-black uppercase tracking-widest text-ember-accent flex items-center gap-2 mb-2">
                          <Sparkles className="w-4 h-4" />
                          Something You Could Try
                        </h4>

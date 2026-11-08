@@ -117,7 +117,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
             </div>
             <div>
               <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Evening Voice</h3>
-              <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Winding Down</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] font-black text-ember-accent">Winding Down</p>
             </div>
           </div>
           <p className="text-sm text-text-main leading-relaxed font-serif italic">
@@ -145,7 +145,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
                  aria-label="Bedtime target"
                  value={bedtime}
                  onChange={(e) => setBedtime(e.target.value)}
-                 className="w-full bg-transparent border-b-2 border-border/50 text-3xl font-display font-black text-[#9a3412] dark:text-primary focus:outline-none focus:border-primary transition-colors py-2"
+                 className="w-full bg-transparent border-b-2 border-border/50 text-3xl font-display font-black text-ember-accent focus:outline-none focus:border-primary transition-colors py-2"
                />
                            </div>
 
@@ -159,7 +159,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
                >
                  <div className="flex items-center gap-3">
                    <Coffee className={cn("w-4 h-4", caffeineCutoff ? "text-primary" : "text-text-muted")} />
-                   <span className={cn("text-sm font-bold", caffeineCutoff ? "text-[#9a3412] dark:text-primary" : "text-text-main")}>Caffeine Cut-off (2 PM)</span>
+                   <span className={cn("text-sm font-bold", caffeineCutoff ? "text-ember-accent" : "text-text-main")}>Caffeine Cut-off (2 PM)</span>
                  </div>
                  {caffeineCutoff && <CheckCircle2 className="w-4 h-4 text-primary" />}
                </button>
@@ -171,7 +171,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
                >
                  <div className="flex items-center gap-3">
                    <Smartphone className={cn("w-4 h-4", phoneOff ? "text-primary" : "text-text-muted")} />
-                   <span className={cn("text-sm font-bold", phoneOff ? "text-[#9a3412] dark:text-primary" : "text-text-main")}>Screen Blackout (1 HR prior)</span>
+                   <span className={cn("text-sm font-bold", phoneOff ? "text-ember-accent" : "text-text-main")}>Screen Blackout (1 HR prior)</span>
                  </div>
                  {phoneOff && <CheckCircle2 className="w-4 h-4 text-primary" />}
                </button>
@@ -262,7 +262,7 @@ export const SleepBuilder = ({ fingerprint, onAwardPoints }: SleepBuilderProps) 
           className={cn(
             "flex items-center gap-3 px-8 py-4 rounded-full font-bold uppercase tracking-widest transition-all",
             windDownStarted 
-              ? "bg-primary/20 text-[#9a3412] dark:text-primary cursor-not-allowed" 
+              ? "bg-primary/20 text-ember-accent cursor-not-allowed" 
               : "bg-primary text-primary-foreground hover:bg-primary shadow-xl shadow-primary/20 hover:scale-105"
           )}
         >

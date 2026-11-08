@@ -958,3 +958,25 @@
     }
   }
 }
+
+/* Semantic Ember text colours (one definition, used everywhere).
+   Each replaces a light/dark pair that was previously hard-coded in
+   ~600 places, e.g. `text-[#9a3412] dark:text-primary`. Colours are
+   identical to those pairs; the light values are the contrast-checked
+   darker shades used on warm ivory surfaces. */
+@utility text-ember-accent {
+  color: #9a3412;
+  @variant dark { color: var(--color-primary); }
+}
+@utility text-ember-warning {
+  color: #9a3412;
+  @variant dark { color: var(--color-warning); }
+}
+@utility text-ember-danger {
+  color: var(--color-destructive);
+  @variant dark { color: #f87171; }
+}
+@utility text-ember-success {
+  color: #166534;
+  @variant dark { color: #4ade80; }
+}

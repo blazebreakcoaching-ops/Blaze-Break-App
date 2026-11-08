@@ -400,7 +400,7 @@ export const SixtySecondCheckIn = ({
             <div>
               <h3 className="text-xl font-display font-bold text-text-main flex items-center gap-2">
                 60-Second Check-In
-                <span className="px-2 py-0.5 text-[9px] font-mono tracking-widest text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/25 rounded">PRIVATE</span>
+                <span className="px-2 py-0.5 text-[9px] font-mono tracking-widest text-ember-accent bg-primary/10 border border-primary/25 rounded">PRIVATE</span>
               </h3>
               <p className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
@@ -419,7 +419,7 @@ export const SixtySecondCheckIn = ({
                     className={cn(
                       "px-4 py-2 pr-7 rounded-xl text-xs font-mono border transition-all",
                       activeEntry?.id === entry.id
-                        ? "bg-primary/15 border-primary/40 text-[#9a3412] dark:text-primary"
+                        ? "bg-primary/15 border-primary/40 text-ember-accent"
                         : "bg-surface dark:bg-card border-border hover:bg-border/30 text-text-muted"
                     )}
                   >
@@ -440,7 +440,7 @@ export const SixtySecondCheckIn = ({
 
         {pendingDeleteId && (
           <div className="flex items-center justify-between gap-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl">
-            <p className="text-xs text-destructive dark:text-[#f87171]">Delete this check-in? This can't be undone.</p>
+            <p className="text-xs text-ember-danger">Delete this check-in? This can't be undone.</p>
             <div className="flex gap-2 shrink-0">
               <button
                 onClick={() => deleteCheckInEntry(pendingDeleteId)}
@@ -514,7 +514,7 @@ export const SixtySecondCheckIn = ({
                 <div className="space-y-2">
                   {isRecording ? (
                     <div className="space-y-1">
-                      <p className="text-lg font-mono font-bold text-destructive dark:text-[#f87171]">00:{recordingDuration.toString().padStart(2, "0")}</p>
+                      <p className="text-lg font-mono font-bold text-ember-danger">00:{recordingDuration.toString().padStart(2, "0")}</p>
                       <span role="status" aria-live="polite" className="text-[10px] font-black uppercase tracking-widest text-destructive/80 dark:text-[#f87171] flex items-center justify-center gap-1.5">
                         <Waves className="w-3.5 h-3.5 animate-bounce" /> Streaming Spoken Feed
                       </span>
@@ -558,7 +558,7 @@ export const SixtySecondCheckIn = ({
                   {error && (
                     <div role="alert" className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 max-w-[280px]">
                       <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-destructive dark:text-[#f87171] text-left">{error}</p>
+                      <p className="text-[11px] text-ember-danger text-left">{error}</p>
                     </div>
                   )}
                 </div>
@@ -571,7 +571,7 @@ export const SixtySecondCheckIn = ({
             {pendingResult ? (
               <div className="flex flex-col gap-5 h-full">
                 <div className="flex items-center justify-between border-b border-border/30 pb-3">
-                  <span className="text-[10px] font-mono text-[#9a3412] dark:text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
+                  <span className="text-[10px] font-mono text-ember-accent bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
                     {pendingResult.emotionalTone}
                   </span>
                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Review before saving</span>
@@ -590,7 +590,7 @@ export const SixtySecondCheckIn = ({
                   <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted">Detected Burnout Leaks</h5>
                   <div className="flex flex-wrap gap-1.5">
                     {pendingResult.themes.map((theme, i) => (
-                      <span key={i} className="text-[10px] font-mono px-2.5 py-1 bg-warning/10 border border-warning/20 text-[#9a3412] dark:text-warning rounded-lg uppercase">
+                      <span key={i} className="text-[10px] font-mono px-2.5 py-1 bg-warning/10 border border-warning/20 text-ember-warning rounded-lg uppercase">
                         ⚠️ {theme}
                       </span>
                     ))}
@@ -598,7 +598,7 @@ export const SixtySecondCheckIn = ({
                 </div>
 
                 <div className="space-y-1.5 border-t border-border/20 pt-4">
-                  <h5 className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5">
+                  <h5 className="text-[11px] font-black uppercase tracking-widest text-ember-accent flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" /> Metacognitive Analysis
                   </h5>
                   <p className="text-xs text-text-main leading-relaxed">{pendingResult.analysis}</p>
@@ -627,7 +627,7 @@ export const SixtySecondCheckIn = ({
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-mono font-bold uppercase text-text-muted">{activeEntry.date}</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-border" />
-                    <span className="text-[10px] font-mono text-[#9a3412] dark:text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
+                    <span className="text-[10px] font-mono text-ember-accent bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase">
                       {activeEntry.emotionalTone}
                     </span>
                   </div>
@@ -638,7 +638,7 @@ export const SixtySecondCheckIn = ({
                     className={cn(
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
                       isPlayingNova
-                        ? "bg-destructive/10 border-destructive/30 text-destructive dark:text-[#f87171]"
+                        ? "bg-destructive/10 border-destructive/30 text-ember-danger"
                         : "bg-surface hover:bg-border/30 border-border text-text-main"
                     )}
                   >
@@ -662,7 +662,7 @@ export const SixtySecondCheckIn = ({
                   <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted">Detected Burnout Leaks</h5>
                   <div className="flex flex-wrap gap-1.5">
                     {activeEntry.themes.map((theme, i) => (
-                      <span key={i} className="text-[10px] font-mono px-2.5 py-1 bg-warning/10 border border-warning/20 text-[#9a3412] dark:text-warning rounded-lg uppercase">
+                      <span key={i} className="text-[10px] font-mono px-2.5 py-1 bg-warning/10 border border-warning/20 text-ember-warning rounded-lg uppercase">
                         ⚠️ {theme}
                       </span>
                     ))}
@@ -671,7 +671,7 @@ export const SixtySecondCheckIn = ({
 
                 {/* Nova Analysis */}
                 <div className="space-y-1.5 border-t border-border/20 pt-4">
-                  <h5 className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5">
+                  <h5 className="text-[11px] font-black uppercase tracking-widest text-ember-accent flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" /> Metacognitive Analysis
                   </h5>
                   <p className="text-xs text-text-main leading-relaxed">
@@ -681,7 +681,7 @@ export const SixtySecondCheckIn = ({
 
                 {/* advice */}
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl mt-auto space-y-1">
-                  <h6 className="text-[11px] font-bold text-[#9a3412] dark:text-primary flex items-center gap-1">
+                  <h6 className="text-[11px] font-bold text-ember-accent flex items-center gap-1">
                     <Heart className="w-3.5 h-3.5" /> Nova's Stability Practice
                   </h6>
                   <p className="text-xs text-text-main font-medium leading-relaxed">

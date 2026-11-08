@@ -113,7 +113,7 @@ export const SomaticCheckInCard: React.FC<SomaticCheckInCardProps> = ({
                       className={cn(
                         "text-[11px] px-3 py-1.5 rounded-full border transition-colors cursor-pointer",
                          isSelected 
-                          ? "bg-primary/20 border-primary/40 text-[#9a3412] dark:text-primary font-medium" 
+                          ? "bg-primary/20 border-primary/40 text-ember-accent font-medium" 
                           : "bg-surface border-white/[0.05] text-text-muted hover:text-text-main"
                       )}
                     >

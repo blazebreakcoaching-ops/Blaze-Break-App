@@ -496,7 +496,7 @@ export const InAppNudge = ({ suspended = false }: { suspended?: boolean }) => {
                     }
                     dismiss("action_taken");
                   }}
-                  className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
+                  className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-ember-accent rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1"
                 >
                   {NUDGE_CATEGORY_LABELS[currentNudge.category] || 'Action'} <ChevronRight className="w-3 h-3" />
                 </button>

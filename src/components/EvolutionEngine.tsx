@@ -36,8 +36,8 @@ interface ProtectedCoreInvariant {
 
 const TEST_STATUS_BADGE_STYLES: Record<string, string> = {
   machine_tested: 'bg-success/10 text-success dark:text-[#4ade80]',
-  manual_only: 'bg-warning/10 text-[#9a3412] dark:text-warning',
-  untested: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  manual_only: 'bg-warning/10 text-ember-warning',
+  untested: 'bg-destructive/10 text-ember-danger',
 };
 
 // Server-backed unified connector view (platform + organisation) via
@@ -61,10 +61,10 @@ interface UnifiedConnectorView {
 
 const CONNECTOR_STATUS_BADGE_STYLES: Record<string, string> = {
   configured: 'bg-success/10 text-success dark:text-[#4ade80]',
-  not_configured: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  not_configured: 'bg-destructive/10 text-ember-danger',
   active: 'bg-success/10 text-success dark:text-[#4ade80]',
   disabled: 'bg-surface/50 text-text-muted',
-  revoked: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  revoked: 'bg-destructive/10 text-ember-danger',
 };
 
 // Platform-wide, metadata-only aggregate via
@@ -168,10 +168,10 @@ interface RolloutPlan {
 
 const ROLLOUT_STATUS_BADGE_STYLES: Record<string, string> = {
   planned: 'bg-surface/50 text-text-muted',
-  active: 'bg-primary/10 text-[#9a3412] dark:text-primary',
-  paused: 'bg-warning/10 text-[#9a3412] dark:text-warning',
+  active: 'bg-primary/10 text-ember-accent',
+  paused: 'bg-warning/10 text-ember-warning',
   completed: 'bg-success/10 text-success dark:text-[#4ade80]',
-  rolled_back: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  rolled_back: 'bg-destructive/10 text-ember-danger',
 };
 
 const ROLLOUT_NEXT_STATUSES: Record<string, string[]> = {
@@ -184,9 +184,9 @@ const ROLLOUT_NEXT_STATUSES: Record<string, string[]> = {
 
 const PROPOSAL_STATUS_BADGE_STYLES: Record<string, string> = {
   draft: 'bg-surface/50 text-text-muted',
-  submitted: 'bg-primary/10 text-[#9a3412] dark:text-primary',
+  submitted: 'bg-primary/10 text-ember-accent',
   approved: 'bg-success/10 text-success dark:text-[#4ade80]',
-  rejected: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  rejected: 'bg-destructive/10 text-ember-danger',
   applied: 'bg-success/10 text-success dark:text-[#4ade80]',
   withdrawn: 'bg-surface/50 text-text-muted',
 };
@@ -194,21 +194,21 @@ const PROPOSAL_STATUS_BADGE_STYLES: Record<string, string> = {
 const LIFECYCLE_BADGE_STYLES: Record<string, string> = {
   draft: 'bg-surface/50 text-text-muted',
   shadow: 'bg-surface/50 text-text-muted',
-  internal_beta: 'bg-primary/10 text-[#9a3412] dark:text-primary',
-  private_beta: 'bg-primary/10 text-[#9a3412] dark:text-primary',
-  public_beta: 'bg-primary/10 text-[#9a3412] dark:text-primary',
+  internal_beta: 'bg-primary/10 text-ember-accent',
+  private_beta: 'bg-primary/10 text-ember-accent',
+  public_beta: 'bg-primary/10 text-ember-accent',
   live: 'bg-success/10 text-success dark:text-[#4ade80]',
-  frozen: 'bg-warning/10 text-[#9a3412] dark:text-warning',
-  deprecated: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
-  removed: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  frozen: 'bg-warning/10 text-ember-warning',
+  deprecated: 'bg-destructive/10 text-ember-danger',
+  removed: 'bg-destructive/10 text-ember-danger',
 };
 
 const ENFORCEMENT_BADGE_STYLES: Record<string, string> = {
   fully_enforced: 'bg-success/10 text-success dark:text-[#4ade80]',
-  partially_enforced: 'bg-warning/10 text-[#9a3412] dark:text-warning',
-  frontend_only: 'bg-warning/10 text-[#9a3412] dark:text-warning',
-  backend_only: 'bg-warning/10 text-[#9a3412] dark:text-warning',
-  not_wired: 'bg-destructive/10 text-destructive dark:text-[#f87171]',
+  partially_enforced: 'bg-warning/10 text-ember-warning',
+  frontend_only: 'bg-warning/10 text-ember-warning',
+  backend_only: 'bg-warning/10 text-ember-warning',
+  not_wired: 'bg-destructive/10 text-ember-danger',
   unknown: 'bg-surface/50 text-text-muted',
 };
 
@@ -766,9 +766,9 @@ export const EvolutionEngine = () => {
 
       {freezeState?.frozen && (
         <div className="flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/30 rounded-2xl mb-6">
-          <ShieldCheck className="w-5 h-5 text-destructive dark:text-[#f87171] shrink-0" />
+          <ShieldCheck className="w-5 h-5 text-ember-danger shrink-0" />
           <div>
-            <p className="text-sm font-bold text-destructive dark:text-[#f87171]">Evolution Engine is frozen - no changes can be made until a Platform Owner unfreezes it.</p>
+            <p className="text-sm font-bold text-ember-danger">Evolution Engine is frozen - no changes can be made until a Platform Owner unfreezes it.</p>
             {freezeState.reason && <p className="text-xs text-text-muted mt-0.5">Reason: {freezeState.reason}</p>}
           </div>
         </div>
@@ -786,7 +786,7 @@ export const EvolutionEngine = () => {
               className={cn(
                 "w-full px-4 py-2.5 text-sm font-bold flex items-center gap-2.5 transition-all rounded-xl text-left relative",
                 activeTab === section.id
-                  ? "bg-primary/10 text-[#9a3412] dark:text-primary"
+                  ? "bg-primary/10 text-ember-accent"
                   : "text-text-muted hover:text-text-main hover:bg-surface/50"
               )}
             >
@@ -819,7 +819,7 @@ export const EvolutionEngine = () => {
             <div className="bg-card border border-border/40 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><Database className="w-4 h-4 text-text-muted" /> Feature Registry</h4>
-                <button onClick={() => setActiveTab('registry')} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline">View</button>
+                <button onClick={() => setActiveTab('registry')} className="text-xs font-bold text-ember-accent hover:underline">View</button>
               </div>
               {registry === null ? (
                 <p className="text-sm text-text-muted italic">{isLoadingRegistry ? 'Loading...' : registryError ? "Couldn't load." : 'No data.'}</p>
@@ -830,7 +830,7 @@ export const EvolutionEngine = () => {
                   <div className="flex items-center justify-between"><span className="text-text-muted">Entries</span><span className="font-bold text-text-main">{registry.length}</span></div>
                   <div className="flex items-center justify-between">
                     <span className="text-text-muted">Governance warnings</span>
-                    <span className={cn("font-bold", registry.filter(isGovernanceWarning).length > 0 ? "text-destructive dark:text-[#f87171]" : "text-text-main")}>
+                    <span className={cn("font-bold", registry.filter(isGovernanceWarning).length > 0 ? "text-ember-danger" : "text-text-main")}>
                       {registry.filter(isGovernanceWarning).length}
                     </span>
                   </div>
@@ -843,7 +843,7 @@ export const EvolutionEngine = () => {
             <div className="bg-card border border-border/40 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-text-muted" /> Protected Core</h4>
-                <button onClick={() => setActiveTab('protected-core')} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline">View</button>
+                <button onClick={() => setActiveTab('protected-core')} className="text-xs font-bold text-ember-accent hover:underline">View</button>
               </div>
               {protectedCore === null ? (
                 <p className="text-sm text-text-muted italic">{isLoadingProtectedCore ? 'Loading...' : protectedCoreError ? "Couldn't load." : 'No data.'}</p>
@@ -862,7 +862,7 @@ export const EvolutionEngine = () => {
             <div className="bg-card border border-border/40 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><Brain className="w-4 h-4 text-text-muted" /> Nova Context Brain</h4>
-                <button onClick={() => setActiveTab('brain')} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline">View</button>
+                <button onClick={() => setActiveTab('brain')} className="text-xs font-bold text-ember-accent hover:underline">View</button>
               </div>
               {contextBrainHealth === null ? (
                 <p className="text-sm text-text-muted italic">{isLoadingContextBrainHealth ? 'Loading...' : contextBrainHealthError ? "Couldn't load." : 'No data.'}</p>
@@ -872,7 +872,7 @@ export const EvolutionEngine = () => {
                   <div className="flex items-center justify-between"><span className="text-text-muted">Users with memories</span><span className="font-bold text-text-main">{contextBrainHealth.usersScanned}</span></div>
                   <div className="flex items-center justify-between">
                     <span className="text-text-muted">Duplicate candidate groups</span>
-                    <span className={cn("font-bold", contextBrainHealth.duplicateCandidateGroups > 0 ? "text-destructive dark:text-[#f87171]" : "text-text-main")}>{contextBrainHealth.duplicateCandidateGroups}</span>
+                    <span className={cn("font-bold", contextBrainHealth.duplicateCandidateGroups > 0 ? "text-ember-danger" : "text-text-main")}>{contextBrainHealth.duplicateCandidateGroups}</span>
                   </div>
                 </div>
               )}
@@ -882,7 +882,7 @@ export const EvolutionEngine = () => {
             <div className="bg-card border border-border/40 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><Network className="w-4 h-4 text-text-muted" /> Connector Layer</h4>
-                <button onClick={() => setActiveTab('connectors')} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline">View</button>
+                <button onClick={() => setActiveTab('connectors')} className="text-xs font-bold text-ember-accent hover:underline">View</button>
               </div>
               {connectors === null ? (
                 <p className="text-sm text-text-muted italic">{isLoadingConnectors ? 'Loading...' : connectorsError ? "Couldn't load." : 'No data.'}</p>
@@ -927,7 +927,7 @@ export const EvolutionEngine = () => {
                 onClick={handleSeedRegistry}
                 disabled={isSeeding}
                 title="Create-if-absent migration from the legacy static registry and feature-flags.ts - safe to re-run, never overwrites an existing entry."
-                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-ember-accent hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isSeeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Sync from legacy sources
               </button>
@@ -939,7 +939,7 @@ export const EvolutionEngine = () => {
           </p>
 
           {registryError && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{registryError}</div>
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{registryError}</div>
           )}
 
           {isLoadingRegistry && !registry ? (
@@ -981,7 +981,7 @@ export const EvolutionEngine = () => {
                       {feature.dataZones.length > 0 && (
                         <div className="flex items-center justify-between text-xs font-medium text-text-muted bg-surface/30 p-2 rounded-lg">
                           <span>Data Zone:</span>
-                          <span className="text-xs uppercase font-black text-[#9a3412] dark:text-primary tracking-wider text-right">
+                          <span className="text-xs uppercase font-black text-ember-accent tracking-wider text-right">
                             {feature.dataZones.map(z => z.replace(/_/g, ' ')).join(', ')}
                           </span>
                         </div>
@@ -1037,7 +1037,7 @@ export const EvolutionEngine = () => {
                 onClick={handleSeedProtectedCore}
                 disabled={isSeedingProtectedCore}
                 title="Create-if-absent migration of the real, evidence-backed invariant set - safe to re-run, never overwrites an existing entry."
-                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-ember-accent hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isSeedingProtectedCore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Seed real invariants
               </button>
@@ -1049,7 +1049,7 @@ export const EvolutionEngine = () => {
           </p>
 
           {protectedCoreError && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{protectedCoreError}</div>
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{protectedCoreError}</div>
           )}
 
           {isLoadingProtectedCore && !protectedCore ? (
@@ -1104,7 +1104,7 @@ export const EvolutionEngine = () => {
           </p>
 
           {contextBrainHealthError && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{contextBrainHealthError}</div>
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{contextBrainHealthError}</div>
           )}
 
           {isLoadingContextBrainHealth && !contextBrainHealth ? (
@@ -1123,7 +1123,7 @@ export const EvolutionEngine = () => {
                 </div>
                 <div className="bg-card border border-border/40 rounded-xl p-4">
                   <span className="text-[10px] uppercase font-black tracking-widest text-text-muted block mb-1">Duplicate Candidates</span>
-                  <span className={cn("text-2xl font-display font-black", contextBrainHealth.duplicateCandidateGroups > 0 ? "text-destructive dark:text-[#f87171]" : "text-text-main")}>
+                  <span className={cn("text-2xl font-display font-black", contextBrainHealth.duplicateCandidateGroups > 0 ? "text-ember-danger" : "text-text-main")}>
                     {contextBrainHealth.duplicateCandidateGroups}
                   </span>
                   <span className="text-[10px] text-text-muted block mt-1">groups ({contextBrainHealth.duplicateCandidateMemories} memories)</span>
@@ -1184,14 +1184,14 @@ export const EvolutionEngine = () => {
                      <span className={cn(
                        "text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-1",
                        mem.confidence === 'verified' && "text-success dark:text-[#4ade80]",
-                       mem.confidence === 'high' && "text-[#9a3412] dark:text-primary"
+                       mem.confidence === 'high' && "text-ember-accent"
                      )}>
                        {mem.confidence === 'verified' ? <CheckCircle2 className="w-3 h-3" /> : null}
                        {mem.confidence} Match
                      </span>
                    </div>
                    {mem.canEdit && (
-                     <button onClick={() => deleteNovaMemory(mem.id)} className="text-xs text-destructive dark:text-[#f87171] hover:opacity-80 font-medium cursor-pointer">Forget</button>
+                     <button onClick={() => deleteNovaMemory(mem.id)} className="text-xs text-ember-danger hover:opacity-80 font-medium cursor-pointer">Forget</button>
                    )}
                  </div>
                  <p className="text-sm font-medium text-text-main leading-relaxed font-mono">
@@ -1314,7 +1314,7 @@ export const EvolutionEngine = () => {
           <div className="bg-card border border-border/40 rounded-2xl p-6 space-y-3">
             <h4 className="font-bold text-text-main flex items-center gap-2"><Plus className="w-4 h-4" /> New Proposal</h4>
             {proposalActionError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{proposalActionError}</div>
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{proposalActionError}</div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
@@ -1368,7 +1368,7 @@ export const EvolutionEngine = () => {
               <button
                 onClick={handleCreateProposal}
                 disabled={isSubmittingNewProposal || !newProposal.targetId || !newProposal.title || !newProposal.rationale}
-                className="text-xs font-bold px-4 py-2 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-primary/10 text-ember-accent hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isSubmittingNewProposal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create Draft
               </button>
@@ -1376,7 +1376,7 @@ export const EvolutionEngine = () => {
           </div>
 
           {proposalsError && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{proposalsError}</div>
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{proposalsError}</div>
           )}
 
           {isLoadingProposals && !proposals ? (
@@ -1410,7 +1410,7 @@ export const EvolutionEngine = () => {
 
                     <div className="flex flex-wrap items-center gap-2 border-t border-border/20 pt-3">
                       {p.status === 'draft' && (
-                        <button onClick={() => handleProposalAction(p.proposalId, 'submit')} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5">
+                        <button onClick={() => handleProposalAction(p.proposalId, 'submit')} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary/10 text-ember-accent hover:bg-primary/20 flex items-center gap-1.5">
                           <Send className="w-3.5 h-3.5" /> Submit for review
                         </button>
                       )}
@@ -1425,7 +1425,7 @@ export const EvolutionEngine = () => {
                           <button onClick={() => handleDecideProposal(p.proposalId, true)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-success/10 text-success dark:text-[#4ade80] hover:bg-success/20 flex items-center gap-1.5">
                             <CheckCircle2 className="w-3.5 h-3.5" /> Approve
                           </button>
-                          <button onClick={() => handleDecideProposal(p.proposalId, false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive dark:text-[#f87171] hover:bg-destructive/20 flex items-center gap-1.5">
+                          <button onClick={() => handleDecideProposal(p.proposalId, false)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-destructive/10 text-ember-danger hover:bg-destructive/20 flex items-center gap-1.5">
                             <XCircle className="w-3.5 h-3.5" /> Reject
                           </button>
                         </>
@@ -1485,7 +1485,7 @@ export const EvolutionEngine = () => {
                     onClick={() => setSelectedDependencyNodeId(node.featureId)}
                     className={cn(
                       "w-full text-left px-4 py-2.5 rounded-xl flex items-center justify-between gap-3 transition-all",
-                      selectedDependencyNodeId === node.featureId ? "bg-primary/10 text-[#9a3412] dark:text-primary" : "text-text-muted hover:text-text-main hover:bg-surface/50"
+                      selectedDependencyNodeId === node.featureId ? "bg-primary/10 text-ember-accent" : "text-text-muted hover:text-text-main hover:bg-surface/50"
                     )}
                   >
                     <span className="text-sm font-bold truncate">{node.displayName}</span>
@@ -1509,7 +1509,7 @@ export const EvolutionEngine = () => {
                         <div className="flex flex-wrap gap-2">
                           <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", LIFECYCLE_BADGE_STYLES[entry.lifecycleState] || 'bg-surface/50 text-text-muted')}>{entry.lifecycleState.replace(/_/g, ' ')}</span>
                           <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", ENFORCEMENT_BADGE_STYLES[entry.enforcementState] || 'bg-surface/50 text-text-muted')}>{entry.enforcementState.replace(/_/g, ' ')}</span>
-                          {isGovernanceWarning(entry) && <span className="text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full bg-destructive/10 text-destructive dark:text-[#f87171]">Governance warning</span>}
+                          {isGovernanceWarning(entry) && <span className="text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full bg-destructive/10 text-ember-danger">Governance warning</span>}
                         </div>
                       )}
 
@@ -1582,7 +1582,7 @@ export const EvolutionEngine = () => {
           <div className="bg-card border border-border/40 rounded-2xl p-6 space-y-3">
             <h4 className="font-bold text-text-main flex items-center gap-2"><Plus className="w-4 h-4" /> New Rollout Plan</h4>
             {rolloutActionError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{rolloutActionError}</div>
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{rolloutActionError}</div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="flex flex-col gap-1 text-xs font-bold text-text-muted uppercase tracking-wider">
@@ -1627,7 +1627,7 @@ export const EvolutionEngine = () => {
               <button
                 onClick={handleCreateRolloutPlan}
                 disabled={isCreatingRolloutPlan || !newRolloutPlan.targetFeatureId || !newRolloutPlan.stopConditions || !newRolloutPlan.rationale}
-                className="text-xs font-bold px-4 py-2 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
+                className="text-xs font-bold px-4 py-2 rounded-lg bg-primary/10 text-ember-accent hover:bg-primary/20 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isCreatingRolloutPlan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create Plan
               </button>
@@ -1635,7 +1635,7 @@ export const EvolutionEngine = () => {
           </div>
 
           {rolloutPlansError && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{rolloutPlansError}</div>
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{rolloutPlansError}</div>
           )}
 
           {isLoadingRolloutPlans && !rolloutPlans ? (
@@ -1699,7 +1699,7 @@ export const EvolutionEngine = () => {
             </p>
 
             {novaRuntimeError && (
-              <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{novaRuntimeError}</div>
+              <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{novaRuntimeError}</div>
             )}
 
             {isLoadingNovaRuntime && !novaRuntimeSurfaces ? (
@@ -1752,7 +1752,7 @@ export const EvolutionEngine = () => {
             Rough internal cost estimates (never live provider billing data - see Command Centre's Cost & Usage view for the same underlying numbers) extrapolated to a monthly figure and compared against a budget you set here.
           </p>
 
-          {costUsageError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{costUsageError}</div>}
+          {costUsageError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{costUsageError}</div>}
 
           {isLoadingCostUsage && !costUsage ? (
             <p className="text-sm text-text-muted italic">Loading...</p>
@@ -1766,8 +1766,8 @@ export const EvolutionEngine = () => {
                 <span className={cn("inline-block text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full mt-2",
                   costUsage.budget.alertLevel === 'ok' ? 'bg-success/10 text-success dark:text-[#4ade80]' :
                   costUsage.budget.alertLevel === 'informational' ? 'bg-surface/50 text-text-muted' :
-                  costUsage.budget.alertLevel === 'warning' ? 'bg-warning/10 text-[#9a3412] dark:text-warning' :
-                  'bg-destructive/10 text-destructive dark:text-[#f87171]'
+                  costUsage.budget.alertLevel === 'warning' ? 'bg-warning/10 text-ember-warning' :
+                  'bg-destructive/10 text-ember-danger'
                 )}>{costUsage.budget.alertLevel}</span>
                 <p className="text-[11px] text-text-muted italic pt-2">{costUsage.budget.note}</p>
               </div>
@@ -1780,7 +1780,7 @@ export const EvolutionEngine = () => {
                     onChange={(e) => setBudgetInput(e.target.value)}
                     className="text-sm font-medium text-text-main bg-surface/50 border border-border/40 rounded-lg px-3 py-2 w-32"
                   />
-                  <button onClick={handleSaveBudget} disabled={isSavingBudget} className="text-xs font-bold px-3 py-2 rounded-lg bg-primary/10 text-[#9a3412] dark:text-primary hover:bg-primary/20 disabled:opacity-50">
+                  <button onClick={handleSaveBudget} disabled={isSavingBudget} className="text-xs font-bold px-3 py-2 rounded-lg bg-primary/10 text-ember-accent hover:bg-primary/20 disabled:opacity-50">
                     {isSavingBudget ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
                   </button>
                 </div>
@@ -1840,7 +1840,7 @@ export const EvolutionEngine = () => {
           <p className="text-sm text-text-muted max-w-3xl">
             Every Evolution Engine action, drawn from the same real admin_audit_logs Command Centre's Security & Audit trail shows (the most recent 50 Evolution Engine actions across the full history) - not a separate audit system that could drift from it.
           </p>
-          {auditLogsError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{auditLogsError}</div>}
+          {auditLogsError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{auditLogsError}</div>}
           {isLoadingAuditLogs && !auditLogs ? (
             <p className="text-sm text-text-muted italic">Loading...</p>
           ) : auditLogs && auditLogs.length === 0 ? (
@@ -1872,7 +1872,7 @@ export const EvolutionEngine = () => {
 
           <div>
             <h4 className="text-sm font-black uppercase tracking-widest text-text-muted mb-3">Freeze Evolution</h4>
-            {freezeError && <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171] mb-3">{freezeError}</div>}
+            {freezeError && <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger mb-3">{freezeError}</div>}
             {isLoadingFreeze && !freezeState ? (
               <p className="text-sm text-text-muted italic">Loading...</p>
             ) : freezeState && (
@@ -1881,7 +1881,7 @@ export const EvolutionEngine = () => {
                   Blocks every mutating Evolution Engine route platform-wide (registry edits, Protected Core changes, change-proposal actions, cost budget, rollout-plan actions) - reads always stay available. {isPlatformOwner ? '' : 'Only a Platform Owner can toggle this.'}
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", freezeState.frozen ? 'bg-destructive/10 text-destructive dark:text-[#f87171]' : 'bg-success/10 text-success dark:text-[#4ade80]')}>
+                  <span className={cn("text-xs uppercase font-black tracking-widest px-2 py-0.5 rounded-full", freezeState.frozen ? 'bg-destructive/10 text-ember-danger' : 'bg-success/10 text-success dark:text-[#4ade80]')}>
                     {freezeState.frozen ? 'Frozen' : 'Active'}
                   </span>
                   {freezeState.frozen && freezeState.frozenBy && <span className="text-xs text-text-muted">by {freezeState.frozenBy}{freezeState.frozenAt ? ` at ${new Date(freezeState.frozenAt).toLocaleString()}` : ''}</span>}
@@ -1900,7 +1900,7 @@ export const EvolutionEngine = () => {
                       onClick={() => handleToggleFreeze(!freezeState.frozen)}
                       disabled={isTogglingFreeze}
                       className={cn("text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 disabled:opacity-50",
-                        freezeState.frozen ? 'bg-success/10 text-success dark:text-[#4ade80] hover:bg-success/20' : 'bg-destructive/10 text-destructive dark:text-[#f87171] hover:bg-destructive/20'
+                        freezeState.frozen ? 'bg-success/10 text-success dark:text-[#4ade80] hover:bg-success/20' : 'bg-destructive/10 text-ember-danger hover:bg-destructive/20'
                       )}
                     >
                       {isTogglingFreeze ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -1937,7 +1937,7 @@ export const EvolutionEngine = () => {
           </p>
 
           {connectorsError && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive dark:text-[#f87171]">{connectorsError}</div>
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-ember-danger">{connectorsError}</div>
           )}
 
           {isLoadingConnectors && !connectors ? (
@@ -1957,7 +1957,7 @@ export const EvolutionEngine = () => {
                     <p className="text-xs text-text-muted mb-2">{c.capabilities.join(', ')}</p>
                     <div className="flex items-center gap-2 mb-3">
                       {c.mutationAllowed && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning/10 text-[#9a3412] dark:text-warning">Can mutate external state</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning/10 text-ember-warning">Can mutate external state</span>
                       )}
                       {c.dataZones.map(z => (
                         <span key={z} className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface/50 text-text-muted">{z.replace(/_/g, ' ')}</span>

@@ -65,7 +65,7 @@ const CustomTooltip = ({ active, payload }: any) => {
             <span className="text-text-muted flex items-center gap-1">
               <Activity className="w-3 h-3 text-primary" /> Energy Output
             </span>
-            <span className="font-mono font-black text-[#9a3412] dark:text-primary">
+            <span className="font-mono font-black text-ember-accent">
               {dataPoint.energyOutput}%
             </span>
           </div>
@@ -89,7 +89,7 @@ const CustomTooltip = ({ active, payload }: any) => {
           <span className={cn(
             "font-mono font-black px-1.5 py-0.5 rounded",
             isDeficit
-              ? "bg-destructive/10 text-destructive dark:text-[#f87171]"
+              ? "bg-destructive/10 text-ember-danger"
               : "bg-success/10 text-success dark:text-[#4ade80]"
           )}>
             {isDeficit ? "" : "+"}{dataPoint.balance}% {isDeficit ? "Deficit" : "Surplus"}
@@ -259,7 +259,7 @@ export const RecoveryVelocityMap = ({ isDemoSession }: { isDemoSession?: boolean
             Average Energy Output
           </span>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-black text-[#9a3412] dark:text-primary font-mono">
+            <span className="text-2xl font-black text-ember-accent font-mono">
               {averageEnergy}%
             </span>
             <span className="text-[10px] text-text-muted">Load</span>
@@ -285,7 +285,7 @@ export const RecoveryVelocityMap = ({ isDemoSession }: { isDemoSession?: boolean
           <div className="flex items-baseline gap-1.5">
             <span className={cn(
               "text-2xl font-black font-mono",
-              deficitDays > 10 ? "text-destructive dark:text-[#f87171]" : "text-[#9a3412] dark:text-warning"
+              deficitDays > 10 ? "text-ember-danger" : "text-ember-warning"
             )}>
               {deficitDays}
             </span>
@@ -300,7 +300,7 @@ export const RecoveryVelocityMap = ({ isDemoSession }: { isDemoSession?: boolean
           <div className="flex items-baseline gap-1.5">
             <span className={cn(
               "text-2xl font-black font-mono",
-              netVelocityBalance >= 0 ? "text-success dark:text-[#4ade80]" : "text-destructive dark:text-[#f87171]"
+              netVelocityBalance >= 0 ? "text-success dark:text-[#4ade80]" : "text-ember-danger"
             )}>
               {netVelocityBalance >= 0 ? "+" : ""}{netVelocityBalance}%
             </span>
@@ -397,7 +397,7 @@ export const RecoveryVelocityMap = ({ isDemoSession }: { isDemoSession?: boolean
         <div className={cn(
           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border",
           novaCommentary.alert 
-            ? "bg-warning/10 text-[#9a3412] dark:text-warning border-warning/10 animate-pulse" 
+            ? "bg-warning/10 text-ember-warning border-warning/10 animate-pulse" 
             : "bg-success/10 text-success dark:text-[#4ade80] border-success/10"
         )}>
           {novaCommentary.alert ? (
@@ -412,7 +412,7 @@ export const RecoveryVelocityMap = ({ isDemoSession }: { isDemoSession?: boolean
               Nova Coaching Insights
             </span>
             <span className="h-1.5 w-1.5 rounded-full bg-primary/40" />
-            <span className="text-[10px] font-black uppercase font-mono text-[#9a3412] dark:text-primary tracking-widest">
+            <span className="text-[10px] font-black uppercase font-mono text-ember-accent tracking-widest">
               Based On Your Recent Check-ins
             </span>
           </div>
@@ -420,7 +420,7 @@ export const RecoveryVelocityMap = ({ isDemoSession }: { isDemoSession?: boolean
             "{novaCommentary.text}"
           </p>
           <div className="flex items-center gap-2 pt-1">
-            <Info className="w-3.5 h-3.5 text-[#9a3412] dark:text-primary shrink-0" />
+            <Info className="w-3.5 h-3.5 text-ember-accent shrink-0" />
             <span className="text-xs font-bold text-text-main">
               Recommended Next Step: {novaCommentary.action}
             </span>

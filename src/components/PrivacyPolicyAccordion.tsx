@@ -96,13 +96,13 @@ export const PrivacyPolicyAccordion = () => {
               >
                 <h4 className={cn(
                   "font-bold transition-colors duration-300",
-                  isActive ? "text-[#9a3412] dark:text-primary" : "text-text-main"
+                  isActive ? "text-ember-accent" : "text-text-main"
                 )}>
                   {policy.title}
                 </h4>
                 <ChevronDown className={cn(
                   "w-5 h-5 transition-transform duration-500 ease-in-out shrink-0",
-                  isActive ? "rotate-180 text-[#9a3412] dark:text-primary" : "text-text-muted"
+                  isActive ? "rotate-180 text-ember-accent" : "text-text-muted"
                 )} />
               </button>
               <AnimatePresence>

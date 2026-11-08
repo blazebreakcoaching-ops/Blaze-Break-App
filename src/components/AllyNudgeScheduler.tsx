@@ -346,7 +346,7 @@ export const AllyNudgeScheduler = ({ contacts }: AllyNudgeSchedulerProps) => {
                   </label>
 
                   {error && (
-                    <div role="alert" className="flex items-start gap-2 text-xs text-destructive dark:text-[#f87171] bg-destructive/10 p-3 rounded-xl">
+                    <div role="alert" className="flex items-start gap-2 text-xs text-ember-danger bg-destructive/10 p-3 rounded-xl">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       {error}
                     </div>

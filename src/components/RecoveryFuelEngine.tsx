@@ -561,7 +561,7 @@ export const RecoveryFuelEngine = ({
             <Apple className="w-8 h-8" />
           </div>
           <div>
-            <span className="text-xs font-black uppercase tracking-[0.25em] text-[#9a3412] dark:text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
+            <span className="text-xs font-black uppercase tracking-[0.25em] text-ember-accent px-3 py-1 bg-primary/10 rounded-full border border-primary/15">
               Pillar 3 · Habits
             </span>
             <h2 className="text-3xl font-display font-black text-text-main tracking-tight mt-2">Recovery Fuel</h2>
@@ -830,7 +830,7 @@ const MyPatternsView = (props: {
                 <div key={pattern.id} className="bg-white/40 dark:bg-card/40 p-4 rounded-xl border border-border/10 space-y-2">
                   <h4 className="text-xs font-black text-text-main">{copy.title}</h4>
                   <p className="text-[11px] text-text-muted leading-relaxed">{copy.description}</p>
-                  <p className="text-[11px] font-medium leading-normal text-[#9a3412] dark:text-primary italic">"{copy.coaching}"</p>
+                  <p className="text-[11px] font-medium leading-normal text-ember-accent italic">"{copy.coaching}"</p>
                 </div>
               );
             })}

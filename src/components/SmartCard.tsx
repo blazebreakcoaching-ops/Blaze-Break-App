@@ -231,7 +231,7 @@ export const SmartCard = ({
             </button>
             <button 
               onClick={handleShare}
-              className="w-full px-4 py-2 text-left text-xs font-medium text-[#9a3412] dark:text-primary hover:bg-card hover:opacity-80 flex items-center gap-2"
+              className="w-full px-4 py-2 text-left text-xs font-medium text-ember-accent hover:bg-card hover:opacity-80 flex items-center gap-2"
             >
               {isCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
               {isCopied ? "Copied format!" : "Share Summary"}
@@ -243,7 +243,7 @@ export const SmartCard = ({
                 setShowContextMenu(false);
               }}
               aria-pressed={isMicroRecovery}
-              className="w-full px-4 py-2 text-left text-xs font-medium text-[#9a3412] dark:text-warning hover:bg-card hover:opacity-80 flex items-center gap-2"
+              className="w-full px-4 py-2 text-left text-xs font-medium text-ember-warning hover:bg-card hover:opacity-80 flex items-center gap-2"
             >
               <div className={cn("w-2 h-2 rounded-full", isMicroRecovery ? "bg-warning animate-pulse" : "bg-surface")} />
               {isMicroRecovery ? "End Micro-Recovery" : "Micro-Recovery Mode"}

@@ -19,10 +19,10 @@ export interface WorkDesignSignal {
 }
 
 const BAND_BADGE_CLASSES: Record<string, string> = {
-  sustained: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
-  elevated: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
+  sustained: 'bg-destructive/10 text-ember-danger border-destructive/20',
+  elevated: 'bg-warning/10 text-ember-warning border-warning/20',
   typical: 'bg-primary/10 text-primary border-primary/20',
-  low: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
+  low: 'bg-success/10 text-ember-success border-success/20',
 };
 
 const CONFIDENCE_LABELS: Record<string, string> = {

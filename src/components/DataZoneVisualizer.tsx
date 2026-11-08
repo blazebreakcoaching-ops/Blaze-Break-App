@@ -18,7 +18,7 @@ export const DataZoneVisualizer = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-4 mb-6 relative z-10">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary text-xs font-bold uppercase tracking-wider">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 border border-primary/20 text-ember-accent text-xs font-bold uppercase tracking-wider">
           <Lock className="w-3.5 h-3.5" /> Zone A: Private
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-success/10 border border-success/20 text-success dark:text-[#4ade80] text-xs font-bold uppercase tracking-wider">
@@ -55,8 +55,8 @@ export const DataZoneVisualizer = () => {
                )} />
                <span className={cn(
                  "text-[11px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
-                 item.zone === 'private' && "text-[#9a3412] dark:text-primary border-primary/30 bg-primary/10",
-                 item.zone === 'shared' && "text-[#166534] dark:text-[#4ade80] border-success/30 bg-success/10",
+                 item.zone === 'private' && "text-ember-accent border-primary/30 bg-primary/10",
+                 item.zone === 'shared' && "text-ember-success border-success/30 bg-success/10",
                  item.zone === 'org' && "text-text-muted border-muted-foreground/30 bg-surface/50"
                )}>
                  {item.zone}

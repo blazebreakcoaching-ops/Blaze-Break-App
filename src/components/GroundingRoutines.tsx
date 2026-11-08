@@ -133,12 +133,12 @@ export const GroundingRoutines = ({ onClose, onStartCustomSession, voiceEnabled 
                     <div>
                       <p className="text-sm font-bold text-text-main flex items-center gap-2">
                         {preset.name}
-                        {due && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-primary/10 text-[#9a3412] dark:text-primary">Due today</span>}
+                        {due && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-primary/10 text-ember-accent">Due today</span>}
                       </p>
                       <p className="text-[11px] text-text-muted mt-0.5">{preset.prompts.length} short questions</p>
                     </div>
                   </div>
-                  <button onClick={() => startPreset(type)} className="px-4 py-2 bg-primary/10 text-[#9a3412] dark:text-primary rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => startPreset(type)} className="px-4 py-2 bg-primary/10 text-ember-accent rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 shrink-0">
                     <Play className="w-3 h-3" /> Start
                   </button>
                 </div>
@@ -184,7 +184,7 @@ export const GroundingRoutines = ({ onClose, onStartCustomSession, voiceEnabled 
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => { onStartCustomSession(r.sessionDepth || 'ground', r.lens || 'secular'); onClose(); }}
-                  className="px-4 py-2 bg-primary/10 text-[#9a3412] dark:text-primary rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5"
+                  className="px-4 py-2 bg-primary/10 text-ember-accent rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5"
                 >
                   <Play className="w-3 h-3" /> Start
                 </button>
@@ -217,7 +217,7 @@ export const GroundingRoutines = ({ onClose, onStartCustomSession, voiceEnabled 
                   <div className="flex gap-1.5 mt-1.5">
                     {(['reset', 'ground', 'deep'] as SessionDepth[]).map((d) => (
                       <button key={d} onClick={() => setNewDepth(d)} aria-pressed={newDepth === d}
-                        className={cn('flex-1 py-2 rounded-lg text-[10px] font-bold border', newDepth === d ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                        className={cn('flex-1 py-2 rounded-lg text-[10px] font-bold border', newDepth === d ? 'bg-primary/10 border-primary/45 text-ember-accent' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
                         {SESSION_DEPTH_LABELS[d].label}
                       </button>
                     ))}

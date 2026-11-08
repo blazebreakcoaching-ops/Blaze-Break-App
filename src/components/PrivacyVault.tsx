@@ -274,11 +274,11 @@ export const PrivacyVault = ({
                   Trust & Privacy Centre
                 </h2>
                 <div className="absolute left-0 top-full mt-4 p-4 w-72 bg-card text-text-main text-sm font-medium rounded-xl border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
-                  <div className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary mb-2">Welcome to the Vault</div>
+                  <div className="text-xs uppercase font-black tracking-widest text-ember-accent mb-2">Welcome to the Vault</div>
                   Manage your data boundaries, review AI governance polices, and control what Nova remembers about your burnout baseline.
                 </div>
               </div>
-              <p className="text-xs uppercase font-black tracking-[0.2em] text-[#9a3412] dark:text-primary mt-2">Blaze Break Assurance Layer</p>
+              <p className="text-xs uppercase font-black tracking-[0.2em] text-ember-accent mt-2">Blaze Break Assurance Layer</p>
             </div>
           </div>
           <p className="text-text-muted text-sm md:text-base leading-relaxed mb-8 font-light">
@@ -305,7 +305,7 @@ export const PrivacyVault = ({
                     className={cn(
                       "flex items-center gap-2 px-5 py-2.5 rounded-xl border transition-all duration-300 font-medium text-xs tracking-wide cursor-pointer",
                       activeTab === tab.id 
-                        ? "bg-primary/10 border-primary/30 text-[#9a3412] dark:text-primary shadow-inner" 
+                        ? "bg-primary/10 border-primary/30 text-ember-accent shadow-inner" 
                         : "bg-surface/50 border-white/[0.04] text-text-muted hover:text-text-main"
                     )}
                   >
@@ -334,7 +334,7 @@ export const PrivacyVault = ({
               <DataZoneVisualizer />
 
               <div className="card bg-destructive/5 border-destructive/20">
-                <h3 className="font-bold text-destructive dark:text-[#f87171] flex items-center gap-2 mb-4">
+                <h3 className="font-bold text-ember-danger flex items-center gap-2 mb-4">
                   <AlertTriangle className="w-5 h-5" /> Our Privacy Promise
                 </h3>
                 <p className="text-sm text-text-muted leading-relaxed font-light">
@@ -406,7 +406,7 @@ export const PrivacyVault = ({
                 </div>
 
                 {orgError && (
-                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{orgError}</div>
+                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{orgError}</div>
                 )}
 
                 {orgLoading ? (
@@ -555,7 +555,7 @@ export const PrivacyVault = ({
 
                     {orgStatus.isOrgAdmin && orgStatus.joinCode && (
                       <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
-                        <h4 className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary">Your Team's Join Code</h4>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-ember-accent">Your Team's Join Code</h4>
                         <p className="text-xs text-text-muted">Share this with employees so they can link their own account to {orgStatus.organisationName}.</p>
                         <div className="font-mono text-lg font-bold text-text-main bg-background px-4 py-2 rounded-lg border border-border w-fit tracking-widest">{orgStatus.joinCode}</div>
                       </div>
@@ -604,7 +604,7 @@ export const PrivacyVault = ({
                   <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-white/[0.02]">
                     <div>
                       <p className="text-sm font-bold text-text-main flex items-center gap-2">
-                        Recovery Personalisation <span className="px-1.5 py-0.5 bg-primary/20 text-[#9a3412] dark:text-primary border border-primary/30 text-[10px] uppercase tracking-wider rounded-full">Zone A</span>
+                        Recovery Personalisation <span className="px-1.5 py-0.5 bg-primary/20 text-ember-accent border border-primary/30 text-[10px] uppercase tracking-wider rounded-full">Zone A</span>
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Required for core Nova logic.</p>
                     </div>
@@ -641,7 +641,7 @@ export const PrivacyVault = ({
                   <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-white/[0.02]">
                     <div>
                       <p className="text-sm font-bold text-text-main flex items-center gap-2">
-                        Recovery Ally <span className="px-1.5 py-0.5 bg-success/20 text-[#166534] dark:text-[#4ade80] border border-success/30 text-[10px] uppercase tracking-wider rounded-full">Zone B</span>
+                        Recovery Ally <span className="px-1.5 py-0.5 bg-success/20 text-ember-success border border-success/30 text-[10px] uppercase tracking-wider rounded-full">Zone B</span>
                       </p>
                       <p className="text-xs text-text-muted mt-0.5">Share selected goals/wins with preferred contacts.</p>
                     </div>
@@ -676,7 +676,7 @@ export const PrivacyVault = ({
                     Request Data Export
                   </button>
                   {exportError && (
-                    <p role="alert" className="text-xs text-destructive dark:text-[#f87171] mt-2">{exportError}</p>
+                    <p role="alert" className="text-xs text-ember-danger mt-2">{exportError}</p>
                   )}
                 </div>
 
@@ -695,7 +695,7 @@ export const PrivacyVault = ({
                       setTypedFullName("");
                       setShowDeleteConfirmModal(true);
                     }}
-                    className="w-full py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs font-bold hover:bg-destructive/20 transition-colors cursor-pointer"
+                    className="w-full py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-ember-danger text-xs font-bold hover:bg-destructive/20 transition-colors cursor-pointer"
                   >
                     Delete My Account
                   </button>
@@ -728,8 +728,8 @@ export const PrivacyVault = ({
                   <h4 className="font-bold text-text-main mb-2">A. Recommendation Transparency</h4>
                   <p className="text-sm text-text-muted mb-3 font-light">When Nova advises you, the logic path is exposed. No "black box" guidance.</p>
                   <div className="bg-background/60 border border-white/[0.02] p-4 rounded-xl text-xs space-y-3 font-mono">
-                    <p className="flex items-center gap-2 text-text-muted"><span className="text-[#166534] dark:text-[#4ade80] tracking-wider font-bold bg-success/10 px-2 py-0.5 rounded">ALLOWED</span> "I suggested a block because you logged 4 back-to-back meetings."</p>
-                    <p className="flex items-center gap-2 text-text-muted"><span className="text-destructive dark:text-[#f87171] tracking-wider font-bold bg-destructive/10 px-2 py-0.5 rounded">BLOCKED</span> "Trust me, your risk is high."</p>
+                    <p className="flex items-center gap-2 text-text-muted"><span className="text-ember-success tracking-wider font-bold bg-success/10 px-2 py-0.5 rounded">ALLOWED</span> "I suggested a block because you logged 4 back-to-back meetings."</p>
+                    <p className="flex items-center gap-2 text-text-muted"><span className="text-ember-danger tracking-wider font-bold bg-destructive/10 px-2 py-0.5 rounded">BLOCKED</span> "Trust me, your risk is high."</p>
                   </div>
                 </div>
 
@@ -768,7 +768,7 @@ export const PrivacyVault = ({
                     URL.revokeObjectURL(url);
                   }}
                   disabled={auditLogs.length === 0}
-                  className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/20 rounded-xl hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-ember-accent bg-primary/10 border border-primary/20 rounded-xl hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Download className="w-4 h-4" /> Export Ledger
                 </button>
@@ -804,8 +804,8 @@ export const PrivacyVault = ({
                           <span className={cn(
                             "inline-flex items-center px-2 py-1 rounded bg-background border border-white/[0.05] text-[11px] uppercase tracking-widest font-black shadow-inner",
                             log.status === 'authorised' ? 'text-success dark:text-[#4ade80] border-success/20' :
-                            log.status === 'anonymised' ? 'text-[#9a3412] dark:text-primary border-primary/20' :
-                            log.status === 'deleted' ? 'text-destructive dark:text-[#f87171] border-destructive/20' :
+                            log.status === 'anonymised' ? 'text-ember-accent border-primary/20' :
+                            log.status === 'deleted' ? 'text-ember-danger border-destructive/20' :
                             'text-text-muted'
                           )}>
                             {log.status}
@@ -849,7 +849,7 @@ export const PrivacyVault = ({
               onClick={e => e.stopPropagation()}
             >
               <div className="relative z-10 space-y-6">
-                <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center text-[#9a3412] dark:text-primary">
+                <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center text-ember-accent">
                   <Download className="w-6 h-6" />
                 </div>
                 <div>
@@ -952,7 +952,7 @@ export const PrivacyVault = ({
 
                     <p className="text-xs text-text-muted">
                       To authorise deletion, please type your full name matches the profile below:
-                      <strong className="block text-[#9a3412] dark:text-primary mt-1 select-all font-mono">
+                      <strong className="block text-ember-accent mt-1 select-all font-mono">
                         {profile.fullName || "CONFIRM DELETION"}
                       </strong>
                     </p>
@@ -1030,21 +1030,21 @@ export const PrivacyVault = ({
                       </button>
                     </div>
                     {deleteError && (
-                      <p role="alert" className="text-xs text-destructive dark:text-[#f87171] mt-3 text-center">{deleteError}</p>
+                      <p role="alert" className="text-xs text-ember-danger mt-3 text-center">{deleteError}</p>
                     )}
                   </div>
                 ) : (
                   <div className="space-y-4">
                     <div className="flex flex-col items-center justify-center py-6 space-y-3">
-                      <Loader2 className="w-8 h-8 text-destructive dark:text-[#f87171] animate-spin" />
-                      <p className="text-xs font-bold text-destructive dark:text-[#f87171] font-mono tracking-widest uppercase animate-pulse">
+                      <Loader2 className="w-8 h-8 text-ember-danger animate-spin" />
+                      <p className="text-xs font-bold text-ember-danger font-mono tracking-widest uppercase animate-pulse">
                         Deleting Your Data...
                       </p>
                     </div>
                     <div className="space-y-1 text-xs text-text-muted font-mono leading-relaxed bg-background p-3 rounded-lg border border-white/[0.02]">
-                      <p className="text-destructive dark:text-[#f87171]">● [1/3] Erasing your recovery data from our servers...</p>
-                      <p className="text-destructive dark:text-[#f87171]">● [2/3] Clearing locally stored data on this device...</p>
-                      <p className="text-destructive dark:text-[#f87171]">● [3/3] Signing you out...</p>
+                      <p className="text-ember-danger">● [1/3] Erasing your recovery data from our servers...</p>
+                      <p className="text-ember-danger">● [2/3] Clearing locally stored data on this device...</p>
+                      <p className="text-ember-danger">● [3/3] Signing you out...</p>
                     </div>
                   </div>
                 )}

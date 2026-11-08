@@ -233,7 +233,7 @@ export const SubscriptionCentre = () => {
                 ) : (
                   <a
                     href={buildManualPlanRequestUrl(p.plan, cadence)}
-                    className="block w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-colors text-center bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                    className="block w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-colors text-center bg-primary/10 hover:bg-primary/20 text-ember-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                     aria-label={`Email support to request ${PLAN_LABEL[p.plan]}`}
                   >
                     Request {PLAN_LABEL[p.plan]}

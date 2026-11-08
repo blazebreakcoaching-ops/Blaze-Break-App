@@ -122,7 +122,7 @@ export const GroundingExploreThis = ({ pattern, lens, onClose }: GroundingExplor
                 {[...MEANING_PROMPTS_GENERAL, ...((lens === 'islamic' || lens === 'faith') ? MEANING_PROMPTS_FAITH_EXTRA : [])].map((p) => (
                   <button key={p.id} onClick={() => toggleMeaningPrompt(p.id)} aria-pressed={selectedMeaningPrompts.includes(p.id)}
                     className={cn('px-3 py-2 rounded-lg text-xs font-bold border transition-all',
-                      selectedMeaningPrompts.includes(p.id) ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                      selectedMeaningPrompts.includes(p.id) ? 'bg-primary/10 border-primary/45 text-ember-accent' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
                     {p.label}
                   </button>
                 ))}
@@ -152,13 +152,13 @@ export const GroundingExploreThis = ({ pattern, lens, onClose }: GroundingExplor
                 {VALUES_LIST.map((v) => (
                   <button key={v} onClick={() => setChosenValue(v)} aria-pressed={chosenValue === v}
                     className={cn('px-3 py-2 rounded-lg text-xs font-bold border transition-all',
-                      chosenValue === v ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                      chosenValue === v ? 'bg-primary/10 border-primary/45 text-ember-accent' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
                     {v}
                   </button>
                 ))}
                 <button onClick={() => setChosenValue('__custom__')} aria-pressed={chosenValue === '__custom__'}
                   className={cn('px-3 py-2 rounded-lg text-xs font-bold border transition-all',
-                    chosenValue === '__custom__' ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
+                    chosenValue === '__custom__' ? 'bg-primary/10 border-primary/45 text-ember-accent' : 'bg-white dark:bg-surface border-border/40 text-text-muted')}>
                   Something else
                 </button>
               </div>

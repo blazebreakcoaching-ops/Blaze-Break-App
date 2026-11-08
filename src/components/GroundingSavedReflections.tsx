@@ -92,7 +92,7 @@ export const GroundingSavedReflections = ({ onClose }: { onClose: () => void }) 
         </div>
 
         {!adding ? (
-          <button onClick={() => setAdding(true)} className="px-5 py-2.5 bg-primary/10 text-[#9a3412] dark:text-primary rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+          <button onClick={() => setAdding(true)} className="px-5 py-2.5 bg-primary/10 text-ember-accent rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
             <Plus className="w-3.5 h-3.5" /> Write your own grounding statement
           </button>
         ) : (

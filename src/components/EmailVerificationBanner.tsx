@@ -62,9 +62,9 @@ export const EmailVerificationBanner = () => {
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 sm:px-6 py-3 mb-6 rounded-xl border border-warning/20 bg-warning/5">
       <div className="flex items-center gap-2.5 min-w-0">
-        <MailCheck className="w-4 h-4 text-[#9a3412] dark:text-warning shrink-0" aria-hidden="true" />
+        <MailCheck className="w-4 h-4 text-ember-warning shrink-0" aria-hidden="true" />
         <p className="text-xs text-text-main">
-          <span className="uppercase tracking-widest font-black text-[#9a3412] dark:text-warning">Confirm your email</span>
+          <span className="uppercase tracking-widest font-black text-ember-warning">Confirm your email</span>
           {' '}— we sent a link to {user.email}. {status || "Click it to finish setting up your account."}
         </p>
       </div>

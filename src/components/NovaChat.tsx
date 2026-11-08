@@ -1296,8 +1296,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                             <Target className="w-4 h-4" />
                           </div>
                           <div className="space-y-0.5">
-                            <span className="text-[11px] font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-[#9a3412] dark:text-primary" />{" "}
+                            <span className="text-[11px] font-medium uppercase tracking-widest text-ember-accent flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-ember-accent" />{" "}
                               Suggested for you
                             </span>
                             <h5 className="text-xs font-bold text-text-main">
@@ -1401,7 +1401,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 </div>
                 <div className="space-y-4 pt-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-black uppercase tracking-[0.25em] text-[#9a3412] dark:text-primary animate-pulse">
+                    <span className="text-xs font-black uppercase tracking-[0.25em] text-ember-accent animate-pulse">
                       Nova Synthesis
                     </span>
                     <div className="flex gap-1.5">

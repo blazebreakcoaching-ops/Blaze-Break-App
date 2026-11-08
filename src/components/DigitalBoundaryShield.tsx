@@ -155,7 +155,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
                 </div>
                 <div>
                   <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Urgent or Loud?</h3>
-                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Urgency Check</p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] font-black text-ember-accent">Urgency Check</p>
                 </div>
               </div>
 
@@ -239,7 +239,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
                         <p className="text-sm text-text-main italic">"{RESPONSE_TEMPLATE}"</p>
                         <button
                           onClick={() => navigator.clipboard?.writeText(RESPONSE_TEMPLATE)}
-                          className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-80"
+                          className="text-xs font-bold text-ember-accent hover:opacity-80"
                         >
                           Copy
                         </button>
@@ -270,7 +270,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
                   aria-pressed={profileId === p}
                   className={cn(
                     "px-4 py-2 rounded-xl text-xs font-bold border transition-colors",
-                    profileId === p ? "bg-primary/10 border-primary text-[#9a3412] dark:text-primary" : "border-border text-text-muted hover:bg-surface"
+                    profileId === p ? "bg-primary/10 border-primary text-ember-accent" : "border-border text-text-muted hover:bg-surface"
                   )}
                 >
                   {BOUNDARY_PROFILE_LABELS[p]}
@@ -311,7 +311,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
                         {included && kind === 'routes_to_real_tool' && route && (
                           <button
                             onClick={() => routeToRealTool(action)}
-                            className="shrink-0 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-primary/30 text-[#9a3412] dark:text-primary hover:bg-primary/10 flex items-center gap-1.5"
+                            className="shrink-0 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-primary/30 text-ember-accent hover:bg-primary/10 flex items-center gap-1.5"
                           >
                             <ExternalLink className="w-3 h-3" /> {route.label}
                           </button>
@@ -356,7 +356,7 @@ export const DigitalBoundaryShield = ({ fingerprint, onAwardPoints, onNavigate }
              <p className="text-sm font-medium text-text-main italic mb-3">"{RESPONSE_TEMPLATE}"</p>
              <button
                onClick={() => navigator.clipboard?.writeText(RESPONSE_TEMPLATE)}
-               className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-80 transition-opacity flex items-center gap-1.5"
+               className="text-xs font-bold text-ember-accent hover:opacity-80 transition-opacity flex items-center gap-1.5"
              >
                Copy Template
              </button>

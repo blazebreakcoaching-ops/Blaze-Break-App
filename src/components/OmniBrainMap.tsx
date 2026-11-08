@@ -187,7 +187,7 @@ const CATEGORY_STYLES = {
     color: 'rose',
     border: 'border-destructive/30 hover:border-destructive/70',
     bg: 'bg-destructive/10 hover:bg-destructive/20',
-    text: 'text-destructive dark:text-[#f87171]',
+    text: 'text-ember-danger',
     glow: 'shadow-[rgba(220,38,38,0.25)_0px_0px_20px]',
     dotClass: 'bg-destructive',
     label: 'Boundaries & Priorities'
@@ -205,7 +205,7 @@ const CATEGORY_STYLES = {
     color: 'amber',
     border: 'border-warning/30 hover:border-warning/70',
     bg: 'bg-warning/10 hover:bg-warning/20',
-    text: 'text-[#9a3412] dark:text-warning',
+    text: 'text-ember-warning',
     glow: 'shadow-[rgba(245,158,11,0.25)_0px_0px_20px]',
     dotClass: 'bg-warning',
     label: 'Biometrics & Takeaways'
@@ -395,7 +395,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
                           <p className="text-xs text-text-muted truncate max-w-[180px]">{node.description}</p>
                         </div>
                       </div>
-                      <span className="text-[11px] uppercase tracking-widest text-[#9a3412] dark:text-primary opacity-0 group-hover:opacity-100 transition-opacity">Select Dest</span>
+                      <span className="text-[11px] uppercase tracking-widest text-ember-accent opacity-0 group-hover:opacity-100 transition-opacity">Select Dest</span>
                     </button>
                   ))
                 ) : (
@@ -449,7 +449,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
 
             {/* Render Calculated Pathway */}
             <div className="p-4 bg-card/50 rounded-xl border border-white/5 space-y-3">
-              <p className="text-[11px] font-black uppercase tracking-wider text-[#9a3412] dark:text-primary font-mono">Calculated Shortest Path</p>
+              <p className="text-[11px] font-black uppercase tracking-wider text-ember-accent font-mono">Calculated Shortest Path</p>
               
               <div className="flex flex-wrap items-center gap-2">
                 {shortestPath.map((nodeId, idx) => {
@@ -460,7 +460,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
                       <span className={cn(
                         "px-2.5 py-1 rounded-lg text-xs font-bold border",
                         nodeId === 'nova' 
-                          ? "bg-card border-primary text-[#9a3412] dark:text-primary"
+                          ? "bg-card border-primary text-ember-accent"
                           : "bg-surface border-white/10 text-text-main"
                       )}>
                         {nodeObj.label}
@@ -607,7 +607,7 @@ export const OmniBrainMap = ({ activeTab, setActiveTab, darkMode, setDarkMode, s
               )}
             >
               <Sparkles className="w-8 h-8 text-primary group-hover:text-text-main transition-colors" />
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#9a3412] dark:text-primary">Nova Core</span>
+              <span className="text-[11px] font-black uppercase tracking-wider text-ember-accent">Nova Core</span>
               
               <div className="absolute inset-0 border-2 border-primary/20 rounded-full animate-ping" style={{ animationDuration: `${currentPreset.duration}s` }} />
             </motion.button>

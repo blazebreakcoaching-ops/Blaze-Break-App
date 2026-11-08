@@ -265,7 +265,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
             key={f}
             onClick={() => setFearedOutcome(f)}
             aria-pressed={fearedOutcome === f}
-            className={cn("px-3 py-1.5 rounded-lg border text-xs font-bold", fearedOutcome === f ? "border-primary bg-primary/10 text-[#9a3412] dark:text-primary" : "border-border text-text-muted hover:border-primary/40")}
+            className={cn("px-3 py-1.5 rounded-lg border text-xs font-bold", fearedOutcome === f ? "border-primary bg-primary/10 text-ember-accent" : "border-border text-text-muted hover:border-primary/40")}
           >
             {FEARED_OUTCOME_LABELS[f]}
           </button>
@@ -301,7 +301,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
             {capacityStressors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           {selectedStressorId && (
-            <button onClick={linkCapacityProtected} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-80">
+            <button onClick={linkCapacityProtected} className="text-xs font-bold text-ember-accent hover:opacity-80">
               Update Capacity Protected
             </button>
           )}
@@ -331,7 +331,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
             onClick={() => { setActiveTab(t.id); setStatus(null); setPendingConfirm(false); }}
             className={cn(
               "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors shrink-0",
-              activeTab === t.id ? "bg-primary/10 text-[#9a3412] dark:text-primary" : "text-text-muted hover:bg-surface"
+              activeTab === t.id ? "bg-primary/10 text-ember-accent" : "text-text-muted hover:bg-surface"
             )}
           >
             <t.icon className="w-4 h-4" /> {t.label}
@@ -396,7 +396,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
                     aria-pressed={dndMinutes === m}
                     className={cn(
                       "flex-1 py-3 rounded-xl text-xs font-bold border transition-colors",
-                      dndMinutes === m ? "bg-primary/10 border-primary text-[#9a3412] dark:text-primary" : "border-border text-text-muted hover:bg-surface"
+                      dndMinutes === m ? "bg-primary/10 border-primary text-ember-accent" : "border-border text-text-muted hover:bg-surface"
                     )}
                   >
                     {m < 60 ? `${m}m` : `${m / 60}h`}
@@ -521,7 +521,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
                     ))}
                   </div>
                   {outcomeChoiceDraft && (
-                    <button onClick={submitPendingOutcome} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-80">Save</button>
+                    <button onClick={submitPendingOutcome} className="text-xs font-bold text-ember-accent hover:opacity-80">Save</button>
                   )}
                 </div>
               )}
@@ -581,7 +581,7 @@ export const BoundaryAutopilot = ({ onNavigate }: BoundaryAutopilotProps) => {
       {status && (
         <div role="status" aria-live="polite" className={cn(
           "p-3 rounded-xl text-xs font-medium flex items-start gap-2",
-          status.type === 'success' ? "bg-success/10 text-success dark:text-[#4ade80]" : "bg-destructive/10 text-destructive dark:text-[#f87171]"
+          status.type === 'success' ? "bg-success/10 text-success dark:text-[#4ade80]" : "bg-destructive/10 text-ember-danger"
         )}>
           {status.type === 'success' ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
           <span>{status.message}</span>

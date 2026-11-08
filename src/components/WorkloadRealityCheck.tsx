@@ -391,13 +391,13 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
   const getDrainTextColor = (drain: number) => {
     if (drain < 35) return 'text-success dark:text-[#4ade80]';
-    if (drain < 70) return 'text-[#9a3412] dark:text-warning';
-    return 'text-destructive dark:text-[#f87171]';
+    if (drain < 70) return 'text-ember-warning';
+    return 'text-ember-danger';
   };
 
   const getPriorityBadgeClass = (priority: 'high' | 'medium' | 'low') => {
-    if (priority === 'high') return 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20';
-    if (priority === 'medium') return 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20';
+    if (priority === 'high') return 'bg-destructive/10 text-ember-danger border-destructive/20';
+    if (priority === 'medium') return 'bg-warning/10 text-ember-warning border-warning/20';
     return 'bg-success/10 text-success dark:text-[#4ade80] border-success/20';
   };
 
@@ -408,11 +408,11 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
       case 'could':
         return { label: 'Could Do', badge: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20' };
       case 'delegate':
-        return { label: 'Delegate', badge: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20' };
+        return { label: 'Delegate', badge: 'bg-warning/10 text-ember-warning border-warning/20' };
       case 'defer':
-        return { label: 'Defer', badge: 'bg-primary/10 text-[#9a3412] dark:text-primary border-primary/20' };
+        return { label: 'Defer', badge: 'bg-primary/10 text-ember-accent border-primary/20' };
       case 'drop':
-        return { label: 'Drop', badge: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20' };
+        return { label: 'Drop', badge: 'bg-destructive/10 text-ember-danger border-destructive/20' };
     }
   };
 
@@ -578,7 +578,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   </div>
                   <div>
                     <h3 className="text-sm font-display font-bold text-text-main tracking-tight">Nova's Take</h3>
-                    <p className="text-[11px] uppercase tracking-[0.2em] font-black text-[#9a3412] dark:text-primary">Cutting Through the Urgency</p>
+                    <p className="text-[11px] uppercase tracking-[0.2em] font-black text-ember-accent">Cutting Through the Urgency</p>
                   </div>
                 </div>
                 <p className="text-sm text-text-main font-serif italic leading-relaxed">
@@ -650,7 +650,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   <ShieldAlert className="w-5 h-5 animate-pulse" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-destructive dark:text-[#f87171]">Your planned load is running ahead of your capacity</h4>
+                  <h4 className="text-sm font-bold text-ember-danger">Your planned load is running ahead of your capacity</h4>
                   <p className="text-xs text-destructive/80 dark:text-[#f87171] mt-1 leading-relaxed">
                     This task list adds up to more than today's available capacity currently supports. Consider delegating, deferring or dropping something before you start.
                   </p>
@@ -663,7 +663,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                   <Plus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#9a3412] dark:text-primary">Task Calibration</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-ember-accent">Task Calibration</h4>
                   <p className="text-[11px] text-text-muted mt-0.5">Define a task with its specific energetic toll, prioritisation node, and deadline.</p>
                 </div>
               </div>
@@ -796,7 +796,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                         className={cn(
                           "px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                           sortBy === option.key 
-                            ? "bg-white dark:bg-surface text-[#9a3412] dark:text-primary shadow-sm border border-border/20" 
+                            ? "bg-white dark:bg-surface text-ember-accent shadow-sm border border-border/20" 
                             : "bg-transparent text-text-muted hover:text-text-main"
                         )}
                       >
@@ -824,7 +824,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                         className={cn(
                           "px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                           statusFilter === option.key 
-                            ? "bg-white dark:bg-surface text-[#9a3412] dark:text-primary shadow-sm border border-border/20" 
+                            ? "bg-white dark:bg-surface text-ember-accent shadow-sm border border-border/20" 
                             : "bg-transparent text-text-muted hover:text-text-main"
                         )}
                       >
@@ -850,7 +850,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
                         className={cn(
                           "px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                           dueDateFilter === option.key 
-                            ? "bg-white dark:bg-surface text-[#9a3412] dark:text-primary shadow-sm border border-border/20" 
+                            ? "bg-white dark:bg-surface text-ember-accent shadow-sm border border-border/20" 
                             : "bg-transparent text-text-muted hover:text-text-main"
                         )}
                       >
@@ -1049,7 +1049,7 @@ export const WorkloadRealityCheck = ({ fingerprint, onAwardPoints }: WorkloadRea
 
             {/* Clear Next Step action instruction block */}
             <div className="bg-gradient-to-r from-primary/5 via-primary/5 to-surface/20 border border-border/40 p-6 rounded-2xl space-y-4">
-              <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
+              <span className="text-xs font-black uppercase tracking-widest text-ember-accent flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 animate-bounce" /> Your Next Step
               </span>
               <p className="text-xs text-text-muted leading-relaxed">
@@ -1150,7 +1150,7 @@ const StatTile = ({ label, value, emptyText }: { label: string; value: string | 
   <div className="space-y-1">
     <p className="text-[11px] font-black uppercase tracking-widest text-text-muted">{label}</p>
     {value !== null ? (
-      <p className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">{value}</p>
+      <p className="text-3xl font-display font-bold text-ember-accent">{value}</p>
     ) : (
       <p className="text-sm font-bold text-text-muted">{emptyText}</p>
     )}

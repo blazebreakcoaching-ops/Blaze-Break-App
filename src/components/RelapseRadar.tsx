@@ -4,10 +4,10 @@ import { cn } from '../lib/utils';
 
 export const RelapseRadar = () => {
   const triggers = [
-    { label: 'Sleep Quality', value: 45, status: 'Low', textColor: 'text-destructive dark:text-[#f87171]', barColor: 'bg-destructive' },
-    { label: 'Caffeine Intake', value: 80, status: 'High', textColor: 'text-[#9a3412] dark:text-warning', barColor: 'bg-warning' },
-    { label: 'Back-to-back Meetings', value: 95, status: 'Critical', textColor: 'text-destructive dark:text-[#f87171]', barColor: 'bg-destructive' },
-    { label: 'Exercise Frequency', value: 20, status: 'At Risk', textColor: 'text-destructive dark:text-[#f87171]', barColor: 'bg-destructive' },
+    { label: 'Sleep Quality', value: 45, status: 'Low', textColor: 'text-ember-danger', barColor: 'bg-destructive' },
+    { label: 'Caffeine Intake', value: 80, status: 'High', textColor: 'text-ember-warning', barColor: 'bg-warning' },
+    { label: 'Back-to-back Meetings', value: 95, status: 'Critical', textColor: 'text-ember-danger', barColor: 'bg-destructive' },
+    { label: 'Exercise Frequency', value: 20, status: 'At Risk', textColor: 'text-ember-danger', barColor: 'bg-destructive' },
   ];
 
   return (
@@ -54,7 +54,7 @@ export const RelapseRadar = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="card p-5 bg-card border-none text-text-main overflow-hidden relative group">
           <div className="relative z-10 flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-[#9a3412] dark:text-primary">
+            <div className="flex items-center gap-2 text-ember-accent">
               <Sun className="w-4 h-4" />
               <span className="text-[11px] uppercase font-black tracking-widest">Likely Focus Window</span>
             </div>

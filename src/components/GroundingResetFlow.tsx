@@ -111,7 +111,7 @@ export const GroundingResetFlow = ({ derivedPatterns, onBack, onComplete, voiceE
               {BURDEN_OPTIONS.filter((o) => o.id !== 'other').map((o) => (
                 <button key={o.id} onClick={() => toggleBurden(o.id)} aria-pressed={burdenIds.includes(o.id)}
                   className={cn('px-4 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer',
-                    burdenIds.includes(o.id) ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border')}>
+                    burdenIds.includes(o.id) ? 'bg-primary/10 border-primary/45 text-ember-accent' : 'bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border')}>
                   {o.label}
                 </button>
               ))}

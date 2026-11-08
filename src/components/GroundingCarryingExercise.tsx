@@ -131,7 +131,7 @@ export const GroundingCarryingExercise = ({ onClose }: GroundingCarryingExercise
               ))}
             </div>
             <div className="flex justify-between items-center pt-2">
-              <button onClick={() => setAdding(true)} className="px-5 py-2.5 bg-primary/10 text-[#9a3412] dark:text-primary rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+              <button onClick={() => setAdding(true)} className="px-5 py-2.5 bg-primary/10 text-ember-accent rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
                 <Plus className="w-3.5 h-3.5" /> Add a burden
               </button>
               <button onClick={onClose} className="px-5 py-2.5 border border-border/40 rounded-xl text-xs font-black uppercase tracking-widest text-text-muted hover:text-text-main">
@@ -163,7 +163,7 @@ export const GroundingCarryingExercise = ({ onClose }: GroundingCarryingExercise
                   {CLASSIFICATION_OPTIONS.map((opt) => (
                     <button key={opt.id} onClick={() => setClassification(opt.id)} aria-pressed={classification === opt.id}
                       className={cn('p-4 rounded-xl border text-left text-sm font-bold transition-all',
-                        classification === opt.id ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-main')}>
+                        classification === opt.id ? 'bg-primary/10 border-primary/45 text-ember-accent' : 'bg-white dark:bg-surface border-border/40 text-text-main')}>
                       {opt.label}
                     </button>
                   ))}

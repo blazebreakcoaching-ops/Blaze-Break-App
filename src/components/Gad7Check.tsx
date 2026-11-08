@@ -485,7 +485,7 @@ export const Gad7Check = ({ onNeedSupport, onNavigate }: Gad7CheckProps) => {
             {submitting && <p className="text-xs text-text-muted flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Saving…</p>}
             {error && (
               <div role="alert" className="space-y-2 pt-1">
-                <p className="text-sm text-destructive dark:text-[#f87171]">{error}</p>
+                <p className="text-sm text-ember-danger">{error}</p>
                 <p className="text-xs text-text-muted">Your answers haven't been submitted.</p>
                 <div className="flex gap-3">
                   <button onClick={() => finalize(impairment)} className="text-sm font-bold text-primary hover:underline">Try Again</button>

@@ -241,7 +241,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                    </p>
 
                    <div className="flex items-center gap-4 text-sm font-bold text-text-muted p-4 bg-black/20 rounded-xl">
-                      <Shield className="w-5 h-5 text-[#9a3412] dark:text-warning" />
+                      <Shield className="w-5 h-5 text-ember-warning" />
                       <span>{isMitigated 
                         ? 'Root causes addressed: you closed the gap and set a real boundary.'
                         : 'Root causes building: Too many meetings, low baseline energy, insufficient recovery windows.'}
@@ -268,7 +268,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                           <span className={cn(
                             "text-xs font-black uppercase tracking-widest",
                             risk === 'red' ? "text-rose-600 dark:text-[#f87171]" :
-                            risk === 'amber' ? "text-[#9a3412] dark:text-warning" :
+                            risk === 'amber' ? "text-ember-warning" :
                             "text-success dark:text-[#4ade80]"
                           )}>
                             {risk === 'red' ? 'Overload' : risk === 'amber' ? 'Pressure' : 'Manageable'}
@@ -362,7 +362,7 @@ export const FutureSelfSimulator = ({ fingerprint }: FutureSelfSimulatorProps) =
                       </div>
 
                       <div className="card p-8 bg-card border-none text-text-main flex flex-col justify-center">
-                         <h4 className="text-sm font-black uppercase tracking-widest text-[#9a3412] dark:text-primary mb-6 flex items-center gap-2 mb-auto">
+                         <h4 className="text-sm font-black uppercase tracking-widest text-ember-accent mb-6 flex items-center gap-2 mb-auto">
                           <Sparkles className="w-5 h-5" /> From Future You
                         </h4>
                         <p className="text-xl md:text-2xl font-serif italic text-text-muted leading-relaxed max-w-sm ml-4 border-l-2 border-primary pl-6 py-2">

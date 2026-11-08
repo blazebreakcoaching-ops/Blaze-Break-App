@@ -78,7 +78,7 @@ const SHIELD_COLOR_CLASSES: Record<string, {
     cardBg: 'bg-warning/5',
     iconBg: 'bg-warning',
     iconShadow: 'shadow-warning/30',
-    heading: 'text-[#9a3412] dark:text-warning',
+    heading: 'text-ember-warning',
     glow: 'bg-warning/20',
   },
   rose: {
@@ -86,7 +86,7 @@ const SHIELD_COLOR_CLASSES: Record<string, {
     cardBg: 'bg-destructive/5',
     iconBg: 'bg-destructive',
     iconShadow: 'shadow-destructive/30',
-    heading: 'text-destructive dark:text-[#f87171]',
+    heading: 'text-ember-danger',
     glow: 'bg-destructive/20',
   },
 };
@@ -367,7 +367,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                       <button 
                         onClick={() => setManualData({...manualData, recoveryGaps: 'no'})}
                         aria-pressed={manualData.recoveryGaps === 'no'}
-                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'no' ? 'bg-destructive/10 text-destructive dark:text-[#f87171] border border-destructive/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
+                        className={cn("flex-1 p-3 rounded-xl font-bold transition-all text-center", manualData.recoveryGaps === 'no' ? 'bg-destructive/10 text-ember-danger border border-destructive/30' : 'bg-surface border border-border/50 text-text-muted hover:border-text-muted/30')}
                       >
                         No
                       </button>
@@ -402,7 +402,7 @@ export const NovaOverloadShield = ({ fingerprint, onAwardPoints, onNavigate }: N
                           <h5 className="font-bold text-text-main text-sm">{int.name}</h5>
                           <div className="text-xs text-text-muted">{int.description}</div>
                           {int.status === 'connected' && int.detail && (
-                            <div className="mt-2 text-xs font-medium text-[#9a3412] dark:text-warning bg-warning/10 inline-block px-2 py-1 rounded">
+                            <div className="mt-2 text-xs font-medium text-ember-warning bg-warning/10 inline-block px-2 py-1 rounded">
                               Detected: {int.detail}
                             </div>
                           )}

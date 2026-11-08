@@ -15,9 +15,9 @@ const TIGHTNESS_BAR_CLASSES: Record<CapacityFieldModel['tightness'], string> = {
 
 const TIGHTNESS_TEXT_CLASSES: Record<CapacityFieldModel['tightness'], string> = {
   comfortable: 'text-success dark:text-[#4ade80]',
-  tight: 'text-[#9a3412] dark:text-warning',
-  very_tight: 'text-[#9a3412] dark:text-warning',
-  over_capacity: 'text-destructive dark:text-[#f87171]',
+  tight: 'text-ember-warning',
+  very_tight: 'text-ember-warning',
+  over_capacity: 'text-ember-danger',
   unknown: 'text-text-muted',
 };
 

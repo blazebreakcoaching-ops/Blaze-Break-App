@@ -240,7 +240,7 @@ export const NovaVoiceCall = ({ isOpen, onClose, buildInitialPrompt, onNavigate,
                     <Target className="w-4 h-4" aria-hidden="true" />
                   </div>
                   <div className="flex-1 space-y-1.5 min-w-0">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-ember-accent flex items-center gap-1">
                       <Sparkles className="w-3 h-3" aria-hidden="true" /> Nova suggests
                     </span>
                     <p className="text-xs font-bold text-text-main">{featureSuggestion.label}</p>

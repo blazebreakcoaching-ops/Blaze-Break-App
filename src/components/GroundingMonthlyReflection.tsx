@@ -144,7 +144,7 @@ export const GroundingMonthlyReflection = ({ sessions, derivedPatterns, onClose 
               {recurringThemes.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {recurringThemes.map((t) => (
-                    <span key={t} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary/10 text-[#9a3412] dark:text-primary">{t}</span>
+                    <span key={t} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary/10 text-ember-accent">{t}</span>
                   ))}
                 </div>
               ) : (
@@ -190,7 +190,7 @@ export const GroundingMonthlyReflection = ({ sessions, derivedPatterns, onClose 
                     aria-pressed={carryForwardValue === v}
                     className={cn(
                       'px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer',
-                      carryForwardValue === v ? 'bg-primary/10 border-primary/45 text-[#9a3412] dark:text-primary' : 'bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border'
+                      carryForwardValue === v ? 'bg-primary/10 border-primary/45 text-ember-accent' : 'bg-white dark:bg-surface border-border/40 text-text-muted hover:border-border'
                     )}
                   >
                     {v}
@@ -207,7 +207,7 @@ export const GroundingMonthlyReflection = ({ sessions, derivedPatterns, onClose 
                 disabled={leftHere}
                 className={cn(
                   'px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all',
-                  leftHere ? 'bg-primary/10 text-[#9a3412] dark:text-primary' : 'border border-border/40 text-text-muted hover:text-text-main'
+                  leftHere ? 'bg-primary/10 text-ember-accent' : 'border border-border/40 text-text-muted hover:text-text-main'
                 )}
               >
                 <Feather className="w-3.5 h-3.5" /> {leftHere ? 'Left here' : "I'll leave this here"}

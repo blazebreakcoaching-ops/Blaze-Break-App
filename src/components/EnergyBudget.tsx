@@ -303,7 +303,7 @@ export const EnergyBudgetTool = ({
     // find it among the Recover tab's several other stacked tools.
     <div id="energy-delta-tool" className="space-y-12 pb-24">
       {error && (
-        <div role="alert" className="bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm p-4 rounded-xl">{error}</div>
+        <div role="alert" className="bg-destructive/10 border border-destructive/20 text-ember-danger text-sm p-4 rounded-xl">{error}</div>
       )}
       <div className="max-w-4xl">
         <div className="flex items-center gap-4 mb-4">
@@ -319,7 +319,7 @@ export const EnergyBudgetTool = ({
             Today's Capacity Plan
           </h3>
           <div className="absolute left-0 top-full mt-4 p-4 w-80 bg-card text-text-main text-sm font-medium rounded-lg border border-border shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none">
-            <div className="text-xs uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary mb-2">What this shows</div>
+            <div className="text-xs uppercase font-medium tracking-widest text-ember-accent mb-2">What this shows</div>
             See where today's planned demand sits against the capacity you actually have. Add tasks below to see how they draw on it.
           </div>
         </div>
@@ -350,7 +350,7 @@ export const EnergyBudgetTool = ({
               </div>
               {hasCapacity && (
                 <div className="flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-1.5 font-medium text-destructive dark:text-[#f87171]">
+                  <div className="flex items-center gap-1.5 font-medium text-ember-danger">
                     <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
                     Your Available Capacity
                   </div>
@@ -411,7 +411,7 @@ export const EnergyBudgetTool = ({
               <div className="flex items-center gap-3 p-3 bg-destructive/5 dark:bg-destructive/10 rounded-xl border border-destructive/15">
                 <AlertCircle className="w-5 h-5 text-destructive" />
                 <div className="text-xs leading-tight text-text-muted font-sans font-bold">
-                  <span className="text-destructive dark:text-[#f87171] font-extrabold uppercase tracking-wide">Heads up:</span>{' '}
+                  <span className="text-ember-danger font-extrabold uppercase tracking-wide">Heads up:</span>{' '}
                   {!hasCapacity
                     ? 'Check in on your capacity to see this comparison.'
                     : overloadDays.length > 0
@@ -540,7 +540,7 @@ export const EnergyBudgetTool = ({
                             {task.priority}
                           </span>
                           {task.shipStage && (
-                            <span className="text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-[0.2em] bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/25">
+                            <span className="text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-[0.2em] bg-primary/10 text-ember-accent border border-primary/25">
                               {task.shipStage}
                             </span>
                           )}
@@ -787,7 +787,7 @@ const StatTile = ({ label, value, emptyText }: { label: string; value: string | 
   <div className="space-y-1">
     <p className="text-[11px] font-black uppercase tracking-widest text-text-muted">{label}</p>
     {value !== null ? (
-      <p className="text-3xl font-display font-bold text-[#9a3412] dark:text-primary">{value}</p>
+      <p className="text-3xl font-display font-bold text-ember-accent">{value}</p>
     ) : (
       <p className="text-sm font-bold text-text-muted">{emptyText}</p>
     )}

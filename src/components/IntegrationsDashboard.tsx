@@ -340,7 +340,7 @@ export const IntegrationsDashboard = () => {
         <div className={cn(
           "max-w-3xl p-4 rounded-xl text-sm font-medium flex items-start gap-3 border",
           returnBanner.status === 'connected'
-            ? "bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20"
+            ? "bg-success/10 text-ember-success border-success/20"
             : "bg-destructive text-destructive-foreground dark:bg-destructive/20 dark:text-[#f87171] border-destructive dark:border-destructive/30"
         )}>
           {returnBanner.status === 'connected' ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />}
@@ -387,9 +387,9 @@ export const IntegrationsDashboard = () => {
               </div>
               <div className={cn(
                 "px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-1.5",
-                integration.status === 'connected' ? "bg-success/10 text-[#166534] dark:text-[#4ade80]" : 
-                integration.status === 'error' ? "bg-destructive/10 text-destructive dark:text-[#f87171]" :
-                integration.status === 'loading' ? "bg-primary/10 text-[#9a3412] dark:text-primary" :
+                integration.status === 'connected' ? "bg-success/10 text-ember-success" : 
+                integration.status === 'error' ? "bg-destructive/10 text-ember-danger" :
+                integration.status === 'loading' ? "bg-primary/10 text-ember-accent" :
                 "bg-border dark:bg-surface text-text-muted"
               )}>
                 {integration.status === 'loading' && <RefreshCw className="w-3 h-3 animate-spin" />}
@@ -677,7 +677,7 @@ export const IntegrationsDashboard = () => {
       </div>
 
       <div className="card p-8 bg-card border-border text-text-main space-y-6">
-        <div className="flex items-center gap-3 text-[#9a3412] dark:text-primary group/tooltip relative">
+        <div className="flex items-center gap-3 text-ember-accent group/tooltip relative">
           <Key className="w-6 h-6" />
           <h4 className="font-bold uppercase tracking-widest flex items-center gap-2">
             API Configuration

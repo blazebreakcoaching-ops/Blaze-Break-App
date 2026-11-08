@@ -99,7 +99,7 @@ export const BlameLocateAcceptExchange = ({ title, instruction, prompt, voiceEli
       {voiceEligible && (
         <button
           onClick={() => setVoiceOpen(true)}
-          className="w-full flex items-center justify-center gap-2 text-xs font-bold text-[#9a3412] dark:text-primary py-2 px-3 rounded-xl border border-primary/30 hover:bg-primary/5 transition-colors cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 text-xs font-bold text-ember-accent py-2 px-3 rounded-xl border border-primary/30 hover:bg-primary/5 transition-colors cursor-pointer"
         >
           <Mic className="w-3.5 h-3.5" /> Talk it through by voice instead
         </button>

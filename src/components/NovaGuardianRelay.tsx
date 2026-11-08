@@ -118,7 +118,7 @@ const GuardianCard = ({
       className={cn(
         "guardian-network-card p-6 rounded-2xl border transition-all overflow-hidden relative shadow-lg group",
         contact.role.includes('guardian')
-          ? "bg-card border-destructive/30 text-destructive dark:text-[#f87171] shadow-destructive/10"
+          ? "bg-card border-destructive/30 text-ember-danger shadow-destructive/10"
           : "bg-white dark:bg-card border-border"
       )}
     >
@@ -160,16 +160,16 @@ const GuardianCard = ({
       </div>
       
       <div className="space-y-1.5 relative z-10 mb-6">
-        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-destructive dark:text-[#f87171]" : "text-text-main")}>{contact.name}</h4>
+        <h4 className={cn("font-bold text-lg tracking-tight", contact.role.includes('guardian') ? "text-ember-danger" : "text-text-main")}>{contact.name}</h4>
         <div className="flex items-center gap-2 flex-wrap">
            <span className={cn(
              "text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md",
-             contact.role === 'primary_guardian' ? "bg-destructive/20 text-destructive dark:text-[#f87171]" : "bg-border dark:bg-surface text-text-muted"
+             contact.role === 'primary_guardian' ? "bg-destructive/20 text-ember-danger" : "bg-border dark:bg-surface text-text-muted"
            )}>
              {contact.role.replace('_', ' ')}
            </span>
            {contact.isSample && (
-             <span className="text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md bg-primary/10 text-[#9a3412] dark:text-primary border border-primary/20">
+             <span className="text-[11px] uppercase font-black tracking-widest px-2.5 py-1 rounded-md bg-primary/10 text-ember-accent border border-primary/20">
                Sample
              </span>
            )}
@@ -215,7 +215,7 @@ const GuardianCard = ({
             <button
               onClick={handleHealthCheck}
               disabled={isSyncing}
-              className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all bg-success/10 text-[#166534] dark:text-[#4ade80] hover:bg-success/20 shadow-sm"
+              className="col-span-1 py-3 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all bg-success/10 text-ember-success hover:bg-success/20 shadow-sm"
             >
               {isHealthChecking ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : "Ping Status"}
             </button>
@@ -523,8 +523,8 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
             <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
 
             <div className="relative z-10 flex items-center gap-3">
-              <HeartPulse className="w-5 h-5 text-[#9a3412] dark:text-primary" />
-              <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-[#9a3412] dark:text-primary">
+              <HeartPulse className="w-5 h-5 text-ember-accent" />
+              <h4 className="font-bold uppercase tracking-widest text-xs tracking-[0.2em] text-ember-accent">
                 Ground With Nova
               </h4>
             </div>
@@ -535,7 +535,7 @@ export const NovaGuardianRelay = ({ contacts, onAdd, onRemove, userName }: NovaG
 
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'anxiety_reset' }))}
-              className="relative z-10 w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest bg-primary/10 hover:bg-primary/20 text-[#9a3412] dark:text-primary transition-colors"
+              className="relative z-10 w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest bg-primary/10 hover:bg-primary/20 text-ember-accent transition-colors"
             >
               Open Anxiety Reset <ArrowUpRight className="w-4 h-4" />
             </button>

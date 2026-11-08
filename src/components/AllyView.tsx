@@ -263,7 +263,7 @@ export const AllyView = ({ token }: { token: string }) => {
                       <span className="text-sm font-medium text-text-main">{goal.text}</span>
                     </div>
                     {goal.streak > 0 && (
-                      <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning flex items-center gap-1 shrink-0">
+                      <span className="text-[11px] font-black uppercase tracking-widest text-ember-warning flex items-center gap-1 shrink-0">
                         <Zap className="w-3 h-3" /> {goal.streak} day{goal.streak === 1 ? '' : 's'}
                       </span>
                     )}
@@ -334,7 +334,7 @@ export const AllyView = ({ token }: { token: string }) => {
             ) : (
               <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
                 {sendError && (
-                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{sendError}</div>
+                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{sendError}</div>
                 )}
                 {/* Non-pressuring Encouragement quick-replies: a one-tap
                     option for an ally who wants to show up without

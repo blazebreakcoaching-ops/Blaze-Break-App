@@ -1061,7 +1061,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
           {(selectedNeed || activeMode || activeGrounding || isPlaying) && (
             <button
               onClick={() => setShowResetConfirm(true)}
-              className="px-4 py-2 text-xs font-black uppercase tracking-widest text-destructive dark:text-[#f87171] hover:bg-destructive/10 border border-destructive/30 rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+              className="px-4 py-2 text-xs font-black uppercase tracking-widest text-ember-danger hover:bg-destructive/10 border border-destructive/30 rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Reset Studio
             </button>
@@ -1169,7 +1169,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
             <div className="flex flex-col gap-1.5 w-36">
               <div className="flex justify-between items-center text-xs uppercase tracking-wider font-black text-text-muted">
                 <span>Breathing Cue</span>
-                <span className="text-[11px] text-[#9a3412] dark:text-primary font-bold">{pacerSoundEnabled ? "Active" : "Disabled"}</span>
+                <span className="text-[11px] text-ember-accent font-bold">{pacerSoundEnabled ? "Active" : "Disabled"}</span>
               </div>
               <div className="flex items-center gap-3">
                 <label className="relative inline-flex items-center cursor-pointer select-none">
@@ -1319,7 +1319,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
         <div className="mb-8 p-6 rounded-xl border border-destructive/20 bg-destructive/5 space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="space-y-1 text-left">
-              <div className="flex items-center gap-2 text-destructive dark:text-[#f87171] font-black uppercase tracking-wider text-[10px]">
+              <div className="flex items-center gap-2 text-ember-danger font-black uppercase tracking-wider text-[10px]">
                 <ShieldAlert className="w-3.5 h-3.5" /> Feeling very overwhelmed right now?
               </div>
               <p className="text-xs text-text-muted max-w-xl leading-relaxed">
@@ -1509,7 +1509,7 @@ export const NervousSystemReset = ({ fingerprint, onAwardPoints }: NervousSystem
                           "w-8 h-8 rounded-full font-black flex items-center justify-center shrink-0 transition-colors",
                           isCompleted
                             ? "bg-success text-white"
-                            : "bg-primary/10 text-[#9a3412] dark:text-primary"
+                            : "bg-primary/10 text-ember-accent"
                         )}>
                           {isCompleted ? <CheckCircle2 className="w-5 h-5 text-text-main" /> : idx + 1}
                         </div>

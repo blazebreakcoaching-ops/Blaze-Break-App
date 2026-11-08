@@ -32,7 +32,7 @@ export const TrustCentrePage = ({ onBack, embedded = false }: TrustCentrePagePro
             </div>
             <div className="flex flex-col">
               <h1 className="font-display font-black text-lg tracking-tight text-text-main leading-none">Blaze Break</h1>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mt-1">Trust Centre</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-ember-accent mt-1">Trust Centre</span>
             </div>
           </div>
           <button
@@ -113,7 +113,7 @@ export const TrustCentrePage = ({ onBack, embedded = false }: TrustCentrePagePro
         {/* Policies */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-ember-accent rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Privacy Notice</h4>
                <p className="text-xs text-text-muted mt-1">How we process your personal data.</p>
@@ -121,7 +121,7 @@ export const TrustCentrePage = ({ onBack, embedded = false }: TrustCentrePagePro
            </div>
            
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><Server className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-ember-accent rounded-xl group-hover:scale-110 transition-transform"><Server className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Security Assessment</h4>
                <p className="text-xs text-text-muted mt-1">Our technical protection measures.</p>
@@ -129,7 +129,7 @@ export const TrustCentrePage = ({ onBack, embedded = false }: TrustCentrePagePro
            </div>
            
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-ember-accent rounded-xl group-hover:scale-110 transition-transform"><FileText className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Terms of Use</h4>
                <p className="text-xs text-text-muted mt-1">Rules and boundaries for the platform.</p>
@@ -137,7 +137,7 @@ export const TrustCentrePage = ({ onBack, embedded = false }: TrustCentrePagePro
            </div>
            
            <div className="p-6 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer border border-white/[0.05] flex items-center gap-4 group">
-             <div className="p-3 bg-primary/20 text-[#9a3412] dark:text-primary rounded-xl group-hover:scale-110 transition-transform"><Building className="w-5 h-5"/></div>
+             <div className="p-3 bg-primary/20 text-ember-accent rounded-xl group-hover:scale-110 transition-transform"><Building className="w-5 h-5"/></div>
              <div>
                <h4 className="text-text-main font-bold text-sm tracking-wide">Organisation Ethics</h4>
                <p className="text-xs text-text-muted mt-1">Agreement for sponsoring employers.</p>

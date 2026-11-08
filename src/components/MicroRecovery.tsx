@@ -530,7 +530,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints, isFocusActive }: Mic
               <Calendar className="w-5 h-5 text-primary" />
               Google Calendar Break Advisor
               {isDemoMode ? (
-                <span className="text-[11px] px-2 py-0.5 bg-primary/10 text-[#9a3412] dark:text-primary font-black uppercase tracking-widest rounded-full">Demo Simulation</span>
+                <span className="text-[11px] px-2 py-0.5 bg-primary/10 text-ember-accent font-black uppercase tracking-widest rounded-full">Demo Simulation</span>
               ) : (
                 <span className="text-[11px] px-2 py-0.5 bg-success/10 text-success dark:text-[#4ade80] font-black uppercase tracking-widest rounded-full">Live Connected</span>
               )}
@@ -596,7 +596,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints, isFocusActive }: Mic
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-warning/10 text-[#9a3412] dark:text-warning rounded-full">
+                      <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-warning/10 text-ember-warning rounded-full">
                         {s.sourceType === 'back_to_back' ? 'Back-to-Back Gap Risk' : 'Prolonged Focus Strain'}
                       </span>
                       <span className="text-xs font-mono text-text-muted">{s.timeLabel}</span>
@@ -697,7 +697,7 @@ export const MicroRecovery = ({ fingerprint, onAwardPoints, isFocusActive }: Mic
                     transition={{ delay: idx * 0.1 }}
                     className="flex items-start gap-4 bg-white/50 dark:bg-surface/50 p-4 rounded-xl border border-border/50"
                   >
-                    <div className="w-6 h-6 rounded-full bg-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-6 h-6 rounded-full bg-primary/20 text-ember-accent flex items-center justify-center shrink-0 mt-0.5">
                       <CheckCircle2 className="w-3 h-3 font-black" />
                     </div>
                     <span className="text-text-main font-bold text-lg">{detail}</span>

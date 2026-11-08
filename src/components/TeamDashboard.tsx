@@ -248,7 +248,7 @@ export const TeamDashboard = () => {
                       <p
                         ref={(el) => { el?.focus(); }}
                         tabIndex={-1}
-                        className="text-xs font-bold text-[#166534] dark:text-[#4ade80] pl-8"
+                        className="text-xs font-bold text-ember-success pl-8"
                       >
                         Logged - thank you.
                       </p>
@@ -267,7 +267,7 @@ export const TeamDashboard = () => {
                         <button
                           onClick={() => handleAcknowledge(entry.team)}
                           disabled={acknowledgingTeam === entry.team}
-                          className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50 flex items-center gap-1.5"
+                          className="text-xs font-bold text-ember-accent hover:opacity-70 disabled:opacity-50 flex items-center gap-1.5"
                         >
                           {acknowledgingTeam === entry.team ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                           Log that I addressed this

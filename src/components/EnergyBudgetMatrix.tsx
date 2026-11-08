@@ -716,12 +716,12 @@ const EnergyAuditCard = ({
                   <span className="text-[10px] text-text-muted">·</span>
                   <span className="text-[11px] uppercase tracking-widest text-text-muted font-black">{STRESSOR_SEVERITY_LABELS[s.severity]} · {STRESSOR_PERSISTENCE_LABELS[s.persistence]}</span>
                   {s.reduction && s.reduction !== 'not_yet' && (
-                    <span className="text-[10px] uppercase tracking-widest font-black text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] uppercase tracking-widest font-black text-ember-accent bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded">
                       {REDUCTION_LEVEL_LABELS[s.reduction]} reduced
                     </span>
                   )}
                   {s.isSample && (
-                    <span className="text-[10px] uppercase tracking-widest font-black text-[#9a3412] dark:text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded">Sample</span>
+                    <span className="text-[10px] uppercase tracking-widest font-black text-ember-accent bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded">Sample</span>
                   )}
                 </div>
               </div>

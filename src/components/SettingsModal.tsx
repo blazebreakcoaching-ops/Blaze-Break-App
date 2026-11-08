@@ -407,7 +407,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label htmlFor="settings-fullname" className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Full Name <span className="text-destructive dark:text-[#f87171]">*</span></label>
+                    <label htmlFor="settings-fullname" className="text-xs font-black uppercase tracking-widest text-text-muted px-1">Full Name <span className="text-ember-danger">*</span></label>
                     <input
                       id="settings-fullname"
                       type="text"
@@ -425,7 +425,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                           : "border-border dark:border-border focus:border-primary dark:focus:border-primary focus:ring-2 focus:ring-primary/20"
                       )}
                     />
-                    {errors.fullName && <p id="settings-fullname-error" role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.fullName}</p>}
+                    {errors.fullName && <p id="settings-fullname-error" role="alert" className="text-xs text-ember-danger px-1 font-medium">{errors.fullName}</p>}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -472,7 +472,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                       )}
                     />
                     {errors.email ? (
-                      <p id="settings-manager-email-error" role="alert" className="text-xs text-destructive dark:text-[#f87171] px-1 font-medium">{errors.email}</p>
+                      <p id="settings-manager-email-error" role="alert" className="text-xs text-ember-danger px-1 font-medium">{errors.email}</p>
                     ) : (
                       <p className="text-[11px] text-text-muted italic px-1 pt-1">
                         This is optional profile information. Blaze Break will not automatically contact this person or send wellbeing alerts.
@@ -514,7 +514,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                   <button
                     type="button"
                     onClick={onOpenPrivacyCentre}
-                    className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline"
+                    className="text-xs font-bold text-ember-accent hover:underline"
                   >
                     Open full Privacy Centre &rarr;
                   </button>
@@ -654,7 +654,7 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                      <p role="status" className="text-xs font-semibold text-success dark:text-[#4ade80]">Request sent securely. You'll receive an email shortly.</p>
                    )}
                    {deletionRequestStatus === 'error' && (
-                     <p role="alert" className="text-xs font-semibold text-destructive dark:text-[#f87171]">Couldn't send that request. You can also email us directly at support@blazebreak.app</p>
+                     <p role="alert" className="text-xs font-semibold text-ember-danger">Couldn't send that request. You can also email us directly at support@blazebreak.app</p>
                    )}
                  </div>
               </div>

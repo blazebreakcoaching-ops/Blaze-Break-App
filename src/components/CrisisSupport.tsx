@@ -72,8 +72,8 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
             >
               {alertsEnabled ? (
                 <div className="space-y-1.5 text-left">
-                  <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Ask {g.name} to call me</span>
-                  <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Sends a text asking them to call you right now</span>
+                  <span className="text-sm font-bold text-ember-accent block">Ask {g.name} to call me</span>
+                  <span className="text-[11px] font-black uppercase tracking-widest text-ember-accent font-mono">Sends a text asking them to call you right now</span>
                 </div>
               ) : (
                 <div className="space-y-1.5 text-left">
@@ -88,7 +88,7 @@ const GuardianQuickAction = ({ guardians }: { guardians: GuardianForCrisisAction
               )}
             </button>
             {result && (
-              <p role="status" className={cn("text-xs px-1", result.ok ? "text-text-muted" : "text-destructive dark:text-[#f87171]")}>
+              <p role="status" className={cn("text-xs px-1", result.ok ? "text-text-muted" : "text-ember-danger")}>
                 {result.ok && <CheckCircle2 className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />}
                 {result.text}
               </p>
@@ -105,15 +105,15 @@ const UkIrelandBlock = () => (
     <h5 className="text-[11px] font-black uppercase tracking-widest text-text-muted ml-1">If you're in the UK or Ireland</h5>
     <a href="tel:116123" className="flex items-center justify-between p-4 rounded-xl border border-warning/20 dark:border-warning-foreground/30 bg-warning/10 dark:bg-warning-foreground/20 hover:bg-warning/20 dark:hover:bg-warning-foreground/40 transition-colors group">
       <div className="space-y-1.5">
-        <span className="text-sm font-bold text-[#9a3412] dark:text-warning block">Samaritans</span>
-        <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning font-mono">Call 116 123 &middot; free &middot; 24/7</span>
+        <span className="text-sm font-bold text-ember-warning block">Samaritans</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-ember-warning font-mono">Call 116 123 &middot; free &middot; 24/7</span>
       </div>
-      <PhoneCall className="w-5 h-5 text-[#9a3412] dark:text-warning group-hover:scale-110 transition-transform shrink-0" />
+      <PhoneCall className="w-5 h-5 text-ember-warning group-hover:scale-110 transition-transform shrink-0" />
     </a>
     <a href="sms:85258?body=SHOUT" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
       <div className="space-y-1.5">
-        <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Shout</span>
-        <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Text "SHOUT" to 85258</span>
+        <span className="text-sm font-bold text-ember-accent block">Shout</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-ember-accent font-mono">Text "SHOUT" to 85258</span>
       </div>
       <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform shrink-0" />
     </a>
@@ -139,8 +139,8 @@ const UsCanadaBlock = () => (
     </a>
     <a href="sms:741741?body=HOME" className="flex items-center justify-between p-4 rounded-xl border border-primary-light dark:border-primary-dark/30 bg-primary-light dark:bg-primary-dark/20 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors group">
       <div className="space-y-1.5">
-        <span className="text-sm font-bold text-[#9a3412] dark:text-primary block">Crisis Text Line</span>
-        <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono">Text "HOME" to 741741</span>
+        <span className="text-sm font-bold text-ember-accent block">Crisis Text Line</span>
+        <span className="text-[11px] font-black uppercase tracking-widest text-ember-accent font-mono">Text "HOME" to 741741</span>
       </div>
       <MessageCircle className="w-5 h-5 text-primary group-hover:scale-110 transition-transform shrink-0" />
     </a>

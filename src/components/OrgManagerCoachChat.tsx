@@ -170,7 +170,7 @@ export const OrgManagerCoachChat = ({ orgId, seedMessage, onSeedConsumed }: OrgM
       )}
 
       {error && (
-        <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{error}</div>
+        <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{error}</div>
       )}
 
       <div className="flex items-center gap-2">

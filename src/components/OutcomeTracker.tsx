@@ -98,7 +98,7 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
                  <kpi.icon className="w-5 h-5" />
                </div>
                {kpi.tracked && (
-                 <div className="px-2 py-1 rounded bg-success/10 text-[#166534] dark:text-[#4ade80] text-xs font-bold flex items-center gap-1">
+                 <div className="px-2 py-1 rounded bg-success/10 text-ember-success text-xs font-bold flex items-center gap-1">
                    <ArrowUpRight className="w-3 h-3" />
                    {kpi.value}
                  </div>
@@ -165,7 +165,7 @@ export const OutcomeTracker = ({ fingerprint }: OutcomeTrackerProps) => {
                 <h3 className="text-xl font-display font-bold text-text-main">Boundary Activity</h3>
                 <p className="text-sm text-text-muted mt-1 uppercase tracking-widest font-bold">6-Week Trajectory</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-warning/10 text-[#9a3412] dark:text-warning flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-warning/10 text-ember-warning flex items-center justify-center">
                 <Shield className="w-5 h-5" />
               </div>
            </div>

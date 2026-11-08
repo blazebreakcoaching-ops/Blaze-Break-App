@@ -38,10 +38,10 @@ const SOLID_BG_TEXT: Record<string, string> = {
   'text-text-muted': 'text-text-main',
 };
 const CARD_TEXT: Record<string, string> = {
-  'text-destructive': 'text-destructive dark:text-[#f87171]',
-  'text-success': 'text-[#166534] dark:text-[#4ade80]',
-  'text-primary': 'text-[#9a3412] dark:text-primary',
-  'text-warning': 'text-[#9a3412] dark:text-warning',
+  'text-destructive': 'text-ember-danger',
+  'text-success': 'text-ember-success',
+  'text-primary': 'text-ember-accent',
+  'text-warning': 'text-ember-warning',
   'text-text-muted': 'text-text-muted',
 };
 

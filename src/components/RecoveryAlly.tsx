@@ -480,7 +480,7 @@ export const RecoveryAlly = () => {
           <div className="bg-surface border border-destructive/20 p-4 rounded-lg flex gap-3 text-xs text-text-muted max-w-lg">
             <AlertTriangle className="w-5 h-5 text-destructive/80 dark:text-[#f87171] shrink-0" />
             <div>
-              <strong className="text-destructive dark:text-[#f87171]">This isn't for crises.</strong> It's for everyday accountability. If you're in crisis or need immediate support, use <em className="text-text-muted">Guardian Relay</em> instead.
+              <strong className="text-ember-danger">This isn't for crises.</strong> It's for everyday accountability. If you're in crisis or need immediate support, use <em className="text-text-muted">Guardian Relay</em> instead.
             </div>
           </div>
         </div>
@@ -912,7 +912,7 @@ export const RecoveryAlly = () => {
                           <span className={cn("text-sm font-bold transition-all block", completedToday ? "text-text-muted line-through" : "text-text-main")}>{goal.text}</span>
                           <div className="flex items-center gap-3 mt-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
                             <span className="text-[11px] font-black uppercase tracking-widest text-text-muted">{goal.category}</span>
-                            {streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning flex items-center gap-1"><Zap className="w-3 h-3" /> {streak} Day Streak</span>}
+                            {streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-ember-warning flex items-center gap-1"><Zap className="w-3 h-3" /> {streak} Day Streak</span>}
                           </div>
                         </div>
                       </div>
@@ -955,7 +955,7 @@ export const RecoveryAlly = () => {
                     className="flex gap-4"
                   >
                     <div className="flex flex-col items-center">
-                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 text-xs", enc.type === 'system' ? "bg-border dark:bg-surface border-border text-text-muted" : "bg-primary-light dark:bg-primary/20 border-primary-light dark:border-primary/30 text-[#9a3412] dark:text-primary")}>
+                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 text-xs", enc.type === 'system' ? "bg-border dark:bg-surface border-border text-text-muted" : "bg-primary-light dark:bg-primary/20 border-primary-light dark:border-primary/30 text-ember-accent")}>
                         {enc.type === 'system' ? <Clock className="w-3.5 h-3.5" /> : allyName.charAt(0)}
                       </div>
                       {i !== encouragements.length - 1 && <div className="w-px h-full bg-border mt-2" />}
@@ -1035,7 +1035,7 @@ export const RecoveryAlly = () => {
                       ) : previewData.sharedGoals.map((goal) => (
                         <div key={goal.id} className={cn("flex items-center justify-between p-3 rounded-xl border", goal.completedToday ? "bg-success/5 border-success/20" : "bg-surface border-border")}>
                           <span className="text-sm font-medium text-text-main">{goal.text}</span>
-                          {goal.streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning">{goal.streak} day{goal.streak === 1 ? '' : 's'}</span>}
+                          {goal.streak > 0 && <span className="text-[11px] font-black uppercase tracking-widest text-ember-warning">{goal.streak} day{goal.streak === 1 ? '' : 's'}</span>}
                         </div>
                       ))}
                     </div>

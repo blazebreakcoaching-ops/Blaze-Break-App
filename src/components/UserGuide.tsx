@@ -205,12 +205,12 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
         </p>
         <div className="bg-card border border-border p-5 rounded-lg max-w-2xl mb-5">
           <p className="text-sm text-text-main leading-relaxed">
-            <strong className="text-[#9a3412] dark:text-primary">The minimum that still counts:</strong> open Blaze Break, look at your{' '}
+            <strong className="text-ember-accent">The minimum that still counts:</strong> open Blaze Break, look at your{' '}
             {onNavigate ? (
               <button
                 type="button"
                 onClick={() => onNavigate('home')}
-                className="underline decoration-dashed decoration-primary/50 underline-offset-2 text-[#9a3412] dark:text-primary hover:opacity-80"
+                className="underline decoration-dashed decoration-primary/50 underline-offset-2 text-ember-accent hover:opacity-80"
               >
                 Pulse screen
               </button>
@@ -236,7 +236,7 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
             { n: 3, t: 'Look at your Recovery Plan', d: 'A small, specific starting point based on your Check-in — a suggestion, not an instruction.', tab: 'plan' },
           ].map((s) => (
             <div key={s.n} className="flex items-start gap-4">
-              <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 text-sm font-bold font-display">
+              <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 text-ember-accent flex items-center justify-center shrink-0 text-sm font-bold font-display">
                 {s.n}
               </div>
               <div>
@@ -246,7 +246,7 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                   <button
                     type="button"
                     onClick={() => onNavigate(s.tab as string)}
-                    className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                    className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-ember-accent hover:underline"
                   >
                     Go there <ArrowRight className="w-3 h-3" />
                   </button>
@@ -268,7 +268,7 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                 const Icon = f.icon;
                 return (
                   <div key={f.tab} className="rounded-xl bg-card border border-border p-5 flex flex-col">
-                    <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0 mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-ember-accent flex items-center justify-center shrink-0 mb-3">
                       <Icon className="w-4 h-4" />
                     </div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-text-muted mb-1">{f.tag}</p>
@@ -299,7 +299,7 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                     {onNavigate && (
                       <button
                         onClick={() => onNavigate(f.tab)}
-                        className="mt-4 self-start flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                        className="mt-4 self-start flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-ember-accent hover:underline"
                       >
                         Open <ArrowRight className="w-3 h-3" />
                       </button>
@@ -332,7 +332,7 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                         key={link.label}
                         type="button"
                         onClick={() => onNavigate(link.tab as string)}
-                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-ember-accent hover:underline"
                       >
                         {link.label} <ArrowRight className="w-3 h-3" />
                       </button>
@@ -340,7 +340,7 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
                       <a
                         key={link.label}
                         href={link.href}
-                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:underline"
+                        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-ember-accent hover:underline"
                       >
                         {link.label} <ArrowRight className="w-3 h-3" />
                       </a>
@@ -355,24 +355,24 @@ export const UserGuide = ({ onNavigate }: { onNavigate?: (tab: string) => void }
 
       {/* Crisis support */}
       <div id="crisis-support" className="bg-surface border border-destructive/20 p-6 rounded-xl max-w-2xl scroll-mt-6">
-        <p className="text-[11px] font-black uppercase tracking-widest text-destructive dark:text-[#f87171] mb-2">Always reachable, from anywhere in the app</p>
+        <p className="text-[11px] font-black uppercase tracking-widest text-ember-danger mb-2">Always reachable, from anywhere in the app</p>
         <h4 className="text-sm font-bold text-text-main mb-2">If things feel urgent right now</h4>
         <p className="text-xs text-text-muted leading-relaxed mb-4">
           The Crisis Support button is available on every screen. From there you can also ask a Recovery Ally guardian to call you, with one tap.
         </p>
         <div className="flex flex-wrap gap-3 text-xs">
           <a href="tel:116123" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:border-destructive/40 transition-colors">
-            <PhoneCall className="w-3.5 h-3.5 text-destructive dark:text-[#f87171]" />
+            <PhoneCall className="w-3.5 h-3.5 text-ember-danger" />
             <span className="font-bold text-text-main">Samaritans</span>
             <span className="text-text-muted">116 123 &middot; free &middot; 24/7</span>
           </a>
           <a href="sms:85258&body=SHOUT" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:border-destructive/40 transition-colors">
-            <MessageSquare className="w-3.5 h-3.5 text-destructive dark:text-[#f87171]" />
+            <MessageSquare className="w-3.5 h-3.5 text-ember-danger" />
             <span className="font-bold text-text-main">Shout</span>
             <span className="text-text-muted">Text "SHOUT" to 85258</span>
           </a>
           <a href="tel:999" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:border-destructive/40 transition-colors">
-            <PhoneCall className="w-3.5 h-3.5 text-destructive dark:text-[#f87171]" />
+            <PhoneCall className="w-3.5 h-3.5 text-ember-danger" />
             <span className="font-bold text-text-main">Immediate danger</span>
             <span className="text-text-muted">Call 999</span>
           </a>

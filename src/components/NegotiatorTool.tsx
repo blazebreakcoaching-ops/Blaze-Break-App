@@ -150,8 +150,8 @@ export const NegotiatorTool = () => {
             </div>
 
             <div className="p-4 bg-warning/10 border border-warning/20 rounded-xl flex gap-3 text-left">
-              <AlertTriangle className="w-5 h-5 text-[#9a3412] dark:text-warning shrink-0" />
-              <p className="text-xs text-[#9a3412] dark:text-warning uppercase font-black leading-tight tracking-wide">
+              <AlertTriangle className="w-5 h-5 text-ember-warning shrink-0" />
+              <p className="text-xs text-ember-warning uppercase font-black leading-tight tracking-wide">
                 NEGOTIATION TIP: If they push back, immediately pivot to a "priority swap" question. Do not apologise for the budget.
               </p>
             </div>

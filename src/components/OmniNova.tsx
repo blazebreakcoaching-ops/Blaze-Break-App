@@ -313,7 +313,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNova
             <div className="flex items-center justify-between p-4 bg-card border-b border-border">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-[#9a3412] dark:text-primary" />
+                  <Sparkles className="w-4 h-4 text-ember-accent" />
                 </div>
                 <div>
                   <h4 id="omninova-panel-title" className="text-sm font-bold text-text-main leading-none">Nova Over-watch</h4>
@@ -418,7 +418,7 @@ export const OmniNova = ({ activeTab, fingerprint, stats, onNavigate }: OmniNova
                     exit={{ opacity: 0, y: 8 }}
                     className="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-1.5"
                   >
-                    <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-ember-accent flex items-center gap-1">
                       <Sparkles className="w-3 h-3" aria-hidden="true" /> Nova suggests
                     </span>
                     <p className="text-xs font-bold text-text-main">{activeToolSuggestion.label}</p>

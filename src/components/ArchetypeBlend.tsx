@@ -81,7 +81,7 @@ export const ArchetypeBlend = () => {
               >
                 <span className={cn(
                   "text-xs font-bold w-10 text-right shrink-0",
-                  i === 0 ? "text-[#9a3412] dark:text-primary" : "text-text-muted"
+                  i === 0 ? "text-ember-accent" : "text-text-muted"
                 )}>
                   {b.percentage}%
                 </span>

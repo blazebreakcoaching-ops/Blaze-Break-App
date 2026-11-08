@@ -745,7 +745,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                               <Lightbulb className="w-4 h-4" />
                             </div>
                             <div>
-                              <span className="text-xs font-black uppercase tracking-widest text-[#9a3412] dark:text-primary block mb-1">{s.theme}</span>
+                              <span className="text-xs font-black uppercase tracking-widest text-ember-accent block mb-1">{s.theme}</span>
                               <p className="text-sm font-medium text-text-main">"{s.text}"</p>
                             </div>
                           </div>
@@ -778,7 +778,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                         <span className="text-[11px] uppercase tracking-widest font-black text-text-muted block mb-1">{action.category}</span>
                         <p className="text-xs font-bold text-text-main mb-3 group-hover:text-[#9a3412] dark:group-hover:text-primary transition-colors">{action.title}</p>
                         <div className="flex gap-2">
-                          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-[#166534] dark:text-[#4ade80]" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
+                          <span className={cn("text-[11px] px-1.5 py-0.5 rounded", action.impact === 'High' ? "bg-success/20 text-ember-success" : "bg-surface text-text-muted")}>Impact: {action.impact}</span>
                           <span className={cn("text-[11px] px-1.5 py-0.5 rounded bg-surface text-text-muted")}>Effort: {action.effort}</span>
                         </div>
                       </button>
@@ -811,7 +811,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
             </div>
 
             {(governanceError || auditLogsError) && (
-              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-sm rounded-xl">
                 {governanceError || auditLogsError}
               </div>
             )}
@@ -825,7 +825,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                   <p className="text-sm text-text-muted">
                     Aggregate dashboards across this org stay locked below <strong className="text-text-main">{governanceData.privacyThreshold} people</strong>.
                   </p>
-                  <button onClick={() => setActiveSubTab('team')} className="text-xs font-bold text-[#9a3412] dark:text-primary hover:underline">
+                  <button onClick={() => setActiveSubTab('team')} className="text-xs font-bold text-ember-accent hover:underline">
                     Change this in Team &amp; Settings →
                   </button>
                 </div>
@@ -924,7 +924,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
               </div>
               <a
                 href="mailto:support@blazebreak.app?subject=Enterprise%20agreement%20enquiry"
-                className="inline-flex items-center gap-2 text-xs font-bold text-[#9a3412] dark:text-primary hover:underline"
+                className="inline-flex items-center gap-2 text-xs font-bold text-ember-accent hover:underline"
               >
                 <Mail className="w-3.5 h-3.5" /> Contact us about enterprise agreements
               </a>
@@ -935,7 +935,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
         {activeSubTab === 'team' && (
           <motion.div key="team" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-8 pb-24">
             {membersError && (
-              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">{membersError}</div>
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-sm rounded-xl">{membersError}</div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -986,7 +986,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                                 onClick={() => handleSetTeam(member.uid, teamInputValue.trim() || null)}
                                 disabled={savingTeamUid === member.uid}
                                 aria-label="Save team"
-                                className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50"
+                                className="text-xs font-bold text-ember-accent hover:opacity-70 disabled:opacity-50"
                               >
                                 {savingTeamUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
                               </button>
@@ -1024,7 +1024,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                                 onClick={() => handleSetManagesTeams(member.uid, managesInputValue.split(',').map(t => t.trim()).filter(Boolean))}
                                 disabled={savingManagesUid === member.uid}
                                 aria-label="Save managed teams"
-                                className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 disabled:opacity-50"
+                                className="text-xs font-bold text-ember-accent hover:opacity-70 disabled:opacity-50"
                               >
                                 {savingManagesUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
                               </button>
@@ -1061,7 +1061,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                               onClick={() => handleRevokeAdmin(member.uid)}
                               disabled={memberActionUid === member.uid}
                               aria-label={`Revoke admin access for ${member.displayName || member.email || 'this person'}`}
-                              className="text-xs font-bold text-[#9a3412] dark:text-primary hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
+                              className="text-xs font-bold text-ember-accent hover:opacity-70 transition-opacity flex items-center gap-1 disabled:opacity-50"
                               title="Revoke admin access"
                             >
                               {memberActionUid === member.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -1163,7 +1163,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                 <div className="card space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-text-main text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> Invite by Email</h4>
-                    <label className="text-[11px] font-bold uppercase tracking-widest text-[#9a3412] dark:text-primary hover:opacity-80 transition-opacity cursor-pointer flex items-center gap-1">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-ember-accent hover:opacity-80 transition-opacity cursor-pointer flex items-center gap-1">
                       <Upload className="w-3.5 h-3.5" /> Upload CSV
                       <input
                         type="file"
@@ -1180,10 +1180,10 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                   <p className="text-xs text-text-muted">One email per line, or separated by commas. Up to 50 at once. Pending invitations reserve staff seats, even when delivery fails.</p>
                   <p className="text-xs text-text-muted">Each new email invitation has a separate seven-day code for that verified email. Resending or cancelling invalidates the previous personal code. The manual company code above remains separate; regenerate it if you need to revoke older shared codes.</p>
                   {csvError && (
-                    <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-lg">{csvError}</div>
+                    <div role="alert" className="p-2.5 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-lg">{csvError}</div>
                   )}
                   {inviteResult && (
-                    <div role="status" aria-live="polite" className="p-2.5 bg-primary/5 border border-primary/20 text-[#9a3412] dark:text-primary text-xs rounded-lg">{inviteResult}</div>
+                    <div role="status" aria-live="polite" className="p-2.5 bg-primary/5 border border-primary/20 text-ember-accent text-xs rounded-lg">{inviteResult}</div>
                   )}
                   <textarea
                     value={inviteEmails}
@@ -1212,7 +1212,7 @@ export const OrgDashboard = ({ onNavigate }: { onNavigate?: (tab: string) => voi
                               <span className="text-[10px] text-warning uppercase font-bold">Expired — resend</span>
                             )}
                             {!invite.emailSent && (
-                              <span className="text-[10px] text-[#9a3412] dark:text-warning uppercase font-bold">No email sent</span>
+                              <span className="text-[10px] text-ember-warning uppercase font-bold">No email sent</span>
                             )}
                             <button
                               onClick={() => handleResendInvite(invite.email)}

@@ -357,7 +357,7 @@ export const OrgDashboardMoments = () => {
                       <p className="text-xs text-text-main leading-relaxed flex-1">{s}</p>
                       <button
                         onClick={() => setNewMessage(s)}
-                        className="shrink-0 text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-warning hover:underline"
+                        className="shrink-0 text-[10px] font-black uppercase tracking-widest text-ember-warning hover:underline"
                       >
                         Use this
                       </button>
@@ -394,7 +394,7 @@ export const OrgDashboardMoments = () => {
             </div>
 
             {wallError && (
-              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{wallError}</div>
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{wallError}</div>
             )}
 
             {wallLoading ? (
@@ -445,7 +445,7 @@ export const OrgDashboardMoments = () => {
                       )
                     )}
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-[#9a3412] dark:text-warning">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-warning/20 text-ember-warning">
                         <Heart className="w-4 h-4" />
                       </div>
                       <div>
@@ -460,7 +460,7 @@ export const OrgDashboardMoments = () => {
                       aria-label={`${item.reacted ? 'Remove reaction from' : 'React to'} recognition from ${item.from}`}
                       className={cn(
                         "mt-4 flex items-center gap-1.5 text-xs font-bold transition-colors",
-                        item.reacted ? "text-[#9a3412] dark:text-warning" : "text-text-muted hover:text-warning"
+                        item.reacted ? "text-ember-warning" : "text-text-muted hover:text-warning"
                       )}
                     >
                       <ThumbsUp className={cn("w-3.5 h-3.5", item.reacted && "fill-current")} />
@@ -477,7 +477,7 @@ export const OrgDashboardMoments = () => {
           <motion.div key="challenges" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6">
             <div className="card border-dashed border-border bg-surface dark:bg-surface/20">
               <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-4 h-4 text-[#9a3412] dark:text-warning" />
+                <AlertTriangle className="w-4 h-4 text-ember-warning" />
                 <span className="text-xs font-bold text-text-main">No leaderboards. No humiliation.</span>
               </div>
               <p className="text-sm text-text-muted">
@@ -489,7 +489,7 @@ export const OrgDashboardMoments = () => {
               <div className="card space-y-4">
                 <h4 className="font-bold text-text-main flex items-center gap-2"><Target className="w-4 h-4 text-primary" /> Start a Challenge</h4>
                 {challengesError && (
-                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{challengesError}</div>
+                  <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{challengesError}</div>
                 )}
                 <input
                   type="text"
@@ -520,7 +520,7 @@ export const OrgDashboardMoments = () => {
             )}
 
             {!isOrgAdmin && challengesError && (
-              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-xs rounded-xl">{challengesError}</div>
+              <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-xs rounded-xl">{challengesError}</div>
             )}
 
             {challengesLoading ? (
@@ -584,7 +584,7 @@ export const OrgDashboardMoments = () => {
                             )}
                             <span className={cn(
                               "text-xs font-bold uppercase tracking-widest px-2 py-1 rounded",
-                              challenge.joined ? "text-[#166534] dark:text-[#4ade80] bg-success/10" : "text-text-muted bg-surface"
+                              challenge.joined ? "text-ember-success bg-success/10" : "text-text-muted bg-surface"
                             )}>
                               {challenge.joined ? 'Joined' : 'Not Joined'}
                             </span>
@@ -692,7 +692,7 @@ export const OrgDashboardMoments = () => {
                                }
                              }}
                              disabled={!orgId}
-                             className="text-xs text-[#9a3412] dark:text-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20 disabled:opacity-40"
+                             className="text-xs text-ember-warning bg-warning/10 dark:bg-warning/10 px-2 py-1 rounded border border-warning/30 dark:border-warning/20 font-bold hover:bg-warning/20 dark:hover:bg-warning/20 disabled:opacity-40"
                            >
                              Share to Wall
                            </button>

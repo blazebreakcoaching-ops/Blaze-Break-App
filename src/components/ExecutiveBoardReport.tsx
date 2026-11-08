@@ -157,7 +157,7 @@ export const ExecutiveBoardReport = ({
             <FileText className="w-48 h-48" />
           </div>
           <div className="relative z-10">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary mb-4 flex items-center gap-2">
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-ember-accent mb-4 flex items-center gap-2">
               <Activity className="w-4 h-4" /> Nova AI Analysis
             </h3>
             <p className="text-lg leading-relaxed text-text-main font-serif">
@@ -176,7 +176,7 @@ export const ExecutiveBoardReport = ({
                 next to "Coach Nova", attributing the AI's analysis to them,
                 and fell back to a stranger's photo from an external avatar
                 service when they had none. */}
-            <div className="w-10 h-10 rounded-full border border-border bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center shrink-0" aria-hidden="true">
+            <div className="w-10 h-10 rounded-full border border-border bg-primary/10 text-ember-accent flex items-center justify-center shrink-0" aria-hidden="true">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
@@ -253,7 +253,7 @@ export const ExecutiveBoardReport = ({
           >
             <div className="relative z-10 space-y-6 text-left">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary/15 border border-primary/20 rounded-lg flex items-center justify-center text-[#9a3412] dark:text-primary">
+                <div className="w-10 h-10 bg-primary/15 border border-primary/20 rounded-lg flex items-center justify-center text-ember-accent">
                   <Layers className="w-5 h-5" />
                 </div>
                 <div>

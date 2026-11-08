@@ -8,9 +8,9 @@ import {
 } from '../../calendar-workload-defence-engine';
 
 const LEVEL_BADGE_CLASSES: Record<RedZone['level'], string> = {
-  high: 'bg-destructive/10 text-destructive dark:text-[#f87171] border-destructive/20',
-  moderate: 'bg-warning/10 text-[#9a3412] dark:text-warning border-warning/20',
-  none: 'bg-success/10 text-[#166534] dark:text-[#4ade80] border-success/20',
+  high: 'bg-destructive/10 text-ember-danger border-destructive/20',
+  moderate: 'bg-warning/10 text-ember-warning border-warning/20',
+  none: 'bg-success/10 text-ember-success border-success/20',
 };
 
 const LEVEL_LABELS: Record<RedZone['level'], string> = { high: 'High', moderate: 'Moderate', none: 'Clear' };
@@ -126,7 +126,7 @@ export const CalendarDefenseView = ({ isDemoSession, onNavigate }: { isDemoSessi
 
       {fresh && signal && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-bold tracking-wide ${elevated ? 'bg-destructive/10 border border-destructive/20 text-destructive' : 'bg-success/10 border border-success/20 text-[#166534] dark:text-[#4ade80]'}`}>
+          <div className={`px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-bold tracking-wide ${elevated ? 'bg-destructive/10 border border-destructive/20 text-destructive' : 'bg-success/10 border border-success/20 text-ember-success'}`}>
             {elevated ? <AlertTriangle className="w-5 h-5 shrink-0" /> : <CheckCircle2 className="w-5 h-5 shrink-0" />}
             {elevated
               ? `Based on your last ${signal.windowDays} days - one or more load patterns are elevated.`

@@ -48,9 +48,9 @@ const CATEGORY_ICON: Record<HabitCategory, React.ElementType> = {
 // dedicated "sleep" token, so this borrows the nearest existing precedent
 // rather than inventing an unpaired one-off color.
 const CATEGORY_COLOR: Record<HabitCategory, string> = {
-  Focus: 'text-[#9a3412] dark:text-primary bg-primary/10 border-primary/20',
-  Boundaries: 'text-[#9a3412] dark:text-warning bg-warning/10 border-warning/20',
-  Energy: 'text-[#166534] dark:text-[#4ade80] bg-success/10 border-success/20',
+  Focus: 'text-ember-accent bg-primary/10 border-primary/20',
+  Boundaries: 'text-ember-warning bg-warning/10 border-warning/20',
+  Energy: 'text-ember-success bg-success/10 border-success/20',
   Somatic: 'text-info dark:text-info bg-info/10 border-info/20',
   Sleep: 'text-indigo-700 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
 };
@@ -264,7 +264,7 @@ export const WeeklyGoalTracker = ({ onAwardPoints }: WeeklyGoalTrackerProps) => 
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {met && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#166534] dark:text-[#4ade80] bg-success/10 border border-success/20 px-2 py-1 rounded-full">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-ember-success bg-success/10 border border-success/20 px-2 py-1 rounded-full">
                           <Trophy className="w-3 h-3" aria-hidden="true" /> +{GOAL_COMPLETION_XP} XP
                         </span>
                       )}

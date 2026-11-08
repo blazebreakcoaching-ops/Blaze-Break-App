@@ -264,7 +264,7 @@ export const DataPrivacyDashboard = ({
                         <p className="text-xs text-text-muted leading-relaxed">{point.description}</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs uppercase font-black tracking-widest text-[#9a3412] dark:text-primary">How Nova uses it</p>
+                        <p className="text-xs uppercase font-black tracking-widest text-ember-accent">How Nova uses it</p>
                         <p className="text-xs text-[#9a3412] dark:text-primary-light/70 leading-relaxed font-mono">{point.novaUsage}</p>
                       </div>
                     </div>

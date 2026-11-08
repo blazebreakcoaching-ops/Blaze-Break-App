@@ -173,7 +173,7 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
           {activeTab === 'cost' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
               {error && (
-                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-destructive dark:text-[#f87171] text-sm rounded-xl">{error}</div>
+                <div role="alert" className="p-3 bg-destructive/10 border border-destructive/20 text-ember-danger text-sm rounded-xl">{error}</div>
               )}
 
               {!isOrgAdmin && !costInputs ? (
@@ -256,10 +256,10 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                     <div className="card border-primary/20 shadow-xl shadow-primary/5 bg-primary/5">
                       <div className="flex items-center gap-2 mb-2">
                         <Building className="w-4 h-4 text-primary" />
-                        <span className="text-xs uppercase tracking-widest font-bold text-[#9a3412] dark:text-primary">Total Annual Cost</span>
+                        <span className="text-xs uppercase tracking-widest font-bold text-ember-accent">Total Annual Cost</span>
                       </div>
-                      <p className="text-2xl font-display font-bold text-[#9a3412] dark:text-primary mb-1">{estimatedAnnualCost != null ? `£${estimatedAnnualCost.toLocaleString()}` : '—'}</p>
-                      <p className="text-xs text-[#9a3412] dark:text-primary leading-relaxed hidden sm:block">Sickness days × your entered daily cost per employee.</p>
+                      <p className="text-2xl font-display font-bold text-ember-accent mb-1">{estimatedAnnualCost != null ? `£${estimatedAnnualCost.toLocaleString()}` : '—'}</p>
+                      <p className="text-xs text-ember-accent leading-relaxed hidden sm:block">Sickness days × your entered daily cost per employee.</p>
                     </div>
                   </div>
 
@@ -323,7 +323,7 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                       These practices are generally associated with lower stress-related absence — not a promise specific to your numbers above, since we don't have enough data to model your organisation's specific response.
                     </p>
                     <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl">
-                      <p className="text-xs text-[#9a3412] dark:text-primary font-medium leading-relaxed">
+                      <p className="text-xs text-ember-accent font-medium leading-relaxed">
                         Reduce unnecessary meeting load, introduce weekly appreciation rituals, and protect uninterrupted recovery breaks. Update your figures above periodically — the chart tracks whether the cost per employee actually moves for your team.
                       </p>
                     </div>
@@ -338,13 +338,13 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
               <div className="flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/3 space-y-4">
                   <div className="card border-primary/20 bg-primary/5">
-                    <h4 className="font-bold text-[#9a3412] dark:text-primary mb-2">Management Savings Planner</h4>
-                    <p className="text-xs text-[#9a3412] dark:text-primary mb-6 leading-relaxed">
+                    <h4 className="font-bold text-ember-accent mb-2">Management Savings Planner</h4>
+                    <p className="text-xs text-ember-accent mb-6 leading-relaxed">
                       A general 30/60/90-day framework for addressing common pressure signals — a starting structure, not one generated from your specific data.
                     </p>
                     {costTrend === 'rising' && (
                       <div className="mb-4 p-3 bg-white dark:bg-card border border-primary/20 rounded-lg flex items-start gap-2">
-                        <TrendingUp className="w-4 h-4 text-[#9a3412] dark:text-primary shrink-0 mt-0.5" />
+                        <TrendingUp className="w-4 h-4 text-ember-accent shrink-0 mt-0.5" />
                         <p className="text-xs text-text-main leading-relaxed">
                           Your real cost-per-employee figure has risen across your last two updates — the signal below is highlighted because your own numbers actually support it.
                         </p>
@@ -367,7 +367,7 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                       </button>
                     </div>
                     {costTrend === 'insufficient_data' && (
-                      <p className="text-[11px] text-[#9a3412] dark:text-primary mt-3 leading-relaxed opacity-80">
+                      <p className="text-[11px] text-ember-accent mt-3 leading-relaxed opacity-80">
                         Not enough cost updates yet to say which pressure signal applies to you — enter figures on the Cost of Pressure tab a second time to start tracking a real trend.
                       </p>
                     )}
@@ -387,7 +387,7 @@ export const OrgDashboardValue = ({ onNavigateToTrend }: { onNavigateToTrend?: (
                   <div className="relative pl-8 space-y-8 before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
 
                     <div className="relative">
-                      <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center font-bold text-xs text-[#9a3412] dark:text-primary">30</div>
+                      <div className="absolute -left-[35px] top-1 w-6 h-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center font-bold text-xs text-ember-accent">30</div>
                       <div className="card relative p-6">
                         <h4 className="font-bold text-text-main mb-4">30-Day Actions</h4>
                         <ul className="text-sm text-text-muted space-y-2 list-disc pl-4">

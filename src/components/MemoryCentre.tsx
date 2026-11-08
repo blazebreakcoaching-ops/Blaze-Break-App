@@ -82,7 +82,7 @@ export function MemoryCentre() {
           {memories.map(m => (
             <div key={m.id} className="p-4 bg-background border border-border/10 rounded-xl relative group">
               <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-[#9a3412] dark:text-primary uppercase tracking-wider">
+                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-ember-accent uppercase tracking-wider">
                   {m.type.replace(/_/g, ' ')}
                 </span>
                 

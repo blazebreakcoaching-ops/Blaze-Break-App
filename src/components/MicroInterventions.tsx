@@ -33,7 +33,7 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
       duration: '1 min',
       icon: Brain,
       description: 'Look at the horizon or widen your gaze to reduce narrow-focus stress.',
-      color: 'text-[#9a3412] dark:text-primary',
+      color: 'text-ember-accent',
       bg: 'bg-primary/10'
     },
     {
@@ -42,7 +42,7 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
       duration: '3 min',
       icon: BatteryCharging,
       description: 'Two quick inhales through the nose, one long exhale through the mouth.',
-      color: 'text-[#9a3412] dark:text-warning',
+      color: 'text-ember-warning',
       bg: 'bg-warning/10'
     }
   ];
@@ -109,7 +109,7 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
                     aria-hidden="true"
                     className={cn(
                       "w-7 h-7 rounded-full flex items-center justify-center transition-all",
-                      isActive ? "bg-primary/20 text-[#9a3412] dark:text-primary" : "bg-border dark:bg-surface text-text-muted group-hover:bg-primary/10 group-hover:text-primary group-hover:scale-110"
+                      isActive ? "bg-primary/20 text-ember-accent" : "bg-border dark:bg-surface text-text-muted group-hover:bg-primary/10 group-hover:text-primary group-hover:scale-110"
                     )}
                   >
                     {isActive ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current ml-0.5" />}
@@ -118,7 +118,7 @@ export const MicroInterventions = ({ shipStage, id = "micro", onDragStart, onDra
               </div>
               
               <div className="relative z-10">
-                <h4 className={cn("font-bold text-sm mb-1 transition-colors", isActive ? "text-[#9a3412] dark:text-primary" : "text-text-main group-hover:text-primary")}>
+                <h4 className={cn("font-bold text-sm mb-1 transition-colors", isActive ? "text-ember-accent" : "text-text-main group-hover:text-primary")}>
                   {inter.title}
                 </h4>
                 <p className={cn("text-xs leading-relaxed transition-colors", isActive ? "text-text-main font-medium" : "text-text-muted")}>

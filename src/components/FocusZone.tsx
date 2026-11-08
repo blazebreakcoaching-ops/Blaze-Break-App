@@ -449,7 +449,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
 
           <div className="relative z-10 space-y-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center text-[#9a3412] dark:text-primary shadow-inner">
+              <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center text-ember-accent shadow-inner">
                 <Target className="w-6 h-6 animate-pulse" />
               </div>
               <div>
@@ -511,7 +511,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                       className={cn(
                         "py-2.5 px-2 rounded-xl text-[10px] font-black transition-all cursor-pointer border text-center leading-snug",
                         soundMode === track.id 
-                          ? "bg-primary/10 border-primary/40 text-[#9a3412] dark:text-primary" 
+                          ? "bg-primary/10 border-primary/40 text-ember-accent" 
                           : "bg-surface hover:bg-card border-border/80 text-text-muted"
                       )}
                     >
@@ -680,7 +680,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 </button>
                 <button
                   onClick={confirmQuit}
-                  className="py-3 bg-surface hover:bg-card border border-border text-destructive dark:text-[#f87171] rounded-xl text-xs font-black uppercase tracking-widest text-center cursor-pointer"
+                  className="py-3 bg-surface hover:bg-card border border-border text-ember-danger rounded-xl text-xs font-black uppercase tracking-widest text-center cursor-pointer"
                 >
                   Abandon Block
                 </button>
@@ -712,7 +712,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#166534] dark:text-[#4ade80] font-mono">Focus Session Complete</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.25em] text-ember-success font-mono">Focus Session Complete</span>
                   <h4 id="victory-title" className="text-2xl font-display font-black text-text-main">Fortress Defended</h4>
                 </div>
 
@@ -726,7 +726,7 @@ export function FocusZone({ onAwardPoints, isFocusActive, setIsFocusActive, curr
                     <span className="text-[10px] font-black uppercase tracking-widest text-text-muted block">Gained Reward</span>
                     <span className="text-sm font-bold text-text-main">+100 Recovery Points</span>
                   </div>
-                  <div className="px-3 py-1 bg-success/15 border border-success/25 rounded-lg text-[#166534] dark:text-[#4ade80] text-[10px] font-mono font-black uppercase tracking-wider">
+                  <div className="px-3 py-1 bg-success/15 border border-success/25 rounded-lg text-ember-success text-[10px] font-mono font-black uppercase tracking-wider">
                     Laser Focus Badge
                   </div>
                 </div>

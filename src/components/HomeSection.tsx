@@ -1219,7 +1219,7 @@ export const HomeSection = ({
                     key={g.id}
                     title={g.name}
                     aria-label={g.relation ? `${g.name} (${g.relation})` : g.name}
-                    className="w-12 h-12 rounded-2xl border-4 border-surface dark:border-surface bg-primary/10 text-[#9a3412] dark:text-primary flex items-center justify-center text-xs font-black shadow-xl"
+                    className="w-12 h-12 rounded-2xl border-4 border-surface dark:border-surface bg-primary/10 text-ember-accent flex items-center justify-center text-xs font-black shadow-xl"
                   >
                     {initials(g.name)}
                   </div>

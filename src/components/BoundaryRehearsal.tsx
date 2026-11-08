@@ -558,7 +558,7 @@ First separate the user's internal reaction from what actually needs to be commu
                 <div>
                   <h2 className="text-2xl lg:text-3xl font-display font-medium text-text-main tracking-tight">Boundary Architect</h2>
                   <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary flex items-center gap-1.5"><Network className="w-3 h-3" /> Say it clearly.</span>
+                    <span className="text-xs font-medium uppercase tracking-widest text-ember-accent flex items-center gap-1.5"><Network className="w-3 h-3" /> Say it clearly.</span>
                   </div>
                 </div>
                 <div className="mt-4 md:mt-0 flex bg-surface border border-border rounded-lg p-1">
@@ -642,7 +642,7 @@ First separate the user's internal reaction from what actually needs to be commu
                         className={cn(
                           "py-3 px-2 text-center rounded-xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer",
                           selectedTone === tone
-                            ? "border-primary bg-primary/10 text-[#9a3412] dark:text-primary shadow-inner"
+                            ? "border-primary bg-primary/10 text-ember-accent shadow-inner"
                             : "border-border bg-background text-text-muted hover:border-muted-foreground hover:text-text-muted"
                         )}
                       >
@@ -730,7 +730,7 @@ First separate the user's internal reaction from what actually needs to be commu
                 <p className="text-xs font-medium max-w-sm">The breakdown and message will appear here, so you can see how it was derived - not just the final line.</p>
               </div>
             ) : generatingScripts ? (
-              <div role="status" aria-live="polite" className="h-[400px] rounded-xl border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-[#9a3412] dark:text-primary relative overflow-hidden">
+              <div role="status" aria-live="polite" className="h-[400px] rounded-xl border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-ember-accent relative overflow-hidden">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />
                 <p className="text-xs font-medium uppercase tracking-widest">Nova is compiling your boundary...</p>
               </div>
@@ -885,7 +885,7 @@ First separate the user's internal reaction from what actually needs to be commu
 
             <div className="bg-card p-8 rounded-xl space-y-8 border border-border relative overflow-hidden">
               <div className="space-y-4 border-b border-border pb-6 relative z-10">
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded bg-primary/10 border border-primary/20 text-[11px] font-medium uppercase tracking-widest text-[#9a3412] dark:text-primary">
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded bg-primary/10 border border-primary/20 text-[11px] font-medium uppercase tracking-widest text-ember-accent">
                   <Zap className="w-3 h-3" /> Live Blueprint
                 </span>
                 <h3 className="text-2xl font-display font-medium text-text-main tracking-tight">{selected?.title}</h3>
@@ -900,8 +900,8 @@ First separate the user's internal reaction from what actually needs to be commu
                       <Shield className="w-4 h-4 text-primary" />
                     </div>
                     <div>
-                       <span className="text-[11px] font-medium uppercase tracking-widest block text-[#9a3412] dark:text-primary mb-1">Nova's Suggestion</span>
-                       <span className="text-xs text-[#9a3412] dark:text-primary font-medium leading-relaxed">{selected?.advice}</span>
+                       <span className="text-[11px] font-medium uppercase tracking-widest block text-ember-accent mb-1">Nova's Suggestion</span>
+                       <span className="text-xs text-ember-accent font-medium leading-relaxed">{selected?.advice}</span>
                     </div>
                   </div>
                 </div>
@@ -974,7 +974,7 @@ First separate the user's internal reaction from what actually needs to be commu
                       </div>
                       <div>
                         <h4 className="text-xl font-bold text-text-main tracking-tight">Your Feedback</h4>
-                        <span className="text-[11px] uppercase font-medium tracking-widest text-[#9a3412] dark:text-primary">Nova Insight</span>
+                        <span className="text-[11px] uppercase font-medium tracking-widest text-ember-accent">Nova Insight</span>
                       </div>
                     </div>
                   </div>
@@ -1000,7 +1000,7 @@ First separate the user's internal reaction from what actually needs to be commu
                         >
                           <div className="flex items-center gap-3 border-b border-border pb-4">
                              <Zap className="w-5 h-5 text-success dark:text-[#4ade80]" />
-                             <span className="text-xs font-medium uppercase tracking-widest text-[#166534] dark:text-[#4ade80]">A closer look</span>
+                             <span className="text-xs font-medium uppercase tracking-widest text-ember-success">A closer look</span>
                           </div>
                           <div className="prose dark:prose-invert max-w-none text-text-muted leading-relaxed font-mono text-sm">
                              <ReactMarkdown>{detailedFeedback}</ReactMarkdown>

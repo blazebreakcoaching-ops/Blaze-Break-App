@@ -121,7 +121,7 @@ export const HrEscalationDashboard = () => {
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <h4 className="font-bold text-text-main text-lg">{entry.team}</h4>
                   {entry.followUp.status === 'acknowledged' ? (
-                    <span className="flex items-center gap-1.5 text-xs font-bold text-[#166534] dark:text-[#4ade80] bg-success/10 border border-success/20 px-2.5 py-1 rounded-full">
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-ember-success bg-success/10 border border-success/20 px-2.5 py-1 rounded-full">
                       <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                       Acknowledged {entry.followUp.lastAcknowledgedAt ? new Date(entry.followUp.lastAcknowledgedAt).toLocaleDateString() : ''}
                     </span>

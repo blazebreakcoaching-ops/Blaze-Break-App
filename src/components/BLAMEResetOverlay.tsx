@@ -253,9 +253,9 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
 
         <div className="max-w-md w-full p-8 text-center flex flex-col items-center justify-center relative z-10">
 
-          <div className="flex items-center gap-3 mb-8 text-[#9a3412] dark:text-primary">
+          <div className="flex items-center gap-3 mb-8 text-ember-accent">
             <Zap className="w-6 h-6" />
-            <span className="text-xs font-black uppercase tracking-[0.2em] text-[#9a3412] dark:text-primary">BLAME Reset</span>
+            <span className="text-xs font-black uppercase tracking-[0.2em] text-ember-accent">BLAME Reset</span>
           </div>
 
           <AnimatePresence mode="wait">
@@ -328,7 +328,7 @@ export const BLAMEResetOverlay = ({ isOpen, onClose, onAwardPoints }: BLAMEReset
                 </div>
 
                 <div className="space-y-2 max-w-xs text-center">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#9a3412] dark:text-primary font-mono block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-ember-accent font-mono block">
                     Step {stepIndex + 1} of {steps.length}{isBreatheActive ? ` · ${timeLeft}s` : ''}
                   </span>
                   <h3 className="text-2xl font-display font-extrabold text-text-main tracking-tight">
