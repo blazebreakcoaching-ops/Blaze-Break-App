@@ -22,6 +22,7 @@
 // hard Recommendation Budget of one primary recommendation per evaluation.
 
 import { isEffortWithinBandwidth, type BandwidthBand, type CapacityGateResult } from './recovery-capacity-gate';
+import { adaptInterventionCandidates, type AdaptiveContext } from './nhei-adaptive-intelligence';
 
 export type RouteType = 'STABILISE' | 'REDUCE' | 'PROTECT' | 'RECOVER' | 'UNDERSTAND' | 'ACT' | 'CONNECT' | 'NONE';
 
@@ -283,10 +284,12 @@ const buildResult = (
 export const selectRoute = (
   candidates: InterventionCandidate[],
   bandwidth: CapacityGateResult,
-  session: SessionRecommendationState
+  session: SessionRecommendationState,
+  adaptiveContext?: AdaptiveContext | null
 ): RoutingDecision => {
   const budget = evaluateRecommendationBudget(session);
-  const allCandidates = [...candidates, NO_INTERVENTION_CANDIDATE];
+  const adapted = adaptInterventionCandidates(candidates, adaptiveContext);
+  const allCandidates = [...adapted.candidates, NO_INTERVENTION_CANDIDATE];
   const consideredCandidateIds = allCandidates.map((c) => c.candidateId);
   const explicitRequestExists = candidates.some((c) => c.explicitUserRequest);
 
