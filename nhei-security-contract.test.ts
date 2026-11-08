@@ -33,6 +33,14 @@ describe('NHEI security/coordination contracts', () => {
     expect(centre).toContain('<PastNovaMemoriesReview />');
   });
 
+  it('discards stale memory review responses and errors after account changes', () => {
+    const review = read('src/components/PastNovaMemoriesReview.tsx');
+    expect(review).toContain('requestGeneration.current += 1');
+    expect(review).toContain('setBusy(false);');
+    expect(review).toContain('auth.currentUser?.uid !== uid || requestGeneration.current !== generation');
+    expect(review).toContain('auth.currentUser?.uid === uid && requestGeneration.current === generation');
+  });
+
   it('allows Nova to recommend the existing central journey and privacy controls', () => {
     const server = read('server.ts');
     expect(server).toContain('recovery_intelligence (one useful step');
