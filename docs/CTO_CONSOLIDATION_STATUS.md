@@ -227,3 +227,23 @@ PRs #157 / #158 remain open drafts; their branches are unchanged.
 
 Gate on `aa0024f` → OFFLINE_CHECKS_PASS (vitest 5,411; components 156; emulator 62; Playwright preview 66,
 real app 39; mobile Jest 69; Functions 22).
+
+## 12. Batch 7 — Global multilingual expansion (2026-11-08)
+
+Commits: `9b87773` (foundation + 12 packs), `51026c3` (web), `4a0c144` (Expo), `dac5de3` (polish + multilingual E2E),
+`e0a5083` (coach mark fits on screen).
+
+| Item | Status |
+|---|---|
+| Shared translation system (web + Expo), English source, fallback, plurals, RTL, formatting | DONE |
+| 12 languages, 212/212 catalogue keys each, native-language selector | DONE — **11 are unreviewed machine drafts** |
+| Account-scoped language, instant switching | DONE (rules: 12 codes only — emulator-tested, **not deployed**) |
+| Nova replies in the stored language; safety block last; English fallback | DONE |
+| Arabic / Urdu right-to-left; html lang/dir; accessibilityLanguage (Expo) | DONE (verified in real-app tests) |
+| Low-Energy Mode (no confetti/pop-ups); reduced motion respected | DONE |
+| Truncated labels, 320px bar fit, coach mark off-screen | DONE (fixed) |
+| Remaining English screens (see docs/I18N_TRANSLATION_STATUS.md) | OPEN |
+| Native-speaker review of every pack | BLOCKED — needs reviewers |
+
+Gate on `e0a5083` → OFFLINE_CHECKS_PASS (vitest 5,454; components 159; emulator 62; Playwright preview 66,
+real app 52; mobile Jest 72; Functions 22).
