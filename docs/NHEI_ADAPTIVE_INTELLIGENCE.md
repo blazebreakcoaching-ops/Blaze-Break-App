@@ -12,13 +12,22 @@
 ## First implementation
 `nhei-adaptive-intelligence.ts` adjusts candidate **preference hints only**, based on explicit preferences or at least three consistent user-reported outcomes from a limited recent history. The existing routing engine remains the sole decision authority. New optional `adaptiveContext` on `selectRoute` lets existing callers remain unchanged. Context is **disabled by default** unless the user opted into learning. The helper does not fetch, save or share personal information.
 
-## Required full integration (not yet shipped)
-1. Connect the authenticated user's consented personal outcome history to `adaptiveContext` on the existing routing call. Do not rely on the browser alone for consent; check permissions server-side and bind all reads to the authenticated UID.
-2. Connect user's explicitly confirmed preferences and Nova memory using the existing permissions. Never invent a preference from sensitive inferences.
-3. Give Nova a concise, non-diagnostic reason for each recommendation and a one-tap correction: *helpful / not helpful / not now*.
-4. Let the user review, correct, delete, export and disable learning. Disabling learning must stop adaptive reads and writes; existing retention/deletion policies still apply.
-5. Connect existing tools and journeys through the routing engine; do not create an independent orchestrator.
-6. Evaluate outcomes with opt-in pilots before promoting changes broadly. Model updates require offline testing and deliberate release gates.
+## Integrated in this batch
+- The existing POST /api/recovery/routing-decision reads only the authenticated member's past completed outcomes (latest 100 routing records), after three permissions are true: allowAdaptiveIntelligence, allowNovaMemory and allowNovaUseSavedMemories.
+- Recent verified feedback is passed as optional adaptiveContext to the EXISTING selectRoute. Deterministic eligibility, capacity, urgency and direct-request constraints remain authoritative.
+- New and existing users default to adaptive learning OFF until explicitly opted in.
+- Firestore permissions schema supports adaptive opt-in and bounded per-module preference lists.
+- Both the Data Privacy Dashboard and Connected Nova Privacy Controls expose consent. The dashboard offers five module preference choices.
+- The backend returns adaptiveLearningUsed and a compact, non-clinical adaptiveExplanation.
+- Tests were written for opt-out, choice, weak evidence, outcome thresholds, privacy restriction and routing priority.
+
+## Remaining validation and improvements
+1. Run TypeScript, unit tests and Firestore rules emulator checks in local/staging. This GitHub-only connector cannot execute the build.
+2. Verify both privacy controls persist across refresh, withdrawal of consent and changes in memory consent.
+3. Test with real beta users, including feedback correction, multilingual support and accessibility.
+4. Display plain-language adaptiveExplanation and correction actions in the live Recovery Hub; the backend now supplies the data, but the UI has not been traced end to end.
+5. Integrate more feature signals only when their data, safety and outcomes have been verified.
+6. Promote any future algorithmic changes through formal evaluation and reviewed releases.
 
 ## Invariants
 - One primary action at a time. A valid result is **no action**.
@@ -32,4 +41,4 @@
 - Never create a streak, score or gamified penalty for having a difficult day.
 
 ## Status
-This commit supplies a tested, opt-in pure decision helper and an optional entry point in the existing router. It **does not** yet supply end-to-end live personalisation, a new database schema, UI, production deployment or evidence of effectiveness.
+The live routing backend now supports consented feedback adaptation and privacy screens expose opt-in controls. Automated tests have been written, not executed. Production deployment and end-to-end effectiveness have not been verified.
