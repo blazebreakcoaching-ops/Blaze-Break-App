@@ -286,11 +286,12 @@ const persistDelete = (uid: string, id: string) => {
 };
 
 export const getNovaBrain = (): NovaMemory[] => {
-  return cachedBrain;
+  // Never return cached data belonging to another account, even during auth transitions.
+  return auth.currentUser?.uid && auth.currentUser.uid === cachedUid ? cachedBrain : [];
 };
 
 export const addNovaMemory = (memory: Omit<NovaMemory, 'id' | 'createdAt' | 'updatedAt'>) => {
-  if (!isNovaLearningAllowed()) return;
+  if (!isNovaLearningAllowed() || auth.currentUser?.uid !== cachedUid) return;
   const newMemory: NovaMemory = {
     ...memory,
     id: `mem_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -336,6 +337,9 @@ export const logJourney = (action: string, details?: string) => {
 };
 
 export const deleteNovaMemory = (id: string) => {
+  if (!auth.currentUser?.uid || auth.currentUser.uid !== cachedUid) return;
+  const existing = cachedBrain.find(m => m.id === id);
+  if (!existing?.canEdit) return;
   cachedBrain = cachedBrain.filter(m => m.id !== id);
   window.dispatchEvent(new Event('nova-brain-updated'));
 
@@ -381,8 +385,10 @@ export const updateNovaMemoryBySourceAndType = (
 // cachedBrain, so other open surfaces (NovaChat.tsx, EvolutionEngine.tsx)
 // would keep showing the old content until a reload.
 export const editNovaMemoryContent = (id: string, content: string) => {
+  if (!auth.currentUser?.uid || auth.currentUser.uid !== cachedUid) return;
+  if (!content.trim() || content.length > 1000) return;
   const existingIndex = cachedBrain.findIndex(m => m.id === id);
-  if (existingIndex === -1) return;
+  if (existingIndex === -1 || !cachedBrain[existingIndex].canEdit) return;
 
   const updated: NovaMemory = {
     ...cachedBrain[existingIndex],
