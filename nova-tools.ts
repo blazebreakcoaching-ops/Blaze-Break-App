@@ -156,6 +156,8 @@ export const validateMemoryWrite = (args: { type?: unknown; content?: unknown; c
 // ALL_TABS in App.tsx exactly, since this becomes the button text a
 // person actually taps.
 export const SUGGESTABLE_FEATURES: Record<string, string> = {
+  recovery_intelligence: 'Recovery Intelligence',
+  privacy: 'Privacy Controls',
   plan: 'Recovery Plan',
   diagnose: 'Check-in',
   recover: 'Recover',
