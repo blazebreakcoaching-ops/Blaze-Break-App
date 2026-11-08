@@ -57,57 +57,57 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     {
       id: "welcome",
       title: t('onboarding.welcomeTitle'),
-      subtitle: "A few quick questions to help Nova understand where you're at.",
+      subtitle: t('onboarding.welcomeSubtitle'),
       icon: Sparkles,
       question: t('onboarding.welcomeQuestion'),
       options: [
-        { label: "I need to restore my energy", icon: BatteryLow },
-        { label: "I need to disconnect from constant demands", icon: Activity },
-        { label: "I want to head off burnout before it hits", icon: Shield },
-        { label: "I'm under a lot of pressure right now", icon: Target },
-        { label: "I'm trying to support my team well", icon: Briefcase },
+        { label: "I need to restore my energy", display: t('onboarding.choice.energy'), icon: BatteryLow },
+        { label: "I need to disconnect from constant demands", display: t('onboarding.choice.disconnect'), icon: Activity },
+        { label: "I want to head off burnout before it hits", display: t('onboarding.choice.prevent'), icon: Shield },
+        { label: "I'm under a lot of pressure right now", display: t('onboarding.choice.pressure'), icon: Target },
+        { label: "I'm trying to support my team well", display: t('onboarding.choice.team'), icon: Briefcase },
       ],
       field: "purpose",
     },
     {
       id: "pathway",
       title: t('onboarding.pathwayTitle'),
-      subtitle: "This helps Nova tailor its support to your situation.",
+      subtitle: t('onboarding.pathwaySubtitle'),
       icon: Briefcase,
       question: t('onboarding.pathwayQuestion'),
       options: [
-        { label: "Executive / Founder", icon: Briefcase },
-        { label: "Manager / Team Leader", icon: Target },
-        { label: "Individual Contributor", icon: User },
-        { label: "Entrepreneur", icon: Sparkles },
+        { label: "Executive / Founder", display: t('onboarding.choice.executive'), icon: Briefcase },
+        { label: "Manager / Team Leader", display: t('onboarding.choice.manager'), icon: Target },
+        { label: "Individual Contributor", display: t('onboarding.choice.individual'), icon: User },
+        { label: "Entrepreneur", display: t('onboarding.choice.entrepreneur'), icon: Sparkles },
       ],
       field: "pathway",
     },
     {
       id: "pressure",
       title: t('onboarding.pressureTitle'),
-      subtitle: "This helps shape the kind of support that fits you.",
+      subtitle: t('onboarding.pressureSubtitle'),
       icon: HeartPulse,
       question: t('onboarding.pressureQuestion'),
       options: [
-        { label: "Workload and deadlines", icon: Activity },
-        { label: "People and expectations", icon: User },
-        { label: "Constant notifications and interruptions", icon: HeartPulse },
-        { label: "The pressure of leading others", icon: Briefcase },
+        { label: "Workload and deadlines", display: t('onboarding.choice.workload'), icon: Activity },
+        { label: "People and expectations", display: t('onboarding.choice.people'), icon: User },
+        { label: "Constant notifications and interruptions", display: t('onboarding.choice.interruptions'), icon: HeartPulse },
+        { label: "The pressure of leading others", display: t('onboarding.choice.leadership'), icon: Briefcase },
       ],
       field: "primaryDrain",
     },
     {
       id: "nova_tone",
       title: t('onboarding.novaToneTitle'),
-      subtitle: "Your coach can match the tone that works best for you.",
+      subtitle: t('onboarding.novaToneSubtitle'),
       icon: Brain,
       question: t('onboarding.novaToneQuestion'),
       options: [
-        { label: "Direct & Analytical (No fluff)", icon: Brain },
-        { label: "Firm & Accountable", icon: Shield },
-        { label: "Calm & Reflective", icon: Sparkles },
-        { label: "Practical & Structured", icon: Target },
+        { label: "Direct & Analytical (No fluff)", display: t('onboarding.choice.direct'), icon: Brain },
+        { label: "Firm & Accountable", display: t('onboarding.choice.accountable'), icon: Shield },
+        { label: "Calm & Reflective", display: t('onboarding.choice.calm'), icon: Sparkles },
+        { label: "Practical & Structured", display: t('onboarding.choice.practical'), icon: Target },
       ],
       field: "novaTone",
     },
@@ -259,8 +259,8 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     },
     {
       id: "profile",
-      title: "Just a few details",
-      subtitle: "Let's finish setting up your account.",
+      title: t('onboarding.profileTitle'),
+      subtitle: t('onboarding.profileSubtitle'),
       icon: User,
       content: null, // Form rendered via custom logic
     },
@@ -420,7 +420,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                               isSelected ? "font-bold" : "",
                             )}
                           >
-                            {opt.label}
+                            {opt.display ?? opt.label}
                           </span>
                           {isSelected && (
                             <motion.div
