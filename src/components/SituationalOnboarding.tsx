@@ -113,19 +113,17 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     },
     {
       id: "consent",
-      title: "Your privacy",
-      subtitle: "Your data stays yours. Set your own boundaries below.",
+      title: t("onboarding.privacyTitle"),
+      subtitle: t("onboarding.privacySubtitle"),
       icon: Lock,
       content: (
         <div className="space-y-6 text-left w-full h-[360px] overflow-y-auto pr-4 custom-scrollbar">
           <div className="p-4 bg-primary-light border border-border rounded-xl mb-4">
             <h4 className="font-bold text-primary flex items-center gap-2 mb-2">
-              <CheckCircle2 className="w-4 h-4" /> How your data is protected
+              <CheckCircle2 className="w-4 h-4" /> {t("onboarding.protectionTitle")}
             </h4>
             <p className="text-xs text-text-muted">
-              Your entries and personal metrics stay private. If you're using
-              this through an employer, they only ever see anonymised,
-              aggregated trends — never your individual data.
+              {t("onboarding.protectionBody")}
             </p>
           </div>
 
@@ -133,10 +131,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             <div className="flex items-start justify-between p-4 rounded-xl border border-border bg-surface hover:border-text-muted transition-colors">
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold text-text-main">
-                  Personalised Greetings
+                  {t("onboarding.greetingConsent")}
                 </h4>
                 <p className="text-xs text-text-muted">
-                  Allow Nova to use your preferred name.
+                  {t("onboarding.greetingConsentDetail")}
                 </p>
               </div>
               <button
@@ -156,7 +154,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 }}
                 role="switch"
                 aria-checked={profile.useNameInGreetings !== false}
-                aria-label="Personalised Greetings: allow Nova to use your preferred name"
+                aria-label={`${t("onboarding.greetingConsent")}: ${t("onboarding.greetingConsentDetail")}`}
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   profile.useNameInGreetings !== false
@@ -176,10 +174,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             <div className="flex items-start justify-between p-4 rounded-xl border border-border bg-surface hover:border-text-muted transition-colors">
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold text-text-main">
-                  Personalised learning
+                  {t("onboarding.learningConsent")}
                 </h4>
                 <p className="text-xs text-text-muted">
-                  Let Nova adjust its suggestions based on your check-ins.
+                  {t("onboarding.learningConsentDetail")}
                 </p>
               </div>
               <button
@@ -196,7 +194,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 }}
                 role="switch"
                 aria-checked={hasExplicitNovaLearningConsent(profile.letNovaLearn)}
-                aria-label="Personalised learning: let Nova adjust its suggestions based on your check-ins"
+                aria-label={`${t("onboarding.learningConsent")}: ${t("onboarding.learningConsentDetail")}`}
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   hasExplicitNovaLearningConsent(profile.letNovaLearn)
@@ -216,10 +214,10 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
             <div className="flex items-start justify-between p-4 rounded-xl border border-border bg-surface hover:border-text-muted transition-colors">
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold text-text-main">
-                  Gentle reminders
+                  {t("onboarding.remindersConsent")}
                 </h4>
                 <p className="text-xs text-text-muted">
-                  Get occasional check-in prompts when it might help.
+                  {t("onboarding.remindersConsentDetail")}
                 </p>
               </div>
               <button
@@ -239,7 +237,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 }}
                 role="switch"
                 aria-checked={profile.sendNovaNudges !== false}
-                aria-label="Gentle reminders: get occasional check-in prompts when it might help"
+                aria-label={`${t("onboarding.remindersConsent")}: ${t("onboarding.remindersConsentDetail")}`}
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
                   profile.sendNovaNudges !== false
