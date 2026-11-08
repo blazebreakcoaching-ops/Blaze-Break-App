@@ -815,6 +815,22 @@ service cloud.firestore {
             && (request.method == 'create' ? true : checkCreatedAtUnchanged());
       }
       
+
+      // Qualitative, one-tap low-energy check-ins. These intentionally have
+      // NO numeric energy/mood/stress fields: analytics must never fabricate
+      // measurements from an optional feeling label. Owner-only, immutable.
+      match /low_energy_checkins/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+            && hasOnly(['createdAt', 'response', 'kind', 'source'])
+            && hasAll(['createdAt', 'response', 'kind', 'source'])
+            && isStringWithMax(request.resource.data.createdAt, 40)
+            && request.resource.data.response in ['okay', 'managing', 'low', 'unsure']
+            && request.resource.data.kind == 'qualitative'
+            && request.resource.data.source == 'user';
+        allow update: if false;
+      }
+
       // D. mood_pulses
       match /mood_pulses/{entryId} {
         allow read: if isOwner(uid);
