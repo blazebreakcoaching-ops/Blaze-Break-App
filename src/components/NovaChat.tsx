@@ -50,13 +50,45 @@ const NOVA_SYSTEM_INSTRUCTION_LIMIT = 2800;
 // localStorage for the entire component's lifetime, matching the existing
 // ad-hoc "read blaze_profile directly" pattern already used elsewhere in
 // this file (readStyle, the initial-greeting effect).
-function readStoredFullName(): string | undefined {
+// No chat history, feedback, tone or onboarding context is ever read from
+// another account's shared browser storage. Legacy unscoped chat history
+// remains untouched but is deliberately not imported across identities.
+function readScopedProfile(): Record<string, any> {
   try {
-    const raw = localStorage.getItem("blaze_profile");
-    return raw ? JSON.parse(raw)?.fullName : undefined;
-  } catch {
-    return undefined;
-  }
+    const uid = auth.currentUser?.uid;
+    if (!uid || localStorage.getItem('blaze_profile_uid') !== uid) return {};
+    const saved = localStorage.getItem('blaze_profile');
+    return saved ? JSON.parse(saved) : {};
+  } catch { return {}; }
+}
+function writeScopedProfile(profile: Record<string, any>): void {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    localStorage.setItem('blaze_profile_uid', uid);
+    localStorage.setItem('blaze_profile', JSON.stringify(profile));
+  } catch { /* Storage is optional. */ }
+}
+function readScopedNovaStorage(key: string): string | null {
+  try {
+    const uid = auth.currentUser?.uid;
+    return uid ? localStorage.getItem(key + ':' + uid) : null;
+  } catch { return null; }
+}
+function writeScopedNovaStorage(key: string, value: string): void {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (uid) localStorage.setItem(key + ':' + uid, value);
+  } catch { /* Storage is optional. */ }
+}
+function removeScopedNovaStorage(key: string): void {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (uid) localStorage.removeItem(key + ':' + uid);
+  } catch { /* Storage is optional. */ }
+}
+function readStoredFullName(): string | undefined {
+  return readScopedProfile().fullName;
 }
 
 interface Message {
@@ -119,8 +151,8 @@ export const NovaChat = ({
   // where localStorage itself was never populated.
   const readTone = (): string => {
     try {
-      const p = localStorage.getItem("blaze_profile");
-      return p ? (JSON.parse(p).novaTone || "") : "";
+      const p = readScopedProfile();
+      return p.novaTone || "";
     } catch {
       return "";
     }
@@ -129,8 +161,8 @@ export const NovaChat = ({
   const handleToneChange = (tone: string) => {
     setNovaTone(tone);
     try {
-      const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-      localStorage.setItem("blaze_profile", JSON.stringify({ ...p, novaTone: tone }));
+      const p = readScopedProfile();
+      writeScopedProfile({ ...p, novaTone: tone });
     } catch {
       // Non-fatal - the in-session context below still uses the new value.
     }
@@ -147,8 +179,8 @@ export const NovaChat = ({
     if (profile?.novaTone && !novaTone) {
       setNovaTone(profile.novaTone);
       try {
-        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, novaTone: profile.novaTone }));
+        const p = readScopedProfile();
+        writeScopedProfile({ ...p, novaTone: profile.novaTone });
       } catch {
         // Non-fatal - novaTone state above is already updated either way.
       }
@@ -163,8 +195,7 @@ export const NovaChat = ({
   // right selection).
   const readStyle = (): NovaQuestioningStyle | undefined => {
     try {
-      const p = localStorage.getItem("blaze_profile");
-      const style = p ? JSON.parse(p).questioningStyle : undefined;
+      const style = readScopedProfile().questioningStyle;
       return QUESTIONING_STYLE_OPTIONS.some((s) => s.value === style) ? style : undefined;
     } catch {
       return undefined;
@@ -178,8 +209,8 @@ export const NovaChat = ({
   const handleStyleChange = (style: NovaQuestioningStyle | undefined) => {
     setQuestioningStyle(style);
     try {
-      const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-      localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
+      const p = readScopedProfile();
+      writeScopedProfile({ ...p, questioningStyle: style });
     } catch {
       // Non-fatal - onStyleChange below still updates the canonical profile.
     }
@@ -194,15 +225,15 @@ export const NovaChat = ({
       const style = profile!.questioningStyle as NovaQuestioningStyle;
       setQuestioningStyle(style);
       try {
-        const p = JSON.parse(localStorage.getItem("blaze_profile") || "{}");
-        localStorage.setItem("blaze_profile", JSON.stringify({ ...p, questioningStyle: style }));
+        const p = readScopedProfile();
+        writeScopedProfile({ ...p, questioningStyle: style });
       } catch {
         // Non-fatal - questioningStyle state above is already updated either way.
       }
     }
   }, [profile?.questioningStyle]);
   const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem("nova_chat_history");
+    const saved = readScopedNovaStorage("nova_chat_history");
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -237,7 +268,7 @@ export const NovaChat = ({
     [key: number]: "up" | "down" | null;
   }>(() => {
     try {
-      const saved = localStorage.getItem("nova_chat_ratings");
+      const saved = readScopedNovaStorage("nova_chat_ratings");
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -249,7 +280,7 @@ export const NovaChat = ({
   const [feedbackNotes, setFeedbackNotes] = useState<{ [key: number]: string }>(
     () => {
       try {
-        const saved = localStorage.getItem("nova_chat_feedback_notes");
+        const saved = readScopedNovaStorage("nova_chat_feedback_notes");
         return saved ? JSON.parse(saved) : {};
       } catch {
         return {};
@@ -259,7 +290,7 @@ export const NovaChat = ({
   const [feedbackTag, setFeedbackTag] = useState<{ [key: number]: string }>(
     () => {
       try {
-        const saved = localStorage.getItem("nova_chat_feedback_tags");
+        const saved = readScopedNovaStorage("nova_chat_feedback_tags");
         return saved ? JSON.parse(saved) : {};
       } catch {
         return {};
@@ -270,7 +301,7 @@ export const NovaChat = ({
     [key: number]: boolean;
   }>(() => {
     try {
-      const saved = localStorage.getItem("nova_chat_feedback_submitted");
+      const saved = readScopedNovaStorage("nova_chat_feedback_submitted");
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -297,18 +328,18 @@ export const NovaChat = ({
 
     const newSubmitted = { ...isFeedbackSubmitted, [index]: true };
     setIsFeedbackSubmitted(newSubmitted);
-    localStorage.setItem(
+    writeScopedNovaStorage(
       "nova_chat_feedback_submitted",
       JSON.stringify(newSubmitted),
     );
 
     // Persist all other states
-    localStorage.setItem("nova_chat_ratings", JSON.stringify(ratings));
-    localStorage.setItem(
+    writeScopedNovaStorage("nova_chat_ratings", JSON.stringify(ratings));
+    writeScopedNovaStorage(
       "nova_chat_feedback_notes",
       JSON.stringify({ ...feedbackNotes, [index]: notes }),
     );
-    localStorage.setItem(
+    writeScopedNovaStorage(
       "nova_chat_feedback_tags",
       JSON.stringify({ ...feedbackTag, [index]: selectedTag }),
     );
@@ -323,7 +354,7 @@ export const NovaChat = ({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => {
-    const saved = localStorage.getItem("nova_voice_enabled");
+    const saved = readScopedNovaStorage("nova_voice_enabled");
     return saved !== null ? saved === "true" : true;
   });
   const [showVoiceCall, setShowVoiceCall] = useState(false);
@@ -454,8 +485,7 @@ export const NovaChat = ({
   // that "Nova switches straightaway."
   const buildSituationalContext = (): string => {
     try {
-      const profileStr = localStorage.getItem("blaze_profile");
-      const profile = profileStr ? JSON.parse(profileStr) : {};
+      const profile = readScopedProfile();
       let ctx = `\n[SITUATIONAL ONBOARDING CONTEXT]\n`;
       let hasAny = false;
       if (profile.purpose) { ctx += `- Primary Goal: ${profile.purpose}\n`; hasAny = true; }
@@ -470,11 +500,11 @@ export const NovaChat = ({
   };
 
   useEffect(() => {
-    localStorage.setItem("nova_chat_history", JSON.stringify(messages));
+    writeScopedNovaStorage("nova_chat_history", JSON.stringify(messages));
   }, [messages]);
 
   useEffect(() => {
-    localStorage.setItem("nova_voice_enabled", String(isVoiceEnabled));
+    writeScopedNovaStorage("nova_voice_enabled", String(isVoiceEnabled));
   }, [isVoiceEnabled]);
 
   useEffect(() => {
@@ -482,13 +512,7 @@ export const NovaChat = ({
       let greeting =
         initialMessage ||
         "Nova interface active. What behavioral pattern are we breaking today?";
-      const profileStr = localStorage.getItem("blaze_profile");
-      let profileData: any = null;
-      try {
-        if (profileStr) profileData = JSON.parse(profileStr);
-      } catch (e) {
-        // Non-fatal - profileData just stays null if this is corrupted.
-      }
+      const profileData = readScopedProfile();
 
       if (!initialMessage && (fingerprint || profileData)) {
         const username = profileData?.useNameInGreetings
@@ -1036,7 +1060,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                               onClick={() => {
                                 const newR = { ...ratings, [i]: "up" as const };
                                 setRatings(newR);
-                                localStorage.setItem(
+                                writeScopedNovaStorage(
                                   "nova_chat_ratings",
                                   JSON.stringify(newR),
                                 );
@@ -1063,7 +1087,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                                   [i]: "down" as const,
                                 };
                                 setRatings(newR);
-                                localStorage.setItem(
+                                writeScopedNovaStorage(
                                   "nova_chat_ratings",
                                   JSON.stringify(newR),
                                 );
@@ -1410,7 +1434,7 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         confirmLabel="Clear"
         onConfirm={() => {
           setMessages([]);
-          localStorage.removeItem("nova_chat_history");
+          removeScopedNovaStorage("nova_chat_history");
           setConfirmingClear(false);
         }}
         onCancel={() => setConfirmingClear(false)}
