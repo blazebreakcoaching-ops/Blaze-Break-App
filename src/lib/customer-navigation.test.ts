@@ -1,31 +1,52 @@
-import { describe, expect, it } from 'vitest';
-import { isCustomerRole, shouldShowCustomerNavTab } from './customer-navigation';
+import { describe, it, expect } from 'vitest';
+import { isCustomerRole, shouldShowCustomerNavTab, MOBILE_PRIMARY_TAB_IDS } from './customer-navigation';
+import { NOVICE_TAB_IDS, MASTERING_TAB_IDS, EXPERIENCE_LEVELS, isExperienceLevel, tabIncludedAtLevel } from '../../experience-level';
 
-describe('customer-first navigation', () => {
-  it('starts individual customers with only Today, Nova and Plan', () => {
-    for (const role of ['individual', 'employee', 'executive', undefined]) {
-      expect(isCustomerRole(role)).toBe(true);
-      expect(['home', 'nova', 'plan'].every(id =>
-        shouldShowCustomerNavTab(role, false, id, 'home'))).toBe(true);
-      expect(shouldShowCustomerNavTab(role, false, 'privacy', 'home')).toBe(false);
-      expect(shouldShowCustomerNavTab(role, false, 'diagnose', 'home')).toBe(false);
+const CUSTOMER_ROLES = ['individual', 'employee', 'executive', undefined];
+
+describe('experience levels are progressive disclosure, never a lock', () => {
+  it('Novice shows exactly the critical journey: Today, Check-in, Insights, Nova, My Plan', () => {
+    expect([...NOVICE_TAB_IDS].sort()).toEqual(['diagnose', 'home', 'nova', 'plan', 'recovery_intelligence']);
+    for (const role of CUSTOMER_ROLES) {
+      NOVICE_TAB_IDS.forEach((id) => expect(shouldShowCustomerNavTab(role, 'novice', false, id, 'home')).toBe(true));
+      expect(shouldShowCustomerNavTab(role, 'novice', false, 'reset', 'home')).toBe(false);
+      expect(shouldShowCustomerNavTab(role, 'novice', false, 'privacy', 'home')).toBe(false);
     }
   });
 
-  it('allows the user to explore existing entitled features on demand', () => {
-    expect(shouldShowCustomerNavTab('individual', true, 'privacy', 'home')).toBe(true);
-    expect(shouldShowCustomerNavTab('individual', true, 'reset', 'home')).toBe(true);
+  it('each level contains everything the level below shows', () => {
+    NOVICE_TAB_IDS.forEach((id) => expect(MASTERING_TAB_IDS).toContain(id));
+    MASTERING_TAB_IDS.forEach((id) => expect(tabIncludedAtLevel('expert', id)).toBe(true));
+    expect(shouldShowCustomerNavTab('individual', 'mastering', false, 'reset', 'home')).toBe(true);
+    expect(shouldShowCustomerNavTab('individual', 'mastering', false, 'privacy', 'home')).toBe(false);
+    expect(shouldShowCustomerNavTab('individual', 'expert', false, 'privacy', 'home')).toBe(true);
   });
 
-  it('never strands someone on a tool opened from another screen', () => {
-    expect(shouldShowCustomerNavTab('individual', false, 'reset', 'reset')).toBe(true);
-    expect(shouldShowCustomerNavTab('individual', false, 'privacy', 'privacy')).toBe(true);
+  it('"Explore all tools" reveals everything at every level', () => {
+    for (const level of EXPERIENCE_LEVELS) {
+      expect(shouldShowCustomerNavTab('individual', level, true, 'privacy', 'home')).toBe(true);
+      expect(shouldShowCustomerNavTab('individual', level, true, 'fuel', 'home')).toBe(true);
+    }
   });
 
-  it('does not simplify staff or organisation management navigation', () => {
-    for (const role of ['manager', 'organisation_admin', 'platform_admin', 'platform_owner']) {
+  it('the currently open tab is always shown, even when reached from a CTA', () => {
+    expect(shouldShowCustomerNavTab('individual', 'novice', false, 'reset', 'reset')).toBe(true);
+    expect(shouldShowCustomerNavTab('individual', 'novice', false, 'privacy', 'privacy')).toBe(true);
+  });
+
+  it('staff and admin roles always keep their full navigation', () => {
+    for (const role of ['manager', 'organisation_admin', 'platform_admin', 'security_admin']) {
       expect(isCustomerRole(role)).toBe(false);
-      expect(shouldShowCustomerNavTab(role, false, 'admin', 'home')).toBe(true);
+      expect(shouldShowCustomerNavTab(role, 'novice', false, 'admin', 'home')).toBe(true);
     }
+  });
+
+  it('only the three known levels are accepted', () => {
+    for (const bad of ['', 'Expert', 'admin', null, 3, undefined]) expect(isExperienceLevel(bad)).toBe(false);
+    EXPERIENCE_LEVELS.forEach((l) => expect(isExperienceLevel(l)).toBe(true));
+  });
+
+  it('the mobile bar keeps the essential tabs, all shown at Novice', () => {
+    MOBILE_PRIMARY_TAB_IDS.forEach((id) => expect(NOVICE_TAB_IDS).toContain(id));
   });
 });

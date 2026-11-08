@@ -125,7 +125,11 @@ import { initNovaBrain, clearNovaBrainCache, ensureNovaPermissionsExist, isCalen
 import { migrateSupportCircleIfNeeded, addSupportCircleContact, removeSupportCircleContact } from "./lib/support-circle";
 import { isDemoUser, DEMO_STATS, DEMO_FINGERPRINT, DEMO_PULSE_HISTORY, DEMO_ENERGY_LEVEL, DEMO_BURNOUT_RISK, DEMO_GUARDIANS } from "./lib/demo-data";
 import { useAuth } from "./lib/auth.tsx";
-import { isCustomerRole, shouldShowCustomerNavTab } from "./lib/customer-navigation";
+import { isCustomerRole, shouldShowCustomerNavTab, MOBILE_PRIMARY_TAB_IDS } from "./lib/customer-navigation";
+import { useExperienceLevel } from "./hooks/useExperienceLevel";
+import { recordedSleepShortfall } from "./lib/recorded-debts";
+import { ExperienceLevelSwitcher } from "./components/ExperienceLevelSwitcher";
+import type { ExperienceLevel } from "../experience-level";
 import { novaGuideInviteKey, type NovaGuideTab } from "./lib/nova-guide";
 import { CURRENT_CHANGELOG_VERSION } from "./lib/whats-new-auto-open";
 import { shouldPausePassivePrompts } from "./lib/quiet-first-visit";
@@ -422,6 +426,9 @@ const Sidebar = ({
   isOrgAdmin,
   showAllTools,
   setShowAllTools,
+  experienceLevel,
+  onExperienceLevelChange,
+  experienceLevelError,
 }: {
   activeTab: string;
   setActiveTab: (t: string) => void;
@@ -438,6 +445,9 @@ const Sidebar = ({
   isOrgAdmin: boolean;
   showAllTools: boolean;
   setShowAllTools: (show: boolean) => void;
+  experienceLevel: ExperienceLevel;
+  onExperienceLevelChange: (level: ExperienceLevel) => void;
+  experienceLevelError: string | null;
 }) => {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -484,7 +494,7 @@ const Sidebar = ({
 
   const tabs = ALL_TABS.filter((t) =>
     isTabVisible(t, authRole, currentTier) &&
-    shouldShowCustomerNavTab(authRole, showAllTools, t.id, activeTab)
+    shouldShowCustomerNavTab(authRole, experienceLevel, showAllTools, t.id, activeTab)
   );
   // "My Team" is gated on a real, admin-assigned backend fact (teamManagers),
   // not the authRole self-selection every other tab above uses - so it's
@@ -568,7 +578,7 @@ const Sidebar = ({
         </button>
       )}
 
-      {(!isCustomerRole(authRole) || showAllTools) && (
+      {(
       <button
         onClick={onOpenLauncher}
         title="Quick find (Ctrl/Cmd + K)"
@@ -732,6 +742,14 @@ const Sidebar = ({
       </nav>
 
       <div className="pt-4 border-t border-border/50 shrink-0 w-full space-y-3">
+        {isCustomerRole(authRole) && !isCollapsed && (
+          <ExperienceLevelSwitcher
+            level={experienceLevel}
+            onChange={onExperienceLevelChange}
+            error={experienceLevelError}
+            className="px-1"
+          />
+        )}
         {isCustomerRole(authRole) && (
           <button
             type="button"
@@ -1167,6 +1185,8 @@ export default function App() {
   // Intentionally starts simple on each visit. The user may reveal all
   // available tools explicitly without affecting their data or entitlements.
   const [showAllTools, setShowAllTools] = useState(false);
+  // Saved Novice / Mastering / Expert display preference (never an access gate).
+  const experience = useExperienceLevel(user?.uid);
   // The Nova check-in nudge (NovaCheckinNudge.tsx) explicitly promises
   // voice - "A couple of minutes by voice, whenever you're ready" - but
   // switching to the nova tab alone only opens the text chat; the live
@@ -1536,6 +1556,20 @@ export default function App() {
       ALL_TABS.filter((t) => isTabVisible(t, effectiveRole, stats.profile?.subscription || "recovery"))
         .map((t) => ({ id: t.id, label: t.label, icon: t.icon, group: t.group })),
     [effectiveRole, stats.profile?.subscription],
+  );
+
+  // Mobile navigation. Customers get a purpose-built bar - Today, My Plan,
+  // Tools, Nova and More - with every other tool their chosen experience
+  // level shows (or all of them, after "More") inside the Tools sheet,
+  // instead of a sideways-scrolling strip. Staff roles keep their existing
+  // bar, where only the recovery tools are grouped. Display only: each tab
+  // still passes isTabVisible's role/subscription check.
+  const mobileVisibleTabs = ALL_TABS.filter((t) =>
+    isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
+    shouldShowCustomerNavTab(effectiveRole, experience.level, showAllTools, t.id, activeTab),
+  );
+  const mobileSheetTabs = mobileVisibleTabs.filter((t) =>
+    isCustomerRole(effectiveRole) ? !MOBILE_PRIMARY_TAB_IDS.includes(t.id) : t.group === "recovery_tools",
   );
 
   // Derived from the real, persisted lastEngagementDate rather than a
@@ -1908,8 +1942,9 @@ export default function App() {
       newBadges.push("boundary_boss");
     
     // Check new badges
-    const sleepShortfall = currentStats.debts?.find(d => d.label === 'Sleep Shortfall')?.value ?? Infinity;
-    if (sleepShortfall <= 1 && !newBadges.includes("consistent_sleep"))
+    // Only a real, logged sleep reading counts - never the zero placeholder.
+    const sleepShortfall = recordedSleepShortfall(currentStats.debts);
+    if (sleepShortfall !== null && sleepShortfall <= 1 && !newBadges.includes("consistent_sleep"))
       newBadges.push("consistent_sleep");
     if (currentStats.rehearsalCount >= 15 && !newBadges.includes("master_boundaries"))
       newBadges.push("master_boundaries");
@@ -2536,6 +2571,9 @@ export default function App() {
         isOrgAdmin={isOrgAdmin}
         showAllTools={showAllTools}
         setShowAllTools={setShowAllTools}
+        experienceLevel={experience.level}
+        onExperienceLevelChange={experience.setLevel}
+        experienceLevelError={experience.error}
       />
 
       <motion.main
@@ -3295,11 +3333,15 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="absolute bottom-full left-2 right-2 mb-2 p-3 rounded-2xl bg-card border border-border shadow-2xl grid grid-cols-3 gap-2"
               >
-                {ALL_TABS.filter((t) =>
-                  t.group === "recovery_tools" &&
-                  isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
-                  shouldShowCustomerNavTab(effectiveRole, showAllTools, t.id, activeTab)
-                ).map((tab) => (
+                {isCustomerRole(effectiveRole) && (
+                  <ExperienceLevelSwitcher
+                    level={experience.level}
+                    onChange={experience.setLevel}
+                    error={experience.error}
+                    className="col-span-3 pb-2 mb-1 border-b border-border/50"
+                  />
+                )}
+                {mobileSheetTabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => {
@@ -3318,26 +3360,22 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
-          <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-2 gap-2">
+          <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-1 gap-1 min-[360px]:px-2 min-[360px]:gap-2">
             {(() => {
-              const visibleTabs = ALL_TABS.filter((t) =>
-                isTabVisible(t, effectiveRole || "individual", stats.profile?.subscription || "recovery") &&
-                shouldShowCustomerNavTab(effectiveRole, showAllTools, t.id, activeTab),
-              );
-              const renderedGroups = new Set<string>();
+              const visibleTabs = mobileVisibleTabs;
+              const sheetIds = new Set(mobileSheetTabs.map((t) => t.id));
+              let toolsRendered = false;
               return visibleTabs.map((tab) => {
-                if (tab.group) {
-                  if (renderedGroups.has(tab.group)) return null;
-                  renderedGroups.add(tab.group);
-                  const isGroupActive = visibleTabs.some(
-                    (t) => t.group === tab.group && t.id === activeTab,
-                  );
+                if (sheetIds.has(tab.id)) {
+                  if (toolsRendered) return null;
+                  toolsRendered = true;
+                  const isGroupActive = sheetIds.has(activeTab);
                   return (
                     <button
-                      key={tab.group}
+                      key="mobile-tools"
                       onClick={() => setShowMobileToolsSheet((v) => !v)}
                       aria-expanded={showMobileToolsSheet}
-                      className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
+                      className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                     >
                       <div
                         className={`p-1.5 rounded-full transition-all ${isGroupActive || showMobileToolsSheet ? "bg-primary/10" : ""}`}
@@ -3353,7 +3391,7 @@ export default function App() {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as ActiveTab)}
                     aria-current={activeTab === tab.id ? 'page' : undefined}
-                    className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
+                    className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                   >
                     <div
                       className={`p-1.5 rounded-full transition-all ${activeTab === tab.id ? "bg-primary/10" : ""}`}
@@ -3376,7 +3414,7 @@ export default function App() {
                 }}
                 aria-expanded={showAllTools}
                 aria-label={showAllTools ? "Show the simpler navigation" : "Explore all available tools"}
-                className="p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[56px] text-text-muted hover:text-text-main"
+                className="p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] text-text-muted hover:text-text-main"
               >
                 <span className="p-1.5 rounded-full"><Menu className="w-5 h-5" /></span>
                 <span className="text-[11px] font-bold tracking-wide">{showAllTools ? "Less" : "More"}</span>

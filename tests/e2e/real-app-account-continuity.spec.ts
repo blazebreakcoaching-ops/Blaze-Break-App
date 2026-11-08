@@ -462,3 +462,80 @@ test('mobile sign-up keeps every action reachable on a short 320px screen', asyn
   expect(actionBounds!.y).toBeGreaterThanOrEqual(0);
   expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(569);
 });
+
+// Batch 6 - the critical customer journey, end to end, on the real app and
+// the real backend (Auth + Firestore emulators, real Express routes). No
+// customer data or completion state is seeded: every result below is
+// produced by the steps the test performs. Only the Nova chat model reply
+// is mocked (no model key exists in this environment).
+test.describe('Real app (Batch 6): critical customer journey with experience levels', () => {
+  test('sign up -> onboarding -> first check-in -> insights -> Nova -> plan -> progress, then a saved experience level', async ({ page }, testInfo) => {
+    test.setTimeout(150_000);
+    const isMobile = (page.viewportSize()?.width ?? 1280) < 1024;
+    test.skip(isMobile, 'Desktop journey; the mobile bar has its own assertions below.');
+    const email = uniqueEmail('journey6');
+
+    // 1-2. Sign up and onboarding, through the real UI.
+    await startAnonymousDemo(page);
+    await openSignUpModal(page);
+    await submitRealSignUp(page, email);
+    await completeRealOnboarding(page, 'Riley Harper');
+
+    // Novice (the default) shows the essential journey without "Explore all tools".
+    const switcher = page.getByTestId('experience-level-switcher');
+    await expect(switcher.getByRole('radio', { name: 'Novice' })).toHaveAttribute('aria-checked', 'true');
+    await expect(switcher).toContainText('Just the essentials');
+    await expect(page.getByRole('button', { name: 'Quick find a tool' })).toBeVisible();
+
+    // 3. First check-in: the real Quick Check, answered through its buttons.
+    await clickRobustly(page, page.getByRole('button', { name: 'Recovery Tools' }));
+    await clickRobustly(page, page.getByRole('button', { name: 'Check-in', exact: true }));
+    await clickRobustly(page, page.getByRole('button', { name: /Quick Check/ }));
+    for (let q = 1; q <= 7; q++) {
+      await expect(page.getByText(`Question ${q} of 7`)).toBeVisible({ timeout: 10_000 });
+      await clickRobustly(page, page.locator('[data-nova-guide-target="checkin-content"] .grid button').nth(1));
+    }
+    await expect(page.getByText(/Question \d of 7/)).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByText('Nova is analysing your burnout fingerprint...')).toHaveCount(0, { timeout: 60_000 });
+    await page.screenshot({ path: testInfo.outputPath('03-checkin-result.png') });
+
+    // 4. Recovery insights: real recalculation from the real check-in. With one
+    // check-in the honest answer is "not enough data" - never a made-up trend.
+    const insightsTab = page.getByRole('button', { name: 'Recovery Intelligence', exact: true });
+    if (!(await insightsTab.isVisible())) await clickRobustly(page, page.getByRole('button', { name: 'Recovery Tools' }));
+    await clickRobustly(page, insightsTab);
+    const insights = page.locator('[data-nova-guide-target="insights-content"]');
+    await expect(insights).toBeVisible({ timeout: 20_000 });
+    await clickRobustly(page, insights.getByRole('button', { name: 'Update my insights' }));
+    await expect(insights.getByText(/Not enough data yet|based on \d+ record/).first()).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: testInfo.outputPath('04-insights.png') });
+
+    // 5. Nova guidance: the real Nova chat (model reply mocked) ...
+    await openNovaTab(page);
+    await sendNovaMessage(page, 'I just did my first check-in.', 'Thanks for checking in. Let\'s pick one small step.');
+
+    // 6. Personal action plan: unlocked by the real check-in result.
+    await clickRobustly(page, page.getByRole('button', { name: 'My Plan', exact: true }));
+    await expect(page.locator('[data-nova-guide-target="plan-content"]')).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: testInfo.outputPath('06-plan.png') });
+
+    // 7. Progress review on Today.
+    await clickRobustly(page, page.getByRole('button', { name: 'Today', exact: true }));
+    await clickRobustly(page, page.locator('[data-nova-guide-target="today-progress"]'));
+    await page.screenshot({ path: testInfo.outputPath('07-progress.png') });
+
+    // Experience level: a customer choice, saved on the server, never a lock.
+    await expect(page.getByRole('button', { name: 'Communicate', exact: true })).toHaveCount(0);
+    await clickRobustly(page, switcher.getByRole('radio', { name: 'Mastering' }));
+    await expect(switcher.getByRole('radio', { name: 'Mastering' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('button', { name: 'Communicate', exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Nova', exact: true })).toBeVisible({ timeout: 25_000 });
+    await dismissPostOnboardingModals(page);
+    await expect(page.getByTestId('experience-level-switcher').getByRole('radio', { name: 'Mastering' })).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 });
+    // "Explore all tools" still reveals everything at any level.
+    await expect(page.getByRole('button', { name: 'User Guide', exact: true })).toHaveCount(0);
+    await clickRobustly(page, page.getByRole('button', { name: 'Explore all available tools' }).first());
+    await expect(page.getByRole('button', { name: 'User Guide', exact: true })).toBeVisible();
+  });
+});

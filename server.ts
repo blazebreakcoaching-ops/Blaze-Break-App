@@ -20,6 +20,7 @@ import { NOVA_KNOWLEDGE_BASE, NOVA_CREATOR_KNOWLEDGE, NOVA_COACHING_PHILOSOPHY, 
 import { computeDimensionScores, computeArchetypeScores, pickDominantProfile, computeBlend } from './archetype-scoring';
 import { SendMessageSchema, SetDndSchema, SetStatusSchema } from './boundary-autopilot-schemas';
 import { getIsoWeekId } from './weekly-goal-tracker';
+import { DEFAULT_EXPERIENCE_LEVEL, EXPERIENCE_LEVELS, isExperienceLevel } from './experience-level';
 import { findInProgressShipStage } from './ship-stages';
 import { ISLAMIC_THEMES, GROUNDING_LENSES, GroundingLens, IslamicThemeId } from './grounding-content';
 import { SITUATION_LABELS, SituationKey } from './recovery-recipes-content';
@@ -1747,6 +1748,42 @@ app.get("/api/wellbeing/gad7/reminder", verifyAppCheck, authenticateFirebaseUser
     const doc = await db.collection("users").doc(uid).collection("preferences").doc("gad7_checkin").get();
     const data = doc.exists ? doc.data()! : {};
     res.json({ reminderChoice: data.reminderChoice ?? null, nextSuggestedAt: data.nextSuggestedAt ?? null });
+  } catch (error: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// Customer experience level (Novice / Mastering / Expert). A display
+// preference only: it chooses which tools the navigation shows by default
+// and never grants or removes access - every route keeps its own role,
+// subscription and ownership checks. Always the caller's own document.
+const ExperienceLevelSchema = z.object({
+  level: z.enum(EXPERIENCE_LEVELS),
+}).strict();
+
+app.get("/api/user/preferences/experience-level", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const doc = await getDb().collection("users").doc(uid).collection("preferences").doc("experience").get();
+    const stored = doc.exists ? doc.data()?.level : undefined;
+    res.json({ level: isExperienceLevel(stored) ? stored : DEFAULT_EXPERIENCE_LEVEL, chosen: isExperienceLevel(stored) });
+  } catch (error: any) {
+    logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.put("/api/user/preferences/experience-level", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const uid = requireAuth(req).uid;
+    const parsed = ExperienceLevelSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Choose Novice, Mastering or Expert." });
+    await getDb().collection("users").doc(uid).collection("preferences").doc("experience").set({
+      level: parsed.data.level,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    res.json({ level: parsed.data.level });
   } catch (error: any) {
     logger.error(`Unhandled error on ${req.method} ${req.path}`, errorFields(error));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
