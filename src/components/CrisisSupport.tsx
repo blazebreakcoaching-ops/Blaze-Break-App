@@ -1,3 +1,4 @@
+import { useI18n } from '../lib/i18n-react';
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { X, PhoneCall, MessageCircle, LifeBuoy, Loader2, CheckCircle2, Globe, ArrowUpRight } from 'lucide-react';
@@ -308,6 +309,12 @@ export const CrisisSupportButton = ({ onClick, className }: { onClick: () => voi
     )}
   >
     <LifeBuoy className="w-4 h-4 shrink-0" />
-    <span>Need support now?</span>
+    <CrisisButtonLabel />
   </button>
 );
+
+// Separate tiny component so the button stays a plain expression above.
+function CrisisButtonLabel() {
+  const { t } = useI18n();
+  return <span>{t('nav.needSupport')}</span>;
+}

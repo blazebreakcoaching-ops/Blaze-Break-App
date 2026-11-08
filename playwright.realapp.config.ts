@@ -113,7 +113,7 @@ export default defineConfig({
       // added alongside real-app-nova-journey.spec.ts: both need the
       // flag-off webServer and a real signed-in identity, so both run
       // under this same project.
-      testMatch: [/real-app-nova-journey\.spec\.ts/, /real-app-account-continuity\.spec\.ts/],
+      testMatch: [/real-app-nova-journey\.spec\.ts/, /real-app-account-continuity\.spec\.ts/, /real-app-multilingual\.spec\.ts/],
     },
     {
       name: 'realapp-mobile',

@@ -1,3 +1,4 @@
+import { useI18n } from '../lib/i18n-react';
 import { useEffect, useState } from 'react';
 import { Sparkles, ArrowRight } from 'lucide-react';
 import { secureApiFetch } from '../lib/secure-api';
@@ -44,8 +45,7 @@ export const AccountStatusBanner = ({ isDemoSession, onSignUp, onNavigateUpgrade
         <div className="flex items-center gap-2.5 min-w-0">
           <Sparkles className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
           <p className="text-xs text-text-main">
-            <span className="uppercase tracking-widest font-black text-primary">Sample account</span>
-            {' '}— example progress, not your own. Sign up free to start tracking your own recovery.
+            <SampleText />
           </p>
         </div>
         <button
@@ -53,7 +53,7 @@ export const AccountStatusBanner = ({ isDemoSession, onSignUp, onNavigateUpgrade
           onClick={onSignUp}
           className="shrink-0 flex items-center gap-2 px-4 py-2 bg-primary text-white text-xs font-bold uppercase tracking-widest rounded-full hover:scale-[1.03] active:scale-95 transition-all shadow-sm"
         >
-          Sign up free <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+          <SampleSignUp /> <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
       </div>
     );
@@ -80,3 +80,18 @@ export const AccountStatusBanner = ({ isDemoSession, onSignUp, onNavigateUpgrade
     </div>
   );
 };
+
+function SampleText() {
+  const { t } = useI18n();
+  return (
+    <>
+      <span className="uppercase tracking-widest font-black text-primary">{t('banner.sample')}</span>
+      {' '}{t('banner.sampleBody')}
+    </>
+  );
+}
+
+function SampleSignUp() {
+  const { t } = useI18n();
+  return <>{t('banner.signUp')}</>;
+}

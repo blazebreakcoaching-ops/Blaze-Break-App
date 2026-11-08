@@ -941,7 +941,7 @@ const Header = ({
         </div>
         <div className="h-0.5 w-16 bg-primary/30 rounded-full" />
         <span className="text-[11px] font-black uppercase tracking-[0.4em] text-primary transition-all duration-500">
-          {EYEBROW_LABELS[activeTab] || title}
+          {activeTab === "home" ? tHeader('today.eyebrow') : <>{EYEBROW_LABELS[activeTab] || title}</>}
         </span>
       </div>
       <h2 className="text-3xl sm:text-5xl font-display font-bold text-text-main leading-tight tracking-tight mb-3 capitalize">
@@ -1004,7 +1004,7 @@ const Header = ({
             aria-label="Guided tour: explain this page"
           >
             <Compass className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Guide</span>
+            <span>{tHeader('header.guide')}</span>
           </button>
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1.5 bg-card text-text-main text-[11px] font-bold rounded-lg border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
             Not sure where to start? Get guided to the right recovery action.
@@ -1027,7 +1027,7 @@ const Header = ({
               immediate-support route) so the two stay functionally
               distinct, rather than this caption implying Guardian Ping
               and Somatic Reset are also "need support now" tools. */}
-          <span id="header-support-caption" className="text-[10px] uppercase tracking-widest text-text-muted font-bold whitespace-nowrap">Quick Support</span>
+          <span id="header-support-caption" className="text-[10px] uppercase tracking-widest text-text-muted font-bold whitespace-nowrap">{tHeader('header.quickSupport')}</span>
           {/* role="group" + aria-labelledby gives screen reader users the
               same context sighted users get from the caption above, even
               when navigating by button rather than reading the page
@@ -1856,7 +1856,12 @@ export default function App() {
               root: rootSnap.data(), ui: uiSnap.data(),
               legacyProfile: loadedStats.profile as unknown as Record<string, unknown>,
             });
-            loadedStats = { ...loadedStats, profile: { ...loadedStats.profile, ...webProfileFieldsFrom(merged) } };
+            // Only an explicitly stored language overrides the device
+            // language; the resolver's English default is not a choice.
+            const { language: resolvedLanguage, ...otherFields } = webProfileFieldsFrom(merged);
+            const explicitLanguage = [uiSnap.data()?.localePreference, rootSnap.data()?.locale, (loadedStats.profile as { language?: unknown }).language]
+              .some(isLocaleCode);
+            loadedStats = { ...loadedStats, profile: { ...loadedStats.profile, ...otherFields, ...(explicitLanguage ? { language: resolvedLanguage } : {}) } };
           }
         } catch {
           // Keep the saved web profile's own welcome fields.
@@ -2765,11 +2770,11 @@ export default function App() {
             <>
             {activeTab === "home" && (
               <section aria-labelledby="today-question" className="mx-auto max-w-4xl">
-                <h2 id="today-question" className="font-display text-3xl sm:text-4xl text-text-main">What would help right now?</h2>
-                <p className="text-text-muted mt-3 max-w-xl">Start with one small step. The rest can wait.</p>
+                <h2 id="today-question" className="font-display text-3xl sm:text-4xl text-text-main">{t("today.question")}</h2>
+                <p className="text-text-muted mt-3 max-w-xl">{t("today.sub")}</p>
                 <div className="flex flex-col sm:flex-row gap-3 mt-6 mb-3">
-                  <button data-nova-guide-target="today-reset" className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>I need a moment</button>
-                  <button data-nova-guide-target="today-nova" className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>Talk with Nova</button>
+                  <button data-nova-guide-target="today-reset" className="btn-primary rounded-xl px-6 py-3" onClick={() => setShowSomaticReset(true)}>{t("today.moment")}</button>
+                  <button data-nova-guide-target="today-nova" className="ember-soft-action rounded-xl px-6 py-3" onClick={() => setActiveTab("nova")}>{t("today.talkNova")}</button>
                 </div>
                 {!isDemoSession && (
                   <button
@@ -2800,7 +2805,7 @@ export default function App() {
                   </div>
                 )}
                 <details>
-                  <summary data-nova-guide-target="today-progress" className="cursor-pointer py-4 text-text-muted">My check-ins and recovery progress</summary>
+                  <summary data-nova-guide-target="today-progress" className="cursor-pointer py-4 text-text-muted">{t("today.progress")}</summary>
                   <HomeSection
                     onChatRequest={(voice) => {
                       setActiveTab("nova");
@@ -3420,7 +3425,7 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
-          <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-1 gap-1 min-[360px]:px-2 min-[360px]:gap-2">
+          <div className="flex justify-around items-center h-14 overflow-x-auto custom-scrollbar px-1 gap-0 min-[360px]:px-2 min-[360px]:gap-2">
             {(() => {
               const visibleTabs = mobileVisibleTabs;
               const sheetIds = new Set(mobileSheetTabs.map((t) => t.id));
@@ -3445,14 +3450,14 @@ export default function App() {
                       aria-expanded={showMobileToolsSheet}
                       aria-current={activeSheetTab ? 'page' : undefined}
                       aria-label={activeSheetTab ? t("nav.openTools", { tool: navLabel(t, activeSheetTab) }) : undefined}
-                      className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
+                      className={`py-2 px-1 min-[360px]:px-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${isGroupActive || showMobileToolsSheet ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                     >
                       <div
                         className={`p-1.5 rounded-full transition-all ${isGroupActive || showMobileToolsSheet ? "bg-primary/10" : ""}`}
                       >
                         <SlotIcon className="w-5 h-5" />
                       </div>
-                      <span className="text-[11px] font-bold tracking-wide max-w-[48px] min-[360px]:max-w-[72px] truncate">{activeSheetTab ? shortNavLabel(t, activeSheetTab) : t("nav.tools")}</span>
+                      <span className="text-[10px] min-[360px]:text-[11px] font-bold tracking-wide max-w-[56px] min-[360px]:max-w-[84px] truncate">{activeSheetTab ? shortNavLabel(t, activeSheetTab) : t("nav.tools")}</span>
                     </button>
                   );
                 }
@@ -3461,14 +3466,14 @@ export default function App() {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as ActiveTab)}
                     aria-current={activeTab === tab.id ? 'page' : undefined}
-                    className={`p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
+                    className={`py-2 px-1 min-[360px]:px-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] ${activeTab === tab.id ? "text-primary" : "text-text-muted hover:text-text-main"}`}
                   >
                     <div
                       className={`p-1.5 rounded-full transition-all ${activeTab === tab.id ? "bg-primary/10" : ""}`}
                     >
                       <tab.icon className="w-5 h-5" />
                     </div>
-                    <span className="text-[11px] font-bold tracking-wide max-w-[72px] truncate">
+                    <span className="text-[10px] min-[360px]:text-[11px] font-bold tracking-wide max-w-[48px] min-[360px]:max-w-[84px] truncate">
                       {shortNavLabel(t, tab)}
                     </span>
                   </button>
@@ -3484,10 +3489,10 @@ export default function App() {
                 }}
                 aria-expanded={showAllTools}
                 aria-label={showAllTools ? t("nav.keepSimpleLabel") : t("nav.exploreAllLabel")}
-                className="p-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] text-text-muted hover:text-text-main"
+                className="py-2 px-1 min-[360px]:px-2 rounded-lg transition-all flex flex-col items-center gap-1 shrink-0 min-w-[52px] min-[360px]:min-w-[56px] text-text-muted hover:text-text-main"
               >
                 <span className="p-1.5 rounded-full"><Menu className="w-5 h-5" /></span>
-                <span className="text-[11px] font-bold tracking-wide">{showAllTools ? t("nav.less") : t("nav.more")}</span>
+                <span className="text-[10px] min-[360px]:text-[11px] font-bold tracking-wide max-w-[48px] min-[360px]:max-w-[84px] truncate">{showAllTools ? t("nav.less") : t("nav.more")}</span>
               </button>
             )}
           </div>

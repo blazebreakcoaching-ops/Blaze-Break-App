@@ -169,6 +169,17 @@ export const en = {
   'insights.valueLabel': '{label}: {value} out of 100, {tone}',
 
   // Personal plan
+  'today.eyebrow': "Your Pulse",
+  'today.question': "What would help right now?",
+  'today.sub': "Start with one small step. The rest can wait.",
+  'today.moment': "I need a moment",
+  'today.talkNova': "Talk with Nova",
+  'today.progress': "My check-ins and recovery progress",
+  'header.guide': "Guide",
+  'header.quickSupport': "Quick support",
+  'banner.sample': "Sample account",
+  'banner.sampleBody': "— example progress, not your own. Sign up free to start tracking your own recovery.",
+  'banner.signUp': "Sign up free",
   'plan.noDebt': 'No recovery debt logged yet',
   'plan.nothingLogged': 'Nothing logged yet.',
   'plan.logHint': 'Log sleep, capacity and commitments in the Debt Tracker to keep these signals up to date.',
