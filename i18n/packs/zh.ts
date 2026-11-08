@@ -249,4 +249,10 @@ export const zh: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "Nova 正在查看你的回答...",
   "fingerprint.errorTitle": "无法完成本次检查",
   "fingerprint.retry": "重试",
+  "notifications.title": "Nova 提醒",
+  "notifications.description": "仅在应用内显示温和提醒。推送、电子邮件、短信和 Guardian 通知均已关闭。",
+  "notifications.enable": "开启应用内提醒",
+  "notifications.enableDetail": "允许 Nova 在你使用应用时提供温和的支持。",
+  "notifications.quietHours": "免打扰时段",
+  "notifications.quietDetail": "Nova 在这些时段不会提醒你。",
 };
