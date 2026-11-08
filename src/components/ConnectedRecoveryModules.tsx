@@ -799,6 +799,7 @@ export const ConnectedNovaPermissions = () => {
         } catch { /* Browser storage may be disabled. */ }
         if (!newValue) clearNovaBrainCache();
         else void initNovaBrain(uid);
+        window.dispatchEvent(new CustomEvent('nova-memory-consent-changed', { detail: { uid, enabled: newValue } }));
       }
     } catch(e) { setError('This entry could not be saved.'); setPerms(perms); }
     setLoading(false);
