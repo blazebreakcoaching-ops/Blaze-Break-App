@@ -321,4 +321,5 @@ export const de: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "Mein Ziel gerät unter Verwaltungsaufgaben aus dem Blick.",
   "fingerprint.option.meaning.3": "Ich fühle mich abgekoppelt und arbeite nur noch zum Überleben.",
   "fingerprint.option.meaning.4": "Ich erinnere mich kaum noch daran, was sich sinnvoll anfühlt.",
+  "fingerprint.fullEnglishNotice": "Die vollständige Bewertung mit 14 Fragen verwendet derzeit englische Fragen und Antworten. Die Übersetzungen werden noch geprüft.",
 };
