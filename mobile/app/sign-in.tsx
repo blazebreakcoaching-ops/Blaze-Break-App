@@ -12,9 +12,14 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const handleSubmit = async () => {
-    if (!email.trim() || !password) return;
+    if (!email.trim() || !password) {
+      setFormError('Enter your email and password to sign in.');
+      return;
+    }
+    setFormError('');
     setSubmitting(true);
     try {
       await signInWithEmail(email.trim(), password);
@@ -32,10 +37,14 @@ export default function SignInScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Welcome back</Text>
+        <Text style={styles.title} accessibilityRole="header">Welcome back</Text>
         <TextInput
           style={styles.input}
           placeholder="Email"
+          accessibilityLabel="Email address"
+          autoComplete="email"
+          textContentType="username"
+          returnKeyType="next"
           autoCapitalize="none"
           keyboardType="email-address"
           value={email}
@@ -44,14 +53,18 @@ export default function SignInScreen() {
         <TextInput
           style={styles.input}
           placeholder="Password"
+          accessibilityLabel="Password"
+          autoComplete="current-password"
+          textContentType="password"
           secureTextEntry
           value={password}
           onChangeText={setPassword}
         />
-        <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={submitting}>
+        {formError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{formError}</Text> : null}
+        <TouchableOpacity style={styles.button} accessibilityRole="button" accessibilityLabel="Sign in" accessibilityState={{ disabled: submitting, busy: submitting }} onPress={handleSubmit} disabled={submitting}>
           {submitting ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>Sign in</Text>}
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.replace('/sign-up')}>
+        <TouchableOpacity accessibilityRole="link" accessibilityLabel="Create an account" style={styles.linkTouch} onPress={() => router.replace('/sign-up')}>
           <Text style={styles.link}>Don&apos;t have an account? Sign up</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -79,6 +92,8 @@ const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
     marginTop: 8,
   },
   buttonText: { color: colors.onAccent, fontWeight: '700', fontSize: 16 },
+  error: { fontSize: 14, color: colors.danger, marginTop: 4, marginBottom: 8 },
+  linkTouch: { minHeight: 48, justifyContent: 'center' },
   link: { textAlign: 'center', marginTop: 16, color: colors.accent, fontWeight: '600' },
 });
 
