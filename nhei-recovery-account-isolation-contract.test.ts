@@ -20,7 +20,7 @@ describe('Recovery Intelligence member separation', () => {
   });
 
   it('cannot post the previous account recommendation after a sign-in change', () => {
-    expect(source).toContain('if (!decisionId || !accountUid || auth.currentUser?.uid !== accountUid) return');
+    expect(source).toContain('if (!decisionId || !uid || uid !== accountUid) return false');
   });
 
   it('preserves feedback choices until their authenticated save succeeds', () => {
