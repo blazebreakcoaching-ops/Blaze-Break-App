@@ -376,7 +376,7 @@ export const DiagnoseView = ({
           Something went wrong
         </h3>
         <p role="alert" className="font-display text-lg opacity-60">{error}</p>
-        <button onClick={() => setStep(0)} className="btn-primary bg-destructive">
+        <button onClick={() => { setError(null); setLoading(false); setStep(0); setMode('choice'); }} className="btn-primary bg-destructive">
           {t('common.tryAgain')}
         </button>
       </div>
