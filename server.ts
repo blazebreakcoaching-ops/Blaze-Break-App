@@ -15278,7 +15278,7 @@ app.delete("/api/recovery/my-feedback/:id", verifyAppCheck, authenticateFirebase
       .collection("recovery_routing_decisions").doc(id);
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: "Feedback not found." });
-    await ref.update({ helpfulness: FieldValue.delete() });
+    await ref.update({ helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
     res.json({ ok: true });
   } catch (err: any) {
     logger.error("Personal recovery feedback erasure failed", errorFields(err));
@@ -15317,7 +15317,7 @@ app.post("/api/recovery/reset-adaptive-learning", verifyAppCheck, authenticateFi
         .limit(100).get();
       if (snap.empty) { complete = true; break; }
       const batch = db.batch();
-      for (const doc of snap.docs) batch.update(doc.ref, { helpfulness: FieldValue.delete() });
+      for (const doc of snap.docs) batch.update(doc.ref, { helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
       await batch.commit();
       erased += snap.size;
     }
