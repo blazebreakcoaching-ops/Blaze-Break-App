@@ -114,6 +114,7 @@ import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engi
 import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState, SESSION_RECOMMENDATION_OFFER_LIMIT } from './recovery-routing-engine';
 import { adaptInterventionCandidates } from './nhei-adaptive-intelligence';
+import { mayUseSecondMemory, normalizeOpenLoop, validateOpenLoop, MAX_OPEN_LOOPS } from './nhei-second-memory';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { isUsableRecoveryDerivedSummary, isHighRisingRecoveryDebt } from './recovery-derived-signals';
 import { buildDecisionCopy, MODULE_TARGET_TAB, moduleDisplayName } from './recovery-decision-copy';
@@ -17749,6 +17750,112 @@ app.post("/api/user/mark-activity", verifyAppCheck, authenticateFirebaseUser, as
 // engine above so it carries zero risk to those rules. Only ever
 // surfaces ONE prompt (the most recently touched), matching this
 // product's "one clear next step per page" principle - never a stack
+// NHEI Second Memory: user-created, user-owned open loops. These private
+// notes are never queried by employers or used as diagnostic evidence.
+// The usual user export/erasure traverses this nested subcollection.
+const secondMemoryCollection = (uid: string) =>
+  getDb().collection("users").doc(uid).collection("nova_second_memory");
+
+const secondMemoryPermissions = async (uid: string): Promise<boolean> => {
+  const snap = await getDb().collection("users").doc(uid)
+    .collection("nova_permissions").doc("current").get();
+  return mayUseSecondMemory(snap.data());
+};
+
+app.get("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const enabled = await secondMemoryPermissions(user.uid);
+    // Always allow the member to inspect and erase existing notes, even when learning is off.
+    const snap = await secondMemoryCollection(user.uid).orderBy("updatedAt", "desc").limit(MAX_OPEN_LOOPS).get();
+    const items = snap.docs.map(doc => normalizeOpenLoop({ id: doc.id, ...doc.data() }))
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    res.json({ enabled, items });
+  } catch (err: any) {
+    logger.error("Second Memory read failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.post("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const note = validateOpenLoop(req.body?.text);
+    if (!note) return res.status(400).json({ error: "Please enter a note of 1 to 240 characters." });
+    const collection = secondMemoryCollection(user.uid);
+    const permissionsRef = getDb().collection("users").doc(user.uid).collection("nova_permissions").doc("current");
+    const ref = collection.doc();
+    const now = new Date().toISOString();
+    // Read consent and available space in the same transaction that creates
+    // the note. Concurrent requests cannot silently bypass the cap.
+    const result = await getDb().runTransaction(async transaction => {
+      const [permissionSnap, current] = await Promise.all([
+        transaction.get(permissionsRef),
+        transaction.get(collection.limit(MAX_OPEN_LOOPS)),
+      ]);
+      if (!mayUseSecondMemory(permissionSnap.data())) return 'disabled' as const;
+      if (current.size >= MAX_OPEN_LOOPS) return 'full' as const;
+      transaction.create(ref, { text: note, status: "open", createdAt: now, updatedAt: now });
+      return 'saved' as const;
+    });
+    if (result === 'disabled') return res.status(403).json({ error: "Enable Nova Memory before saving notes." });
+    if (result === 'full') return res.status(409).json({ error: "Your note list is full. Finish or remove a note first." });
+    res.status(201).json({ item: { id: ref.id, text: note, status: "open", updatedAt: now } });
+  } catch (err: any) {
+    logger.error("Second Memory write failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.patch("/api/nova/second-memory/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const id = String(req.params.id ?? "");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid note ID." });
+    if (!(await secondMemoryPermissions(user.uid))) return res.status(403).json({ error: "Nova Memory is disabled." });
+    const status = req.body?.status;
+    if (status !== "open" && status !== "done") return res.status(400).json({ error: "Invalid note status." });
+    const ref = secondMemoryCollection(user.uid).doc(id);
+    const previous = await ref.get();
+    if (!previous.exists) return res.status(404).json({ error: "Note not found." });
+    await ref.update({ status, updatedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error("Second Memory update failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// User-initiated bulk erasure remains available after consent withdrawal.
+app.delete("/api/nova/second-memory", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const snap = await secondMemoryCollection(user.uid).limit(MAX_OPEN_LOOPS + 1).get();
+    const batch = getDb().batch();
+    for (const doc of snap.docs) batch.delete(doc.ref);
+    await batch.commit();
+    res.json({ ok: true, deleted: snap.size });
+  } catch (err: any) {
+    logger.error("Second Memory bulk deletion failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+app.delete("/api/nova/second-memory/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const id = String(req.params.id ?? "");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid note ID." });
+    // Erasure remains possible even if memory consent was withdrawn.
+    await secondMemoryCollection(user.uid).doc(id).delete();
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error("Second Memory deletion failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+
 // of reminders. Copy is deliberately optional-sounding, never framed
 // as a broken streak or something owed.
 app.get("/api/user/resume-prompt", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
