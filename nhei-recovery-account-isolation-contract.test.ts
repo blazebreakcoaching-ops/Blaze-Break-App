@@ -36,6 +36,15 @@ describe('Recovery Intelligence member separation', () => {
     expect(source).toContain('!floorMode && auth.currentUser && <RecoveryInsightsPanel />');
   });
 
+  it('restores real unfinished recovery journeys without cross-account leakage', () => {
+    expect(source).toContain("secureApiFetch('/api/user/resume-prompt')");
+    expect(source).toContain("generation === requestGeneration.current");
+    expect(source).toContain("const RESUME_TABS = new Set(['plan', 'diagnose', 'recover'])");
+    expect(source).toContain("setResumePrompt(null)");
+    expect(source).toContain("!floorMode && (");
+    expect(source).toContain("RESUME_TABS.has(resumePrompt.tab)");
+  });
+
   it('reuses the shared i18n title without changing any stored recovery data', () => {
     expect(source).toContain('t("title.recovery_intelligence")');
   });
