@@ -26,7 +26,7 @@ const TEMPLATES: Record<GreetingTimeOfDay, GreetingTemplate[]> = {
     (n) => (n ? `Good morning, ${n}.` : "Good morning."),
     (n) => (n ? `Morning, ${n}. Let's make today a little lighter.` : "Let's make today a little lighter."),
     (n) => (n ? `Rise and shine, ${n} — the world's better with you in it today.` : "Rise and shine — the world's better with you in it today."),
-    (n) => (n ? `Morning, ${n}. Coffee's optional. Showing up isn't.` : "Coffee's optional. Showing up isn't."),
+    (n) => (n ? `Morning, ${n}. You can take today at your own pace.` : "You can take today at your own pace."),
     (n) => (n ? `Hello, ${n}. Here's to a calmer version of today.` : "Here's to a calmer version of today."),
   ],
   afternoon: [
@@ -45,10 +45,10 @@ const TEMPLATES: Record<GreetingTimeOfDay, GreetingTemplate[]> = {
   ],
   night: [
     (n) => (n ? `Still up, ${n}? Good to see you.` : "Still up? Good to see you."),
-    (n) => (n ? `Late one, ${n}? Let's not make it a habit.` : "Late one? Let's not make it a habit."),
+    (n) => (n ? `Hello, ${n}. You can rest when you're ready.` : "You can rest when you're ready."),
     (n) => (n ? `Hello, ${n}. The night owl shift begins.` : "Hello. The night owl shift begins."),
     (n) => (n ? `Good evening — or very early morning, ${n}.` : "Good evening — or very early morning."),
-    (n) => (n ? `You're up late, ${n}. Everything alright?` : "You're up late. Everything alright?"),
+    (n) => (n ? `Hello, ${n}. No pressure to do more tonight.` : "No pressure to do more tonight."),
   ],
 };
 

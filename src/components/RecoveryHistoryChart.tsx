@@ -15,7 +15,19 @@ export interface RecoveryHistoryChartProps {
 }
 
 export const RecoveryHistoryChart = ({ data }: RecoveryHistoryChartProps) => (
-  <ResponsiveContainer width="100%" height="100%">
+  <>
+    {/* Real text equivalent for screen readers and non-visual navigation.
+        We use the supplied values as-is; no synthetic "trend" inference. */}
+    <table className="sr-only">
+      <caption>Recovery score history</caption>
+      <thead><tr><th scope="col">Date</th><th scope="col">Score</th></tr></thead>
+      <tbody>
+        {data.map((point, index) => (
+          <tr key={`${point.date}-${index}`}><td>{point.date}</td><td>{point.score}</td></tr>
+        ))}
+      </tbody>
+    </table>
+    <ResponsiveContainer width="100%" height="100%">
     <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
       <defs>
         <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
@@ -34,6 +46,7 @@ export const RecoveryHistoryChart = ({ data }: RecoveryHistoryChartProps) => (
       <Area type="monotone" dataKey="score" stroke="#ea580c" strokeWidth={2} fillOpacity={1} fill="url(#colorScore)" activeDot={{ r: 5 }} />
     </AreaChart>
   </ResponsiveContainer>
+  </>
 );
 
 export default RecoveryHistoryChart;

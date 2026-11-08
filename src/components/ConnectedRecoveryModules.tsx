@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
 import { logJourney } from '../lib/nova-brain';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { LOW_ENERGY_OPTIONS, type LowEnergyResponse } from '../../low-energy-checkin';
 
 // Helper for empty states
 const SecureVaultNotice = () => (
@@ -47,6 +48,31 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const handleQuickResponse = async (response: LowEnergyResponse) => {
+    if (!uid || loading) {
+      if (!uid) setError('Please sign in before saving your answer.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await setDoc(doc(db, 'users', uid, 'low_energy_checkins', Date.now().toString()), {
+        createdAt: new Date().toISOString(),
+        response,
+        kind: 'qualitative',
+        source: 'user',
+      });
+      // No guessed scores, no gamification, no sharing with Nova or
+      // company reporting. The user's existing detailed check-ins remain
+      // a separate source for quantitative recovery intelligence.
+      onClose();
+    } catch {
+      setError('Your answer could not be saved. Try again when you are ready.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   
   const uid = auth.currentUser?.uid;
@@ -137,6 +163,10 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
           
           {step === 0 && (
             <div className="space-y-6">
+              <button onClick={() => { setStep(2); setEditingId(null); setError(''); }} className="w-full min-h-12 rounded-xl border border-primary/30 bg-primary/10 text-text-main px-4 py-3 text-sm font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                One-question check-in
+              </button>
+              <p className="text-xs text-text-muted">One tap, no numerical scores. You can skip anytime.</p>
               <button onClick={() => { setStep(1); setEditingId(null); }} className="w-full btn-primary py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
                 <Plus className="w-4 h-4" /> New Check-In
               </button>
@@ -173,6 +203,23 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
                 )}
               </div>
             </div>
+          )}
+
+          {step === 2 && (
+            <section aria-labelledby="low-energy-checkin-question" className="space-y-3">
+              <h4 id="low-energy-checkin-question" className="text-lg font-bold text-text-main">How are you feeling right now?</h4>
+              <p className="text-sm text-text-muted">Choose what feels closest. There is no wrong answer.</p>
+              {LOW_ENERGY_OPTIONS.map(option => (
+                <button key={option.id} type="button" disabled={loading}
+                  onClick={() => { void handleQuickResponse(option.id); }}
+                  className="w-full min-h-14 rounded-xl border border-border bg-surface p-4 text-left text-text-main hover:border-primary/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60">
+                  <span className="block font-semibold">{option.label}</span>
+                  <span className="block text-sm text-text-muted">{option.description}</span>
+                </button>
+              ))}
+              <p className="text-xs text-text-muted">Private and qualitative. This does not create a recovery score.</p>
+              <button type="button" disabled={loading} onClick={() => setStep(0)} className="min-h-12 px-3 text-sm text-text-muted underline">Go back</button>
+            </section>
           )}
 
           {step === 1 && (

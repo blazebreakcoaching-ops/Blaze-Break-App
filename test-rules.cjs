@@ -25,6 +25,17 @@ async function runTests() {
     novaTone: 'direct'
   }));
 
+  // Profile greeting options: explicitly validated; never shared across accounts.
+  const welcomePrefs = userA.firestore().collection('users').doc('userA').collection('preferences').doc('ui');
+  await assertSucceeds(welcomePrefs.set({
+    greetingEnabled: true, usePreferredName: false, greetingTone: 'simple', localePreference: 'en',
+  }, { merge: true }));
+  await assertFails(welcomePrefs.update({ greetingTone: 'anything' }));
+  await assertFails(welcomePrefs.update({ greetingEnabled: 'yes' }));
+  await assertFails(welcomePrefs.update({ localePreference: 'ar' }));
+  await assertFails(testEnv.unauthenticatedContext().firestore().collection('users').doc('userA').collection('preferences').doc('ui').get());
+  await assertFails(testEnv.authenticatedContext('userB').firestore().collection('users').doc('userA').collection('preferences').doc('ui').get());
+
   // 3. Authenticated user A reads their own entitlement status
   await assertSucceeds(userA.firestore().collection('users').doc('userA').collection('entitlements').doc('status').get());
 
@@ -35,6 +46,7 @@ async function runTests() {
 
   const checkinRef = userA.firestore().collection('users').doc('userA').collection('checkins').doc('c1');
   const moodRef = userA.firestore().collection('users').doc('userA').collection('mood_pulses').doc('m1');
+  const lowEnergyRef = userA.firestore().collection('users').doc('userA').collection('low_energy_checkins').doc('q1');
   const bodyRef = userA.firestore().collection('users').doc('userA').collection('body_checkins').doc('b1');
   const winRef = userA.firestore().collection('users').doc('userA').collection('wins').doc('w1');
   const reviewRef = userA.firestore().collection('users').doc('userA').collection('weekly_reviews').doc('r1');
@@ -50,6 +62,19 @@ async function runTests() {
   await assertSucceeds(checkinRef.update({ updatedAt: '2026', energyLevel: 6 }));
   // * user A deletes own check-in.
   await assertSucceeds(checkinRef.delete());
+
+  // A low-energy response is intentionally qualitative (never mapped to a score).
+  const qualitative = { createdAt: '2026-11-08T00:00:00.000Z', response: 'low', kind: 'qualitative', source: 'user' };
+  await assertSucceeds(lowEnergyRef.set(qualitative));
+  await assertSucceeds(lowEnergyRef.get());
+  await assertFails(lowEnergyRef.update({ response: 'okay' })); // immutable
+  await assertFails(lowEnergyRef.set({ ...qualitative, energyLevel: 5 })); // no fabricated numbers
+  await assertFails(lowEnergyRef.set({ ...qualitative, response: 'diagnosed' })); // strict enum
+  await assertFails(lowEnergyRef.set({ ...qualitative, source: 'admin' }));
+  await assertFails(userA.firestore().collection('users').doc('userB').collection('low_energy_checkins').doc('x').set(qualitative));
+  await assertFails(userA.firestore().collection('users').doc('userB').collection('low_energy_checkins').doc('x').get());
+  await assertFails(testEnv.unauthenticatedContext().firestore().collection('users').doc('userA').collection('low_energy_checkins').doc('q1').get());
+  await assertSucceeds(lowEnergyRef.delete());
 
   // * user A creates own mood pulse with valid enum and intensity.
   await assertSucceeds(moodRef.set({ createdAt: '2025', updatedAt: '2025', moodLabel: 'calm', intensity: 5, source: 'user' }));

@@ -5,12 +5,16 @@ import { useNativeTheme } from '../src/lib/native-theme';
 import type { NativeThemeColors } from '../src/lib/native-theme-palette';
 import { router } from 'expo-router';
 import { useAuth } from '../src/lib/auth-context';
+import { auth } from '../src/lib/firebase';
+import { savePersonalProfile, emptyPersonalProfile } from '../src/lib/personal-profile';
 
 export default function SignUpScreen() {
   const styles = useThemedStyles();
   const { signUpWithEmail } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [preferredName, setPreferredName] = useState('');
+  const [timeZone, setTimeZone] = useState(() => emptyPersonalProfile().timeZone);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -30,6 +34,19 @@ export default function SignUpScreen() {
     setSubmitting(true);
     try {
       await signUpWithEmail(email.trim(), password);
+      const currentUid = auth.currentUser?.uid;
+      if (currentUid) {
+        try {
+          await savePersonalProfile(currentUid, {
+            ...emptyPersonalProfile(), preferredName, timeZone,
+            useName: Boolean(preferredName.trim()), // user can turn off in Account
+          });
+        } catch {
+          // Account creation succeeded; failing to save a preference must
+          // not falsely tell the customer their account failed.
+          Alert.alert('Account created', 'Your welcome preferences could not be saved yet. You can update them in Account.');
+        }
+      }
       router.back();
     } catch (e: unknown) {
       Alert.alert('Could not create account', e instanceof Error ? e.message : 'Something went wrong.');
@@ -44,7 +61,7 @@ export default function SignUpScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Save your progress</Text>
+        <Text style={styles.title} accessibilityRole="header">Save your progress</Text>
         <Text style={styles.subtitle}>
           You can already use Blaze Break without an account. Creating one keeps your Check-in, Pulse
           history, and Reset activity synced if you switch devices.
@@ -52,6 +69,8 @@ export default function SignUpScreen() {
         <TextInput
           style={styles.input}
           placeholder="Email"
+          accessibilityLabel="Email address"
+          autoComplete="email"
           autoCapitalize="none"
           keyboardType="email-address"
           value={email}
@@ -60,12 +79,21 @@ export default function SignUpScreen() {
         <TextInput
           style={styles.input}
           placeholder="Password (min 6 characters)"
+          accessibilityLabel="Choose a password"
           secureTextEntry
           value={password}
           onChangeText={setPassword}
         />
-        {formError && <Text style={styles.error}>{formError}</Text>}
-        <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={submitting}>
+        <Text style={styles.fieldLabel}>What should we call you? (Optional)</Text>
+        <TextInput style={styles.input} accessibilityLabel="Preferred name" value={preferredName}
+          onChangeText={setPreferredName} maxLength={60} placeholder="Preferred name" autoCapitalize="words" />
+        <Text style={styles.fieldLabel}>Your time zone</Text>
+        <TextInput style={styles.input} accessibilityLabel="Your time zone" value={timeZone}
+          onChangeText={setTimeZone} autoCapitalize="none" autoCorrect={false} />
+        <Text style={styles.note}>Suggested from your device, without GPS. You can change it later.</Text>
+        <Text style={styles.note}>Language: English. More translations will be added once reviewed.</Text>
+        {formError && <Text accessibilityLiveRegion="polite" style={styles.error}>{formError}</Text>}
+        <TouchableOpacity style={styles.button} accessibilityRole="button" onPress={handleSubmit} disabled={submitting}>
           {submitting ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>Create account</Text>}
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.replace('/sign-in')}>
@@ -99,6 +127,8 @@ const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
   buttonText: { color: colors.onAccent, fontWeight: '700', fontSize: 16 },
   link: { textAlign: 'center', marginTop: 16, color: colors.accent, fontWeight: '600' },
   error: { color: colors.danger, fontSize: 13, marginBottom: 12, textAlign: 'center' },
+  fieldLabel: { color: colors.text, fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  note: { color: colors.muted, fontSize: 13, marginBottom: 12 },
 });
 
 function useThemedStyles() {
