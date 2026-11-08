@@ -93,3 +93,10 @@ Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site
 - Do not enable gated NHEI Educational, Personal Reflection, Longitudinal or external agentic actions without independent human governance approvals.
 
 **Next acceptance stages:** run clean checkout and builds (web/Expo/functions), full unit/component tests, rules emulator, Firebase-authenticated staging E2E, account/data-rights scenarios and native-speaker/safety review. Only then merge to main and plan deployment. The earlier multilingual Batch 7 test pass does not apply to the integration branch after these changes.
+
+## Continuation — recovery feedback integrity (8 November 2026)
+
+- Fixed `/api/recovery/routing-outcome` to reject `completed` without a value from the existing valid helpfulness enum **before opening the Firestore transaction**. Previously the endpoint could accept an unrated completed outcome and include it in history. This protects downstream adaptation from treating an incomplete answer as meaningful feedback.
+- Added `nhei-outcome-validation-contract.test.ts`: checks server authentication/App Check source boundary, pre-transaction validation, owner-scoped decisions, withdrawn-feedback protection and existing idempotency behaviour.
+- Commits: `58a1167399f5899649a21b312e0d5fe42d03563f`, `fd54f34f5cb9563f2f0debbaddf53314a46959db` (`[skip ci]`). Changes are confined to protected integration branch; no merge, deployment or GitHub Actions.
+- **Verification status:** GitHub confirmed two commits and file contents; the test has NOT been run. Must validate complete/unrated/invalid/corrected/forgotten outcomes against the emulator and authenticated HTTP staging before release. Do not consider this acceptance complete.
