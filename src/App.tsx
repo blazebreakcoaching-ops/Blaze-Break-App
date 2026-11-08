@@ -827,7 +827,7 @@ const Header = ({
     locale: profile?.language,
     seed: userName || 'welcome',
   }));
-  const dashboardGreeting = `${dashboardWelcome.greeting} ${dashboardWelcome.message}`;
+  const dashboardGreeting = profile?.greetingEnabled === false ? 'Welcome to Blaze Break.' : `${dashboardWelcome.greeting} ${dashboardWelcome.message}`;
 
   const handleGuardianPing = useCallback(async () => {
     if (guardianPingActive) return;

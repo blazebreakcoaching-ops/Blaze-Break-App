@@ -455,6 +455,19 @@ export const SettingsModal = ({ profile, onSave, onClose, onOpenPrivacyCentre }:
                     </select>
                   </div>
                   <div className="space-y-1.5">
+                    <label htmlFor="settings-region" className="block text-xs font-bold text-text-muted">Country or region (optional)</label>
+                    <input id="settings-region" type="text" maxLength={60}
+                      value={formData.region || ''}
+                      onChange={e => setFormData({ ...formData, region: e.target.value })}
+                      className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-main" />
+                  </div>
+                  <label className="flex items-center gap-3 text-sm text-text-main">
+                    <input type="checkbox" checked={formData.greetingEnabled !== false}
+                      onChange={e => setFormData({ ...formData, greetingEnabled: e.target.checked })}
+                      className="h-5 w-5 accent-primary" />
+                    Show welcome messages
+                  </label>
+                  <div className="space-y-1.5">
                     <label htmlFor="settings-welcome-style" className="block text-xs font-bold text-text-muted">Welcome style</label>
                     <select id="settings-welcome-style" value={formData.greetingTone || 'warm'}
                       onChange={e => setFormData({ ...formData, greetingTone: e.target.value as 'warm' | 'simple' | 'direct' })}

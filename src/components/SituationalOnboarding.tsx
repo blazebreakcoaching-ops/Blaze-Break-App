@@ -38,6 +38,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     timeZone: deviceTimeZone(),
     language: "en",
     greetingTone: "warm",
+    greetingEnabled: true,
     useNameInGreetings: false,
     role: "",
     organization: "",
