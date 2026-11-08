@@ -20,8 +20,8 @@ export function resolveServerFirebaseTarget(input: {
     if (!bundledProject || bundledProject !== runtimeProject) {
       throw new Error('Runtime Firebase project does not match bundled web Firebase project');
     }
-    if (!databaseId || databaseId === '(default)') {
-      throw new Error('The named Firestore database ID is required in production');
+    if (!databaseId) {
+      throw new Error('An explicit Firestore database ID is required in production');
     }
   }
   return { projectId: runtimeProject || bundledProject, databaseId };

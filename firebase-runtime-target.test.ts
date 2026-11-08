@@ -14,13 +14,13 @@ describe('Cloud Run Firebase environment isolation', () => {
       bundledProjectId, bundledDatabaseId, runtimeProjectId: 'staging-example', production: true,
     })).toThrow(/does not match/);
   });
-  it('rejects missing runtime identity and implicit default database in production', () => {
+  it('rejects missing runtime identity and missing database in production', () => {
     expect(() => resolveServerFirebaseTarget({
       bundledProjectId, bundledDatabaseId, production: true,
     })).toThrow(/required/);
     expect(() => resolveServerFirebaseTarget({
-      bundledProjectId, bundledDatabaseId: '(default)', runtimeProjectId: bundledProjectId, production: true,
-    })).toThrow(/named Firestore/);
+      bundledProjectId, bundledDatabaseId: undefined, runtimeProjectId: bundledProjectId, production: true,
+    })).toThrow(/explicit Firestore/);
   });
   it('retains local and test-mode fallback', () => {
     expect(resolveServerFirebaseTarget({ bundledProjectId, bundledDatabaseId, production: false }).projectId)
