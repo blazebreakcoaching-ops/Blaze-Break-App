@@ -321,4 +321,5 @@ export const pl: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "Cel znika pod natłokiem obowiązków administracyjnych.",
   "fingerprint.option.meaning.3": "Czuję się odcięty i działam tylko w trybie przetrwania.",
   "fingerprint.option.meaning.4": "Prawie nie pamiętam, jak to jest robić coś znaczącego.",
+  "fingerprint.fullEnglishNotice": "Pełna ankieta z 14 pytaniami jest obecnie dostępna z pytaniami i odpowiedziami po angielsku. Trwa weryfikacja tłumaczeń.",
 };
