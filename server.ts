@@ -18998,6 +18998,95 @@ type RoutingOutcomeAction = typeof ROUTING_OUTCOME_ACTIONS[number];
 const ROUTING_OUTCOME_HELPFULNESS = ['better', 'same', 'not_really', 'not_sure'] as const;
 type RoutingOutcomeHelpfulness = typeof ROUTING_OUTCOME_HELPFULNESS[number];
 
+app.get("/api/recovery/my-feedback", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const snap = await getDb().collection("users").doc(user.uid)
+      .collection("recovery_routing_decisions")
+      .orderBy("createdAt", "desc").limit(60).get();
+    const items = snap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        module: typeof data.selectedModule === 'string' && isKnownRoutingModule(data.selectedModule)
+          ? data.selectedModule : null,
+        outcome: data.outcome === 'completed' ? 'completed' : data.outcome === 'declined' ? 'declined' : null,
+        helpfulness: ROUTING_OUTCOME_HELPFULNESS.includes(data.helpfulness) ? data.helpfulness : null,
+        date: typeof data.createdAt === 'string' ? data.createdAt : null,
+      };
+    }).filter(item => item.outcome === 'completed' && item.helpfulness && item.module).slice(0, 30);
+    res.json({ items });
+  } catch (err: any) {
+    logger.error("Personal recovery feedback read failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// Forget only the subjective rating; retain the minimal intervention
+// event for recommendation-budget and usage integrity. This removes
+// the entry from adaptive learning and rated-outcome comparisons.
+app.delete("/api/recovery/my-feedback/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const id = String(req.params.id ?? '');
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid feedback ID." });
+    const ref = getDb().collection("users").doc(user.uid)
+      .collection("recovery_routing_decisions").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: "Feedback not found." });
+    await ref.update({ helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error("Personal recovery feedback erasure failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// User-directed learning reset. Stop adapting first, then erase the
+// subjective ratings that the learning engine considered. Recovery events
+// remain intact, preserving the user's work and their outcome timeline.
+app.post("/api/recovery/reset-adaptive-learning", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    if (req.body?.confirm !== 'RESET_MY_LEARNING') {
+      return res.status(400).json({ error: "Explicit reset confirmation is required." });
+    }
+    const db = getDb();
+    const permissionsRef = db.collection('users').doc(user.uid).collection('nova_permissions').doc('current');
+    const permissionsSnap = await permissionsRef.get();
+    if (!permissionsSnap.exists) return res.status(409).json({ error: "Nova permissions are not initialised." });
+    await permissionsRef.set({
+      allowAdaptiveIntelligence: false,
+      adaptivePreferredModules: [],
+      adaptiveAvoidedModules: [],
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // A bounded batch protects the service. If there are more records,
+    // the user can repeat the request without losing what was done.
+    let erased = 0;
+    let complete = false;
+    const decisionsRef = db.collection('users').doc(user.uid).collection('recovery_routing_decisions');
+    for (let pass = 0; pass < 20; pass++) {
+      const snap = await decisionsRef
+        .where('helpfulness', 'in', ['better', 'same', 'not_really', 'not_sure'])
+        .limit(100).get();
+      if (snap.empty) { complete = true; break; }
+      const batch = db.batch();
+      for (const doc of snap.docs) batch.update(doc.ref, { helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
+      await batch.commit();
+      erased += snap.size;
+    }
+    res.json({
+      ok: true, adaptiveLearningEnabled: false, ratingsErased: erased, complete,
+      message: complete ? "Adaptive learning reset." : "Learning disabled. Some older ratings remain; run reset again to finish erasing.",
+    });
+  } catch (err: any) {
+    logger.error("Adaptive learning reset failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
 app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
