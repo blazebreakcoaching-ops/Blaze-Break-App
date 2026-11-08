@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firestore';
 import { auth } from '../lib/firebase';
+import { useAuth } from '../lib/auth';
 
 interface StoredMemory { id: string; type: string; content: string; canEdit: boolean; }
 
@@ -9,18 +10,24 @@ interface StoredMemory { id: string; type: string; content: string; canEdit: boo
 // A member can exercise access/correction/erasure rights after switching
 // learning off, without reactivating Nova's memory or saving any new data.
 export function PastNovaMemoriesReview() {
+  const { user } = useAuth();
+  const accountUid = user?.uid ?? null;
   const [opened, setOpened] = useState(false);
   const [entries, setEntries] = useState<StoredMemory[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  useEffect(() => {
+    setOpened(false); setEntries([]); setEditing(null); setDraft(''); setError('');
+  }, [accountUid]);
   const load = async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     setBusy(true); setError('');
     try {
       const snap = await getDocs(collection(db, 'users', uid, 'nova_memories'));
+      if (auth.currentUser?.uid !== uid) return;
       setEntries(snap.docs.map(d => ({
         id: d.id, type: String(d.data().type ?? 'memory'),
         content: String(d.data().content ?? ''), canEdit: d.data().canEdit === true,
