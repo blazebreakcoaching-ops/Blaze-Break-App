@@ -344,10 +344,19 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
-      {!loading && !error && decision?.adaptiveExplanation?.basis === 'confirmed_outcomes' && !floorMode && (
-        <p className="text-xs text-text-muted" aria-live="polite">
-          Nova considered what you previously marked helpful. You can change this in Nova Privacy Controls.
-        </p>
+      {!loading && !error && decision?.adaptiveLearningUsed === true && decision.adaptiveExplanation && !floorMode && (
+        <div className="rounded-lg border border-border bg-surface p-3 space-y-2" aria-live="polite">
+          <p className="text-xs text-text-muted">
+            {decision.adaptiveExplanation.basis === 'explicit_preference'
+              ? 'Your saved preference helped shape this suggestion.'
+              : 'Your past feedback in a similar situation helped shape this suggestion.'}
+            {' '}You can change your preferences or clear feedback at any time.
+          </p>
+          <button type="button" className="text-xs text-primary underline"
+            onClick={() => navigateToTab('privacy')}>
+            Review Nova learning and feedback
+          </button>
+        </div>
       )}
 
       {!loading && !error && decision && !dismissed && (!floorMode || (!pendingOutcomeCheck && !resumePrompt?.hasIncomplete)) && (
