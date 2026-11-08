@@ -56,6 +56,8 @@ const memoriesCollection = async (uid: string) => {
 // canonical Firestore profile from directly.
 export const isNovaLearningAllowed = (): boolean => {
   try {
+    const uid = auth.currentUser?.uid;
+    if (!uid || localStorage.getItem('blaze_profile_uid') !== uid) return false;
     const stored = localStorage.getItem('blaze_profile');
     // No profile may mean onboarding is incomplete or storage unavailable:
     // never assume consent to remembering personal information.
@@ -189,8 +191,11 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
       await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
         allowNovaMemory: enabled,
         allowNovaUseSavedMemories: enabled,
+        ...(!enabled ? { allowAdaptiveIntelligence: false } : {}),
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      if (!enabled && auth.currentUser?.uid === uid) clearNovaBrainCache();
+      if (enabled && auth.currentUser?.uid === uid) void initNovaBrain(uid);
     } catch {
       // Non-fatal, same reasoning as persistMemory.
     }
@@ -202,9 +207,18 @@ export const initNovaBrain = (uid: string): Promise<void> => {
   cachedUid = uid;
   initPromise = (async () => {
     try {
-      const { getDocs, query, orderBy } = await import('firebase/firestore');
-      const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
-      cachedBrain = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
+      const { getDocs, getDoc, doc, query, orderBy } = await import('firebase/firestore');
+      const db = await getDb();
+      const permissionSnap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
+      const permitted = permissionSnap.exists() &&
+        permissionSnap.data().allowNovaMemory === true &&
+        permissionSnap.data().allowNovaUseSavedMemories === true;
+      if (permitted && auth.currentUser?.uid === uid) {
+        const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
+        if (auth.currentUser?.uid === uid) cachedBrain = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
+      } else {
+        cachedBrain = [];
+      }
     } catch (e) {
       // Leaves the cache empty rather than pretending memories loaded.
       cachedBrain = [];
