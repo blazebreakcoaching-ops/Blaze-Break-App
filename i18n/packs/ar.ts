@@ -250,4 +250,10 @@ export const ar: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "نوفا تراجع إجاباتك...",
   "fingerprint.errorTitle": "تعذر إكمال الفحص",
   "fingerprint.retry": "حاول مرة أخرى",
+  "notifications.title": "تذكيرات نوفا",
+  "notifications.description": "تذكيرات هادئة داخل التطبيق فقط. إشعارات الدفع والبريد الإلكتروني والرسائل النصية وGuardian معطّلة.",
+  "notifications.enable": "تفعيل التذكيرات داخل التطبيق",
+  "notifications.enableDetail": "السماح لنوفا بتقديم دعم لطيف أثناء استخدام التطبيق.",
+  "notifications.quietHours": "ساعات الهدوء",
+  "notifications.quietDetail": "لن ترسل نوفا تذكيرات خلال هذه الساعات.",
 };
