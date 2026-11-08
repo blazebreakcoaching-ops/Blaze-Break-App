@@ -23,6 +23,7 @@ import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { doc, getDoc } from "firebase/firestore";
 import { NovaVoiceCall } from "./NovaVoiceCall";
+import { SecondMemoryCard } from "./SecondMemoryCard";
 import { NovaToneControl } from "./NovaToneControl";
 import { NovaStyleControl, QUESTIONING_STYLE_OPTIONS, NovaQuestioningStyle } from "./NovaStyleControl";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -808,6 +809,8 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
     }
   };
 
+  const [showMyNotes, setShowMyNotes] = useState(false);
+
   return (
     <div className="flex flex-col h-full bg-card rounded-xl border border-border overflow-hidden relative transition-all duration-500">
       <div className="p-5 border-b border-border flex items-center justify-between">
@@ -859,6 +862,19 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
         </div>
       </div>
 
+      <div className="px-4 py-2 flex flex-wrap gap-2 border-b border-border">
+        <button type="button" disabled={!onNavigate} onClick={() => onNavigate?.('recovery_intelligence')}
+          className="text-xs rounded-lg border border-border px-3 py-2 text-text-main hover:border-primary/50">
+          Find one useful next step
+        </button>
+        <button type="button" aria-expanded={showMyNotes}
+          onClick={() => setShowMyNotes(v => !v)}
+          className="text-xs rounded-lg border border-border px-3 py-2 text-text-main hover:border-primary/50">
+          {showMyNotes ? 'Hide my notes' : 'My notes'}
+        </button>
+      </div>
+      {showMyNotes && <div className="px-4 py-2"><SecondMemoryCard /></div>}
+
       {(
         <div
           ref={scrollRef}
@@ -887,15 +903,15 @@ We are now in real-time voice mode. Be concise and conversational, you don't nee
                 {[
                   {
                     label: "What's draining me today?",
-                    prompt: "I'm leaking energy today. Run analysis.",
+                    prompt: "I'm feeling drained today. Can you help me work out what matters most?",
                   },
                   {
                     label: "Help me set a boundary",
-                    prompt: "I need to set a firm boundary. Draft script.",
+                    prompt: "I need help explaining a boundary to someone.",
                   },
                   {
                     label: "How am I doing on SHIP?",
-                    prompt: "How am I doing on the SHIP journey?",
+                    prompt: "Can we review how things have changed for me lately?",
                   },
                 ].map((s, i) => (
                   <button
