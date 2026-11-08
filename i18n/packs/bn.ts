@@ -249,4 +249,10 @@ export const bn: Partial<Record<TranslationKey, string>> = {
   "fingerprint.working": "নোভা আপনার উত্তরগুলো পর্যালোচনা করছে...",
   "fingerprint.errorTitle": "আপনার মূল্যায়ন সম্পন্ন করা যায়নি",
   "fingerprint.retry": "আবার চেষ্টা করুন",
+  "notifications.title": "নোভার মনে করিয়ে দেওয়া",
+  "notifications.description": "শুধু অ্যাপের ভেতরে শান্ত স্মরণবার্তা। পুশ, ইমেইল, এসএমএস এবং Guardian বিজ্ঞপ্তি বন্ধ।",
+  "notifications.enable": "অ্যাপের ভেতরের স্মরণবার্তা চালু করুন",
+  "notifications.enableDetail": "অ্যাপ ব্যবহার করার সময় নোভাকে মৃদু সহায়তা দেওয়ার অনুমতি দিন।",
+  "notifications.quietHours": "নীরব সময়",
+  "notifications.quietDetail": "এই সময়গুলোতে নোভা কোনো স্মরণবার্তা পাঠাবে না।",
 };
