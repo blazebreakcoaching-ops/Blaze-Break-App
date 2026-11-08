@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
@@ -16,54 +16,65 @@ export function SecondMemoryCard({ minimal = false }: { minimal?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [confirmErase, setConfirmErase] = useState(false);
+  const requestGeneration = useRef(0);
   const load = useCallback(async () => {
     if (!uid || auth.currentUser?.uid !== uid) return;
+    const generation = requestGeneration.current;
     try {
       const response = await secureApiFetch('/api/nova/second-memory');
       const data = await response.json() as MemoryResponse;
-      if (auth.currentUser?.uid !== uid) return;
+      if (auth.currentUser?.uid !== uid || generation !== requestGeneration.current) return;
       setItems(data.items ?? []);
       setEnabled(data.enabled === true);
       setError('');
     } catch {
-      setError('Your notes could not be loaded.');
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setError('Your notes could not be loaded.');
     }
   }, [uid]);
   useEffect(() => {
+    requestGeneration.current += 1;
     setItems([]); setEnabled(false); setExpanded(false); setNote('');
+    setBusy(false); setError(''); setConfirmErase(false);
     void load();
+    return () => { requestGeneration.current += 1; };
   }, [load]);
   const save = async () => {
     const text = note.trim();
     if (!text || text.length > 240 || busy) return;
+    if (!uid || auth.currentUser?.uid !== uid) return;
+    const generation = requestGeneration.current;
     setBusy(true); setError('');
     try {
       await secureApiFetch('/api/nova/second-memory', { method: 'POST', data: { text } });
-      setNote('');
-      await load();
-    } catch { setError('Your note was not saved.'); }
-    finally { setBusy(false); }
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setNote('');
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) await load();
+    } catch { if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setError('Your note was not saved.'); }
+    finally { if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setBusy(false); }
   };
   const change = async (id: string, action: 'done' | 'open' | 'delete') => {
     if (busy) return;
+    if (!uid || auth.currentUser?.uid !== uid) return;
+    const generation = requestGeneration.current;
     setBusy(true); setError('');
     try {
       await secureApiFetch('/api/nova/second-memory/' + encodeURIComponent(id), action === 'delete'
         ? { method: 'DELETE' }
         : { method: 'PATCH', data: { status: action } });
-      await load();
-    } catch { setError('Your change was not saved.'); }
-    finally { setBusy(false); }
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) await load();
+    } catch { if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setError('Your change was not saved.'); }
+    finally { if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setBusy(false); }
   };
   const eraseAll = async () => {
     if (busy) return;
+    if (!uid || auth.currentUser?.uid !== uid) return;
+    const generation = requestGeneration.current;
     setBusy(true); setError('');
     try {
       await secureApiFetch('/api/nova/second-memory', { method: 'DELETE' });
-      setConfirmErase(false);
-      await load();
-    } catch { setError('Notes could not be deleted.'); }
-    finally { setBusy(false); }
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setConfirmErase(false);
+      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) await load();
+    } catch { if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setError('Notes could not be deleted.'); }
+    finally { if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setBusy(false); }
   };
   const open = items.filter(item => item.status === 'open');
   const featured = open[0] ?? null;
