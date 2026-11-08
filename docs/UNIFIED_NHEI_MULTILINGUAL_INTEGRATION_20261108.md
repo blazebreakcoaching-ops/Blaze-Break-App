@@ -116,3 +116,13 @@ Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site
 - Unlike the previous fire-and-forget flow, the pending helpfulness prompt now clears only after the authenticated outcome request succeeds. A failure leaves the choice visible for retry and displays an error; late responses are invalidated on account changes.
 - Updated the source-contract regression file. These tests have not been executed; they do not replace real HTTP, mobile/browser, accessibility and account-switch E2E validation.
 - Guardrails unchanged: no unapproved NHEI modes, no database schema or permission changes in this batch, no deployment, no merge to main.
+
+## Batch 9 — Fingerprint privacy and customer-facing translation continuation
+
+- Fixed `DiagnoseView` to default `letNovaLearn` false. Only an explicit true value from the current UID-matched local profile is forwarded; missing, malformed and stale shared-browser data fail closed. The server's diagnosis route already treats the client field as **non-authoritative**, and no new backend learning authorisation was added.
+- Removed rendering of raw diagnosis backend errors and corrected the error button to reset both the error and the choice mode. Added a source-contract test `nhei-fingerprint-consent-boundary.test.ts`.
+- Localised eight Fingerprint interface strings across 12 catalogues without changing the existing 7/14 question model or stored numeric answers. Wrote `i18n/fingerprint-entry.test.ts`.
+- Localised six in-app Nudge settings strings across 12 catalogues, preserving stored notification preference fields and disabled push, email, SMS, and Guardian channels. Wrote `i18n/notification-preferences.test.ts`.
+- English source now has 254 keys; eleven additional packs contain matching unreviewed machine-draft entries. Question/answer wording, result reports and many customer screens are still English.
+- Attempted local GitHub checkout but container DNS could not resolve github.com. GitHub connector source checks confirm the catalogue keys and commits, not an executable build or QA pass. No Actions, staging/production deployment or merge to main.
+- Next required checks: complete integrated build/test, Firestore emulator, authenticated staging flows, human safety review, RTL and screen readers. Reconcile remaining branch-only NHEI work before main merge.
