@@ -113,6 +113,7 @@ import { isEvolutionFrozen, validateFreezeToggleInput } from './evolution-freeze
 import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engine';
 import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState, SESSION_RECOMMENDATION_OFFER_LIMIT } from './recovery-routing-engine';
+import { adaptInterventionCandidates } from './nhei-adaptive-intelligence';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { isUsableRecoveryDerivedSummary, isHighRisingRecoveryDebt } from './recovery-derived-signals';
 import { buildDecisionCopy, MODULE_TARGET_TAB, moduleDisplayName } from './recovery-decision-copy';
