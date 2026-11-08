@@ -18809,7 +18809,55 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
     const sessionState = await loadRoutingSessionState(db, user.uid);
     sessionState.userRequestedMore = userRequestedMore;
 
-    const decision = selectRoute(candidates, bandwidth, sessionState);
+    // NHEI: only read individual outcome history when the user has opted in
+    // to adaptive intelligence AND the existing two memory permissions.
+    // No organisation-scoped routes receive this context.
+    let adaptiveContext: import('./nhei-adaptive-intelligence').AdaptiveContext | undefined;
+    try {
+      const permissionSnap = await db.collection("users").doc(user.uid).collection("nova_permissions").doc("current").get();
+      const p = permissionSnap.data();
+      if (p?.allowAdaptiveIntelligence === true &&
+          p.allowNovaMemory === true && p.allowNovaUseSavedMemories === true) {
+        const outcomeSnap = await db.collection("users").doc(user.uid)
+          .collection("recovery_routing_decisions")
+          .orderBy("createdAt", "desc").limit(100).get();
+        const recentFeedbackCutoffMs = nowMs - 90 * 24 * 60 * 60 * 1000;
+        const outcomes = outcomeSnap.docs
+          .map(d => d.data())
+          .filter(d => typeof d.createdAt === 'string' &&
+            Number.isFinite(Date.parse(d.createdAt)) &&
+            Date.parse(d.createdAt) >= recentFeedbackCutoffMs)
+          .filter(d => d.outcome === 'completed' &&
+            ['better','same','not_really','not_sure'].includes(d.helpfulness) &&
+            typeof d.selectedModule === 'string' && isKnownRoutingModule(d.selectedModule))
+          .reverse()
+          .map(d => ({
+            sourceModule: d.selectedModule as string,
+            feedback: d.helpfulness as import('./nhei-adaptive-intelligence').AdaptiveFeedback,
+            bandwidthBand: ['low_bandwidth', 'some_bandwidth', 'reflective_bandwidth'].includes(d.bandwidthBand)
+              ? d.bandwidthBand as import('./recovery-capacity-gate').BandwidthBand : undefined,
+          }));
+        const validModules = (value: unknown): string[] => Array.isArray(value)
+          ? value.filter((v): v is string => typeof v === 'string' && isKnownRoutingModule(v)).slice(0, 14)
+          : [];
+        adaptiveContext = {
+          learningEnabled: true,
+          outcomes,
+          currentBandwidthBand: bandwidth.band ?? undefined,
+          preferredModules: validModules(p.adaptivePreferredModules),
+          avoidedModules: validModules(p.adaptiveAvoidedModules),
+        };
+      }
+    } catch (e) {
+      // Fail closed: a permission or history read failure cannot activate
+      // adaptation. Deterministic routing continues as before.
+      adaptiveContext = undefined;
+    }
+    const decision = selectRoute(candidates, bandwidth, sessionState, adaptiveContext);
+    const selectedAdaptiveExplanation = adaptiveContext
+      ? adaptInterventionCandidates(candidates, adaptiveContext).explanations
+          .find(item => item.candidateId === decision.selectedCandidate?.candidateId) ?? null
+      : null;
 
     // Awaited (not fire-and-forget) so the real doc ID can be returned to
     // the client - PR8's outcome loop needs it to report back against this
@@ -18932,6 +18980,10 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       // An earlier intervention the user started but never reported back
       // on (within the last 24h) - the Hub asks the one lightweight
       // outcome question about this before showing anything new.
+      // Reflect actual influence, not merely enabled consent. Never attribute a reservation-race suppression to learning.
+      adaptiveLearningEnabled: adaptiveContext !== undefined,
+      adaptiveLearningUsed: !outcomeOverride && selectedAdaptiveExplanation !== null,
+      adaptiveExplanation: outcomeOverride ? null : selectedAdaptiveExplanation,
       pendingOutcomeCheck,
     });
   } catch (err: any) {
