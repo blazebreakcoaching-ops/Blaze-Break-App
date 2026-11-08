@@ -201,6 +201,14 @@ export const en = {
   'settings.lowEnergyHint': 'Calmer screens: no confetti or pop-up celebrations, and gentler pacing.',
   'settings.useName': 'Use my preferred name in greetings',
 
+  // Notification preferences: in-app only, no activation of disabled channels.
+  "notifications.title": "Nova Nudges",
+  "notifications.description": "Quiet, in-app reminders only. Push, email, SMS and Guardian notifications are disabled.",
+  "notifications.enable": "Turn on in-app nudges",
+  "notifications.enableDetail": "Allow Nova to offer gentle support while you use the app.",
+  "notifications.quietHours": "Quiet hours",
+  "notifications.quietDetail": "Nova will not nudge you during these hours.",
+
   // Burnout Fingerprint: text only; assessment question IDs and scores remain unchanged.
   "fingerprint.choiceTitle": "How much time do you have right now?",
   "fingerprint.choiceSubtitle": "Choose a shorter or longer check-in. You can change your mind.",
