@@ -429,6 +429,11 @@ export const DiagnoseView = ({
           exit={{ opacity: 0, x: -20 }}
           className="space-y-8"
         >
+          {mode === 'full' && locale !== 'en' && (
+            <p role="note" className="text-xs text-text-muted rounded-lg border border-border p-3">
+              {t('fingerprint.fullEnglishNotice')}
+            </p>
+          )}
           <h3 className="text-3xl font-light text-text-main leading-tight">
             {mode === 'quick' || locale === 'en'
               ? t(('fingerprint.question.' + activeQuestions[step].id) as TranslationKey)
