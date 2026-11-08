@@ -27,6 +27,7 @@ import { BurnoutFingerprint } from "../types";
 import { secureApiFetch } from "../lib/secure-api";
 import { hasExplicitNovaLearningConsent } from '../lib/nova-learning-consent';
 import { useI18n } from '../lib/i18n-react';
+import { useAuth } from '../lib/auth';
 import type { TranslationKey } from '../../i18n/en';
 
 const questions = [
@@ -250,6 +251,8 @@ export const DiagnoseView = ({
   onComplete: (f: BurnoutFingerprint) => void;
 }) => {
   const { t } = useI18n();
+  const { user } = useAuth();
+  const requestGeneration = useRef(0);
   const [mode, setMode] = useState<'choice' | 'quick' | 'full'>('choice');
   const [step, setStep] = useState(0);
   const questionContainerRef = useRef<HTMLDivElement>(null);
@@ -273,6 +276,13 @@ export const DiagnoseView = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Clear private assessment state and invalidate in-flight requests on account changes.
+  useEffect(() => {
+    requestGeneration.current += 1;
+    setAnswers({}); setMode('choice'); setStep(0); setError(null); setLoading(false);
+    return () => { requestGeneration.current += 1; };
+  }, [user?.uid]);
+
   const activeQuestions = mode === 'quick'
     ? questions.filter((q) => QUICK_CHECK_IDS.includes(q.id))
     : questions;
@@ -288,6 +298,12 @@ export const DiagnoseView = ({
   };
 
   const submitAssessment = async (finalAnswers: Record<string, number>) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || uid !== user?.uid) {
+      setError(t('common.tryAgain'));
+      return;
+    }
+    const generation = requestGeneration.current;
     setLoading(true);
     setError(null);
     try {
@@ -295,7 +311,6 @@ export const DiagnoseView = ({
       // it belongs to the currently authenticated user. Missing/corrupt data
       // must never imply permission for Nova to learn from this assessment.
       let letNovaLearn = false;
-      const uid = auth.currentUser?.uid;
       try {
         if (uid && localStorage.getItem('blaze_profile_uid') === uid) {
           const storedProfile = localStorage.getItem("blaze_profile");
@@ -312,13 +327,16 @@ export const DiagnoseView = ({
         data: { answers: finalAnswers, letNovaLearn },
       });
       const data = await res.json();
+      if (auth.currentUser?.uid !== uid || requestGeneration.current !== generation) return;
       if (!res.ok || data.error) throw new Error('assessment_failed');
       onComplete({ ...data, wasQuickCheck: mode === 'quick' });
     } catch {
       // Raw backend errors may disclose implementation and personal context.
-      setError(t('common.tryAgain'));
+      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) {
+        setError(t('common.tryAgain'));
+      }
     } finally {
-      setLoading(false);
+      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) setLoading(false);
     }
   };
 
