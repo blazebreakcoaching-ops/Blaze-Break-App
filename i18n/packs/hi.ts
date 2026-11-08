@@ -321,4 +321,5 @@ export const hi: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "प्रशासनिक कामों में उद्देश्य धुंधला हो रहा है।",
   "fingerprint.option.meaning.3": "उद्देश्य से पूरी तरह कट गया/गई हूँ और बस गुज़ारा कर रहा/रही हूँ।",
   "fingerprint.option.meaning.4": "अब याद भी नहीं कि सार्थक काम कैसा लगता है।",
+  "fingerprint.fullEnglishNotice": "पूरे 14-प्रश्नों वाले मूल्यांकन में फिलहाल अंग्रेज़ी सवाल और जवाब हैं। अनुवादों की समीक्षा अभी जारी है।",
 };
