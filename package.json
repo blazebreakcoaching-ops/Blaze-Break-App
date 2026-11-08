@@ -14,7 +14,9 @@
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:nhei": "vitest run nhei-adaptive-intelligence.test.ts nhei-routing-outcome.test.ts nhei-second-memory.test.ts nhei-individual-scenarios.test.ts nhei-integration-contract.test.ts nhei-security-contract.test.ts recovery-outcomes-intelligence.test.ts",
+    "test:nhei:rules": "vitest run nhei-firestore-consent.emulator.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
