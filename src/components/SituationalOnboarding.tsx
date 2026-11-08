@@ -51,6 +51,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     novaTone: "direct",
     primaryDrain: "",
     letNovaLearn: false, // A missing answer is never permission to learn.
+    sendNovaNudges: false, // Reminders also require an explicit opt-in.
   } as any);
 
   const steps = [
@@ -222,7 +223,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
               </div>
               <button
                 onClick={() => {
-                  const next = !profile.sendNovaNudges;
+                  const next = profile.sendNovaNudges !== true;
                   logAuditAction({
                     userId: profile.fullName || 'anonymous',
                     action: `Toggled consent for gentle_reminders to ${next}`,
@@ -236,11 +237,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   }));
                 }}
                 role="switch"
-                aria-checked={profile.sendNovaNudges !== false}
+                aria-checked={profile.sendNovaNudges === true}
                 aria-label={`${t("onboarding.remindersConsent")}: ${t("onboarding.remindersConsentDetail")}`}
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
-                  profile.sendNovaNudges !== false
+                  profile.sendNovaNudges === true
                     ? "bg-primary"
                     : "bg-surface dark:bg-surface",
                 )}
@@ -248,7 +249,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 <div
                   className={cn(
                     "w-4 h-4 rounded-full bg-surface absolute top-1 transition-transform shadow-sm",
-                    profile.sendNovaNudges !== false ? "left-5" : "left-1",
+                    profile.sendNovaNudges === true ? "left-5" : "left-1",
                   )}
                 />
               </button>
