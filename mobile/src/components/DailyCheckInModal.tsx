@@ -4,8 +4,8 @@
 // contract the web app and its weekly-recap/recommendation routes read
 // from. Deliberately just the 4-slider submit flow, not history/edit/
 // delete - those aren't part of Pulse's "one clear next step" loop.
-import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, ScrollView, AccessibilityInfo } from 'react-native';
 import { Text } from '../lib/native-ui';
 import { useNativeTheme } from '../lib/native-theme';
 import type { NativeThemeColors } from '../lib/native-theme-palette';
@@ -36,12 +36,16 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Synchronous guard: two fast taps can both run before re-render.
+  const quickSavingRef = useRef(false);
   const saveQuickResponse = async (response: LowEnergyResponse) => {
     const uid = auth.currentUser?.uid;
-    if (!uid || saving) {
-      if (!uid) setError('Please sign in to save a check-in.');
+    if (!uid) {
+      setError('Please sign in to save a check-in.');
       return;
     }
+    if (quickSavingRef.current) return;
+    quickSavingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -55,11 +59,14 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
       });
       // Do not notify scoring, weekly recap, NHEI, or Nova; this is a
       // qualitative answer, not a numerical energy/stress measurement.
+      // Spoken confirmation for VoiceOver / TalkBack before the sheet closes.
+      AccessibilityInfo.announceForAccessibility('Saved. Thank you for checking in.');
       setMode('choice');
       onComplete();
     } catch {
       setError('Could not save your answer. Please check your connection and try again.');
     } finally {
+      quickSavingRef.current = false;
       setSaving(false);
     }
   };
@@ -91,7 +98,14 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+      // Each opening starts at the choice screen, not wherever it was left.
+      onShow={() => { setMode('choice'); setError(null); }}
+    >
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         {mode === 'choice' ? (
           <>
@@ -147,7 +161,7 @@ export function DailyCheckInModal({ visible, onClose, onComplete }: DailyCheckIn
             ))}
           </>
         )}
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error && <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="assertive">{error}</Text>}
         {mode === 'full' && (
           <TouchableOpacity style={styles.button} accessibilityRole="button" onPress={handleSubmit} disabled={saving}>
             {saving ? <ActivityIndicator color={styles.colors.onAccent} /> : <Text style={styles.buttonText}>Save Pulse</Text>}

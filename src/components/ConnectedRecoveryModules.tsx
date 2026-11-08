@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, doc, setDoc, getDocs, updateDoc, deleteDoc, query, orderBy, getDoc } from 'firebase/firestore';
 import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
@@ -21,7 +21,7 @@ const SecureVaultNotice = () => (
 const ErrorMessage = ({ msg }: { msg: string }) => {
   if (!msg) return null;
   return (
-    <div className="bg-destructive/10 text-ember-danger text-xs p-3 rounded-lg border border-destructive/20 mb-4 flex gap-2">
+    <div role="alert" className="bg-destructive/10 text-ember-danger text-xs p-3 rounded-lg border border-destructive/20 mb-4 flex gap-2">
       <AlertCircle className="w-4 h-4 shrink-0" />
       <span>{msg}</span>
     </div>
@@ -49,15 +49,22 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Synchronous guard: a second fast tap arrives before React re-renders
+  // with loading=true, so state alone could save the same answer twice.
+  const quickSavingRef = useRef(false);
+  const [quickSaved, setQuickSaved] = useState(false);
   const handleQuickResponse = async (response: LowEnergyResponse) => {
-    if (!uid || loading) {
-      if (!uid) setError('Please sign in before saving your answer.');
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) {
+      setError('Please sign in before saving your answer.');
       return;
     }
+    if (quickSavingRef.current) return;
+    quickSavingRef.current = true;
     setLoading(true);
     setError('');
     try {
-      await setDoc(doc(db, 'users', uid, 'low_energy_checkins', Date.now().toString()), {
+      await setDoc(doc(db, 'users', currentUid, 'low_energy_checkins', Date.now().toString()), {
         createdAt: new Date().toISOString(),
         response,
         kind: 'qualitative',
@@ -66,10 +73,13 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
       // No guessed scores, no gamification, no sharing with Nova or
       // company reporting. The user's existing detailed check-ins remain
       // a separate source for quantitative recovery intelligence.
-      onClose();
+      // Confirm in place (announced by screen readers) rather than closing
+      // instantly, which left people unsure whether anything was saved.
+      setQuickSaved(true);
     } catch {
       setError('Your answer could not be saved. Try again when you are ready.');
     } finally {
+      quickSavingRef.current = false;
       setLoading(false);
     }
   };
@@ -205,7 +215,15 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
             </div>
           )}
 
-          {step === 2 && (
+          {step === 2 && quickSaved && (
+            <section className="space-y-4">
+              <p role="status" className="text-lg font-bold text-text-main">Saved. Thank you for checking in.</p>
+              <p className="text-sm text-text-muted">Your answer is private and does not create a recovery score.</p>
+              <button type="button" autoFocus onClick={onClose} className="w-full min-h-12 btn-primary rounded-xl text-sm font-bold">Done</button>
+            </section>
+          )}
+
+          {step === 2 && !quickSaved && (
             <section aria-labelledby="low-energy-checkin-question" className="space-y-3">
               <h4 id="low-energy-checkin-question" className="text-lg font-bold text-text-main">How are you feeling right now?</h4>
               <p className="text-sm text-text-muted">Choose what feels closest. There is no wrong answer.</p>
