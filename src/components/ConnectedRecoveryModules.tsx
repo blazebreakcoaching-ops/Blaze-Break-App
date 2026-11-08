@@ -711,7 +711,8 @@ export const ConnectedNovaPermissions = () => {
     allowSomaticResets: true,
     allowRecoveryAlly: true,
     allowNovaMemory: true,
-    allowNovaUseSavedMemories: true // shadow field, kept in sync with allowNovaMemory - see toggle()
+    allowNovaUseSavedMemories: true, // mirrored by memory toggle
+    allowAdaptiveIntelligence: false // optional, disabled until user enables it
   });
   
   
@@ -742,7 +743,8 @@ export const ConnectedNovaPermissions = () => {
     allowFocusSessions: "Let Nova use my Focus Sessions",
     allowSomaticResets: "Let Nova use my Nervous System Reset activity",
     allowRecoveryAlly: "Let Nova use my Recovery Ally activity",
-    allowNovaMemory: "Let Nova remember things about me across conversations"
+    allowNovaMemory: "Let Nova remember things about me across conversations",
+    allowAdaptiveIntelligence: "Let Nova learn from my recovery feedback (requires memory consent)"
   };
 
   const fetchPerms = async () => {
@@ -776,7 +778,11 @@ export const ConnectedNovaPermissions = () => {
     };
     setPerms(newPerms);
     try {
-      await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), newPerms);
+      await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
+        [key]: newValue,
+        ...(key === 'allowNovaMemory' ? { allowNovaUseSavedMemories: newValue } : {}),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
     } catch(e) { setError('This entry could not be saved.'); setPerms(perms); }
     setLoading(false);
   };
@@ -794,7 +800,7 @@ export const ConnectedNovaPermissions = () => {
       <ErrorMessage msg={error} />
       
       <div className="bg-surface p-4 rounded-xl border border-border space-y-2">
-        {Object.entries(perms).filter(([k]) => k !== 'updatedAt' && k !== 'allowNovaUseSavedMemories').map(([k, v]) => (
+        {Object.entries(perms).filter(([k]) => k in permissionsLabels).map(([k, v]) => (
           <div key={k} className="flex justify-between items-center p-2.5 hover:bg-card rounded-lg transition-colors border-b border-border/5 last:border-b-0">
             <div>
               <span className="text-sm font-bold text-text-main block">{permissionsLabels[k] || k}</span>
