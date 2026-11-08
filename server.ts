@@ -76,6 +76,7 @@ import { isEvolutionFrozen, validateFreezeToggleInput } from './evolution-freeze
 import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engine';
 import { determineBandwidth } from './recovery-capacity-gate';
 import { selectRoute, EMPTY_SESSION_STATE, SessionRecommendationState } from './recovery-routing-engine';
+import { adaptInterventionCandidates } from './nhei-adaptive-intelligence';
 import { buildSignalCandidates, buildExplicitRequestCandidate, isKnownRoutingModule, MODULE_ROUTE_MAP, RoutingSignalInput } from './recovery-signal-candidates';
 import { computeRecoveryDirection, explainRecoveryDirection, CapacitySample } from './recovery-direction-engine';
 import { NOVA_MEMORY_DATA_ZONE, summarizeMemoryHealth, MemoryHealthEntry } from './nova-memory-governance';
@@ -14986,7 +14987,44 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
     const sessionState = await loadRoutingSessionState(db, user.uid);
     sessionState.userRequestedMore = userRequestedMore;
 
-    const decision = selectRoute(candidates, bandwidth, sessionState);
+    // NHEI: only read individual outcome history when the user has opted in
+    // to adaptive intelligence AND the existing two memory permissions.
+    // No organisation-scoped routes receive this context.
+    let adaptiveContext: import('./nhei-adaptive-intelligence').AdaptiveContext | undefined;
+    try {
+      const permissionSnap = await db.collection("users").doc(user.uid).collection("nova_permissions").doc("current").get();
+      const p = permissionSnap.data();
+      if (p?.allowAdaptiveIntelligence === true &&
+          p.allowNovaMemory === true && p.allowNovaUseSavedMemories === true) {
+        const outcomeSnap = await db.collection("users").doc(user.uid)
+          .collection("recovery_routing_decisions")
+          .orderBy("createdAt", "desc").limit(100).get();
+        const outcomes = outcomeSnap.docs
+          .map(d => d.data())
+          .filter(d => d.outcome === 'completed' &&
+            ['better','same','not_really','not_sure'].includes(d.helpfulness) &&
+            typeof d.selectedModule === 'string' && isKnownRoutingModule(d.selectedModule))
+          .reverse()
+          .map(d => ({
+            sourceModule: d.selectedModule as string,
+            feedback: d.helpfulness as import('./nhei-adaptive-intelligence').AdaptiveFeedback,
+          }));
+        const validModules = (value: unknown): string[] => Array.isArray(value)
+          ? value.filter((v): v is string => typeof v === 'string' && isKnownRoutingModule(v)).slice(0, 14)
+          : [];
+        adaptiveContext = {
+          learningEnabled: true,
+          outcomes,
+          preferredModules: validModules(p.adaptivePreferredModules),
+          avoidedModules: validModules(p.adaptiveAvoidedModules),
+        };
+      }
+    } catch (e) {
+      // Fail closed: a permission or history read failure cannot activate
+      // adaptation. Deterministic routing continues as before.
+      adaptiveContext = undefined;
+    }
+    const decision = selectRoute(candidates, bandwidth, sessionState, adaptiveContext);
 
     // Only a real "selected"/"needs_clarification" outcome counts as a
     // recommendation actually having been offered - NONE outcomes (nothing
@@ -15029,6 +15067,9 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       // prefers this over its generic per-reason-code fallback.
       evidenceDetail: decision.selectedCandidate?.evidence.detail ?? null,
       evidenceSource: decision.selectedCandidate?.evidence.source ?? null,
+      adaptiveLearningUsed: adaptiveContext !== undefined,
+      // Preference hints are never diagnoses; they only affect deterministic tie-breaks.
+      adaptiveExplanation: adaptiveContext ? adaptInterventionCandidates(candidates, adaptiveContext).explanations.find(e => e.candidateId === decision.selectedCandidate?.candidateId) ?? null : null,
       // An earlier intervention the user started but never reported back
       // on (within the last 24h) - the Hub asks the one lightweight
       // outcome question about this before showing anything new.
