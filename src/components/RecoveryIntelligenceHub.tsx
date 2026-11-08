@@ -263,6 +263,20 @@ export const RecoveryIntelligenceHub = () => {
       {floorMode && (
         <p className="text-xs text-text-muted">A quieter view. No streaks, pressure or extra tasks. You can switch back anytime.</p>
       )}
+      {!floorMode && (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-text-muted">Something different going on? You don't have to fit a category.</p>
+          <button type="button" onClick={() => navigateToTab('nova')}
+            className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs text-primary">
+            Talk to Nova
+          </button>
+        </div>
+      )}
+      {!floorMode && decision?.bandwidthBand === 'low_bandwidth' && (
+        <button type="button" className="text-xs text-primary underline" onClick={toggleFloorMode}>
+          Low on energy? Switch to the simpler view
+        </button>
+      )
       {outcomeError && <p role="alert" className="text-xs text-red-600">{outcomeError}</p>}
       {!loading && !floorMode && <SecondMemoryCard />}
 
