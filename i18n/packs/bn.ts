@@ -241,4 +241,12 @@ export const bn: Partial<Record<TranslationKey, string>> = {
   "onboarding.pressureQuestion": "এই মুহূর্তে কী আপনার শক্তি সবচেয়ে বেশি কমিয়ে দিচ্ছে?",
   "onboarding.novaToneTitle": "নোভা কীভাবে আপনার সঙ্গে কথা বলবে",
   "onboarding.novaToneQuestion": "আপনি চান নোভা কীভাবে আপনার সঙ্গে যোগাযোগ করুক?",
+  "fingerprint.choiceTitle": "এই মুহূর্তে আপনার কতটা সময় আছে?",
+  "fingerprint.choiceSubtitle": "সংক্ষিপ্ত বা দীর্ঘ মূল্যায়ন বেছে নিন। চাইলে সিদ্ধান্ত বদলাতে পারেন।",
+  "fingerprint.quickTitle": "দ্রুত মূল্যায়ন — প্রায় ৯০ সেকেন্ড",
+  "fingerprint.fullTitle": "সম্পূর্ণ মূল্যায়ন — প্রায় ৩–৪ মিনিট",
+  "fingerprint.progress": "প্রশ্ন {current} / {total}",
+  "fingerprint.working": "নোভা আপনার উত্তরগুলো পর্যালোচনা করছে...",
+  "fingerprint.errorTitle": "আপনার মূল্যায়ন সম্পন্ন করা যায়নি",
+  "fingerprint.retry": "আবার চেষ্টা করুন",
 };
