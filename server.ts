@@ -15216,6 +15216,52 @@ type RoutingOutcomeAction = typeof ROUTING_OUTCOME_ACTIONS[number];
 const ROUTING_OUTCOME_HELPFULNESS = ['better', 'same', 'not_really', 'not_sure'] as const;
 type RoutingOutcomeHelpfulness = typeof ROUTING_OUTCOME_HELPFULNESS[number];
 
+// User-owned feedback history. A member can inspect and withdraw the
+// individual ratings NHEI may learn from; no employer or org route exposes it.
+app.get("/api/recovery/my-feedback", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const snap = await getDb().collection("users").doc(user.uid)
+      .collection("recovery_routing_decisions")
+      .orderBy("createdAt", "desc").limit(60).get();
+    const items = snap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        module: typeof data.selectedModule === 'string' && isKnownRoutingModule(data.selectedModule)
+          ? data.selectedModule : null,
+        outcome: data.outcome === 'completed' ? 'completed' : data.outcome === 'declined' ? 'declined' : null,
+        helpfulness: ROUTING_OUTCOME_HELPFULNESS.includes(data.helpfulness) ? data.helpfulness : null,
+        date: typeof data.createdAt === 'string' ? data.createdAt : null,
+      };
+    }).filter(item => item.outcome === 'completed' && item.helpfulness && item.module).slice(0, 30);
+    res.json({ items });
+  } catch (err: any) {
+    logger.error("Personal recovery feedback read failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
+// Forget only the subjective rating; retain the minimal intervention
+// event for recommendation-budget and usage integrity. This removes
+// the entry from adaptive learning and rated-outcome comparisons.
+app.delete("/api/recovery/my-feedback/:id", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
+  try {
+    const user = requireAuth(req);
+    const id = String(req.params.id ?? '');
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid feedback ID." });
+    const ref = getDb().collection("users").doc(user.uid)
+      .collection("recovery_routing_decisions").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: "Feedback not found." });
+    await ref.update({ helpfulness: FieldValue.delete() });
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error("Personal recovery feedback erasure failed", errorFields(err));
+    res.status(500).json({ error: GENERIC_SERVER_ERROR });
+  }
+});
+
 app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
