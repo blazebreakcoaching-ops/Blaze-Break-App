@@ -6,6 +6,7 @@ export interface ExistingOutcome {
   startedAt?: string;
   outcome?: 'declined' | 'completed' | 'abandoned' | null;
   helpfulness?: Helpfulness | null;
+  feedbackWithdrawnAt?: string | null;
 }
 export type TransitionResult =
   | { allowed: true; changed: boolean; counter: OutcomeAction | null; patch: Record<string, string | null> }
@@ -13,6 +14,10 @@ export type TransitionResult =
 export function planOutcomeTransition(
   previous: ExistingOutcome, action: OutcomeAction, helpfulness: Helpfulness | null, now: string
 ): TransitionResult {
+  // A forgotten rating must not be restored by a delayed client retry.
+  if (action === 'completed' && previous.feedbackWithdrawnAt) {
+    return { allowed: false, changed: false, reason: 'This rating was forgotten.' };
+  }
   if (action === 'completed' && !helpfulness) {
     return { allowed: false, changed: false, reason: 'A helpfulness answer is required.' };
   }
