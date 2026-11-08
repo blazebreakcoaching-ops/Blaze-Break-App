@@ -25,6 +25,17 @@ async function runTests() {
     novaTone: 'direct'
   }));
 
+  // Profile greeting options: explicitly validated; never shared across accounts.
+  const welcomePrefs = userA.firestore().collection('users').doc('userA').collection('preferences').doc('ui');
+  await assertSucceeds(welcomePrefs.set({
+    greetingEnabled: true, usePreferredName: false, greetingTone: 'simple', localePreference: 'en',
+  }, { merge: true }));
+  await assertFails(welcomePrefs.update({ greetingTone: 'anything' }));
+  await assertFails(welcomePrefs.update({ greetingEnabled: 'yes' }));
+  await assertFails(welcomePrefs.update({ localePreference: 'ar' }));
+  await assertFails(testEnv.unauthenticatedContext().firestore().collection('users').doc('userA').collection('preferences').doc('ui').get());
+  await assertFails(testEnv.authenticatedContext('userB').firestore().collection('users').doc('userA').collection('preferences').doc('ui').get());
+
   // 3. Authenticated user A reads their own entitlement status
   await assertSucceeds(userA.firestore().collection('users').doc('userA').collection('entitlements').doc('status').get());
 

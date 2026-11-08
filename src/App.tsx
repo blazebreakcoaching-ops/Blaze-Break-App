@@ -145,7 +145,7 @@ const MicroInterventions = lazy(() => import("./components/MicroInterventions.ts
 const NovaOverloadShield = lazy(() => import("./components/NovaOverloadShield.tsx").then(m => ({ default: m.NovaOverloadShield })));
 import { updateNovaMemoryBySourceAndType, logJourney } from "./lib/nova-brain.ts";
 import { saveVerifiedProfileSettings } from "./lib/profile-settings-save";
-import { buildDashboardGreeting } from "../dashboard-greeting.ts";
+import { personalWelcome } from "../personal-welcome";
 const TrustCentrePage = lazy(() => import("./components/TrustCentrePage.tsx").then(m => ({ default: m.TrustCentrePage })));
 const SubscriptionCentre = lazy(() => import("./components/SubscriptionCentre.tsx").then(m => ({ default: m.SubscriptionCentre })));
 import { hasSubscriptionEntitlement } from "./lib/entitlement.ts";
@@ -816,18 +816,18 @@ const Header = ({
   const [guardianPingActive, setGuardianPingActive] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Computed once per mount (lazy initializer, not recomputed on every
-  // render) so it stays put for the session instead of changing every time
-  // this component re-renders - a greeting that shuffles mid-visit would
-  // read as buggy, not charming. new Date().getHours() already reflects
-  // the visitor's own local device clock, no timezone lookup needed.
-  const [dashboardGreeting] = useState(() =>
-    buildDashboardGreeting(
-      new Date().getHours(),
-      profile?.useNameInGreetings !== false && userName ? userName.split(" ")[0] : null,
-      Math.random()
-    )
-  );
+  // Stable daily copy, using the customer's selected IANA time zone.
+  // No AI, GPS or pressure-inducing messages. Preferred name is opt-in.
+  const [dashboardWelcome] = useState(() => personalWelcome({
+    now: new Date(),
+    timeZone: profile?.timeZone,
+    preferredName: profile?.preferredName || userName || null,
+    allowName: profile?.useNameInGreetings === true,
+    tone: profile?.greetingTone,
+    locale: profile?.language,
+    seed: userName || 'welcome',
+  }));
+  const dashboardGreeting = profile?.greetingEnabled === false ? 'Welcome to Blaze Break.' : `${dashboardWelcome.greeting} ${dashboardWelcome.message}`;
 
   const handleGuardianPing = useCallback(async () => {
     if (guardianPingActive) return;
