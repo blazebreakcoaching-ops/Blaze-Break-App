@@ -40,6 +40,18 @@ interface PendingOutcomeCheck {
   selectedModule: string | null;
 }
 
+interface ResumePrompt {
+  hasIncomplete: boolean;
+  tab?: string;
+  title?: string;
+  message?: string;
+}
+interface AdaptiveExplanation {
+  basis: 'explicit_preference' | 'confirmed_outcomes';
+  preference: 'preferred' | 'avoided' | 'neutral';
+  samples: number;
+}
+
 interface RoutingDecisionResponse {
   decisionId: string | null;
   selectedRoute: RouteType;
@@ -52,6 +64,8 @@ interface RoutingDecisionResponse {
   evidenceDetail: string | null;
   evidenceSource: EvidenceSource | null;
   pendingOutcomeCheck: PendingOutcomeCheck | null;
+  adaptiveLearningUsed?: boolean;
+  adaptiveExplanation?: AdaptiveExplanation | null;
 }
 
 const HELPFULNESS_OPTIONS: { value: 'better' | 'same' | 'not_really' | 'not_sure'; label: string }[] = [
@@ -108,12 +122,36 @@ export const RecoveryIntelligenceHub = () => {
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [showMoodCheck, setShowMoodCheck] = useState(false);
   const [pendingOutcomeCheck, setPendingOutcomeCheck] = useState<PendingOutcomeCheck | null>(null);
-
-  const reportOutcome = useCallback((decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string) => {
-    if (!decisionId || !auth.currentUser) return;
-    secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } }).catch(() => {
-      // Non-fatal - the primary recommendation flow isn't blocked by the outcome write failing.
+  const [resumePrompt, setResumePrompt] = useState<ResumePrompt | null>(null);
+  const [floorMode, setFloorMode] = useState(false);
+  const [outcomeError, setOutcomeError] = useState('');
+  // The account-specific key is a display preference, not recovery history.
+  // It remains local so enabling Floor Mode sends no new wellbeing data.
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    try { setFloorMode(localStorage.getItem('blaze_floor_mode_' + uid) === 'true'); } catch { /* storage optional */ }
+  }, []);
+  const toggleFloorMode = () => {
+    setFloorMode(prev => {
+      const next = !prev;
+      const uid = auth.currentUser?.uid;
+      if (uid) { try { localStorage.setItem('blaze_floor_mode_' + uid, String(next)); } catch { /* storage optional */ } }
+      return next;
     });
+  };
+
+
+  const reportOutcome = useCallback(async (decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string): Promise<boolean> => {
+    if (!decisionId || !auth.currentUser) return false;
+    setOutcomeError('');
+    try {
+      await secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } });
+      return true;
+    } catch {
+      setOutcomeError('Your feedback could not be saved. Please try again.');
+      return false;
+    }
   }, []);
 
   const fetchDecision = useCallback(async (body: Record<string, unknown> = {}) => {
@@ -135,6 +173,10 @@ export const RecoveryIntelligenceHub = () => {
   useEffect(() => {
     fetchDecision();
     if (!auth.currentUser) return;
+    secureApiFetch('/api/user/resume-prompt')
+      .then(response => response.json())
+      .then((data: ResumePrompt) => setResumePrompt(data.hasIncomplete ? data : null))
+      .catch(() => setResumePrompt(null));
     secureApiFetch('/api/recovery/direction')
       .then((res) => res.json())
       .then(setDirection)
@@ -195,18 +237,42 @@ export const RecoveryIntelligenceHub = () => {
     fetchDecision({ explicitBandwidthReport: band });
   };
 
-  const handlePendingOutcomeAnswer = (helpfulness: 'better' | 'same' | 'not_really' | 'not_sure') => {
+  const handlePendingOutcomeAnswer = async (helpfulness: 'better' | 'same' | 'not_really' | 'not_sure') => {
     if (!pendingOutcomeCheck) return;
-    reportOutcome(pendingOutcomeCheck.decisionId, 'completed', helpfulness);
-    setPendingOutcomeCheck(null);
+    const saved = await reportOutcome(pendingOutcomeCheck.decisionId, 'completed', helpfulness);
+    if (saved) {
+      setPendingOutcomeCheck(null);
+      // Re-evaluate only when the user explicitly asks for another suggestion;
+      // do not automatically stack new tasks after feedback.
+    }
   };
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
-      <div>
-        <h2 className="text-2xl font-display font-black text-text-main">Recovery Intelligence</h2>
-        <p className="text-xs text-text-muted mt-1">One useful next step, not a wall of tools.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-display font-black text-text-main">Recovery Intelligence</h2>
+          <p className="text-xs text-text-muted mt-1">One useful next step, not a wall of tools.</p>
+        </div>
+        <button type="button" onClick={toggleFloorMode} aria-pressed={floorMode}
+          className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs text-text-main hover:border-primary">
+          {floorMode ? 'Show more' : 'Keep it simple'}
+        </button>
       </div>
+      {floorMode && (
+        <p className="text-xs text-text-muted">A quieter view. No streaks, pressure or extra tasks. You can switch back anytime.</p>
+      )}
+      {outcomeError && <p role="alert" className="text-xs text-red-600">{outcomeError}</p>}
+      {!loading && resumePrompt?.hasIncomplete && resumePrompt.tab && (
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-text-main">{resumePrompt.title || 'Where was I?'}</h3>
+          <p className="text-xs text-text-muted">{resumePrompt.message}</p>
+          <button type="button" onClick={() => navigateToTab(resumePrompt.tab!)}
+            className="text-xs font-semibold text-primary hover:underline">Continue when ready</button>
+          <button type="button" onClick={() => setResumePrompt(null)}
+            className="ml-4 text-xs text-text-muted hover:underline">Not now</button>
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center justify-center py-12">
@@ -237,6 +303,12 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
+      {!loading && !error && decision?.adaptiveExplanation?.basis === 'confirmed_outcomes' && !floorMode && (
+        <p className="text-xs text-text-muted" aria-live="polite">
+          Nova considered what you previously marked helpful. You can change this in Nova Privacy Controls.
+        </p>
+      )}
+
       {!loading && !error && decision && !dismissed && (
         <NovaRecommendationCard
           decision={decision}
@@ -248,6 +320,7 @@ export const RecoveryIntelligenceHub = () => {
         />
       )}
 
+      {!floorMode && (
       <div className="rounded-xl border border-border bg-surface">
         <button
           onClick={() => setShowMoodCheck((v) => !v)}
@@ -263,6 +336,8 @@ export const RecoveryIntelligenceHub = () => {
         )}
       </div>
 
+      )}
+
       {!loading && direction && (
         <div className="rounded-xl border border-border bg-surface p-5 space-y-2">
           <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Your Direction</h3>
@@ -273,6 +348,7 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
+      {!floorMode && (
       <div className="rounded-xl border border-border bg-surface">
         <button
           onClick={() => setShowExplore((v) => !v)}
@@ -305,6 +381,7 @@ export const RecoveryIntelligenceHub = () => {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 };
