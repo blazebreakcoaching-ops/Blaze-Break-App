@@ -1090,9 +1090,12 @@ service cloud.firestore {
         // a real protection, just a UI suggestion bypassable from the
         // console or any other direct Firestore client.
         allow delete: if isOwner(uid) && resource.data.canEdit == true;
-        allow create, update: if isOwner(uid)
-            // Re-check live consent on every write, including from an old
-            // signed-in device whose local cache has not updated yet.
+        // Normal memory creation/editing requires current server-side consent.
+        // A person can still correct a previously saved, editable memory after
+        // opting out, but that correction may touch ONLY text and timestamp.
+        // No new memory can be created, and system-managed records cannot be
+        // reclassified or modified through that opt-out path.
+        allow create: if isOwner(uid)
             && exists(/databases/$(database)/documents/users/$(uid)/nova_permissions/current)
             && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaMemory == true
             && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaUseSavedMemories == true
@@ -1105,6 +1108,24 @@ service cloud.firestore {
             && request.resource.data.canEdit is bool
             && (!('canonicalKey' in request.resource.data) || request.resource.data.canonicalKey == null || isStringWithMax(request.resource.data.canonicalKey, 300))
             && (!('dataZone' in request.resource.data) || request.resource.data.dataZone == 'private_recovery_vault');
+        allow update: if isOwner(uid)
+            && hasOnly(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit', 'canonicalKey', 'dataZone'])
+            && hasAll(['type', 'content', 'source', 'confidence', 'createdAt', 'updatedAt', 'canEdit'])
+            && request.resource.data.type in ['profile', 'trigger', 'state', 'rule', 'preference']
+            && isStringWithMax(request.resource.data.content, 1000)
+            && isStringWithMax(request.resource.data.source, 200)
+            && request.resource.data.confidence in ['low', 'medium', 'high', 'verified']
+            && request.resource.data.canEdit is bool
+            && request.resource.data.createdAt == resource.data.createdAt
+            && (!('canonicalKey' in request.resource.data) || request.resource.data.canonicalKey == null || isStringWithMax(request.resource.data.canonicalKey, 300))
+            && (!('dataZone' in request.resource.data) || request.resource.data.dataZone == 'private_recovery_vault')
+            && (
+              (exists(/databases/$(database)/documents/users/$(uid)/nova_permissions/current)
+               && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaMemory == true
+               && get(/databases/$(database)/documents/users/$(uid)/nova_permissions/current).data.allowNovaUseSavedMemories == true)
+              || (resource.data.canEdit == true
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt']))
+            );
       }
 
       // M. nudge_history
