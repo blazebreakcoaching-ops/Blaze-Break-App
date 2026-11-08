@@ -5,7 +5,7 @@ import { db } from '../lib/firestore';
 import { X, Sparkles, Shield, Target, Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { secureApiFetch } from '../lib/secure-api';
-import { logJourney } from '../lib/nova-brain';
+import { logJourney, clearNovaBrainCache, initNovaBrain } from '../lib/nova-brain';
 import { useFocusTrap } from '../lib/useFocusTrap';
 
 // Helper for empty states
@@ -788,6 +788,18 @@ export const ConnectedNovaPermissions = () => {
         ...(key === 'allowNovaMemory' ? { allowNovaUseSavedMemories: newValue, ...(!newValue ? { allowAdaptiveIntelligence: false } : {}) } : {}),
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      if (key === 'allowNovaMemory') {
+        // Keep the synchronous, account-bound memory guard consistent with
+        // the saved consent; never enable it after a failed write.
+        try {
+          const stored = localStorage.getItem('blaze_profile');
+          const profile = stored ? JSON.parse(stored) : {};
+          localStorage.setItem('blaze_profile_uid', uid);
+          localStorage.setItem('blaze_profile', JSON.stringify({ ...profile, letNovaLearn: newValue }));
+        } catch { /* Browser storage may be disabled. */ }
+        if (!newValue) clearNovaBrainCache();
+        else void initNovaBrain(uid);
+      }
     } catch(e) { setError('This entry could not be saved.'); setPerms(perms); }
     setLoading(false);
   };
