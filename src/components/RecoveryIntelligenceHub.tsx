@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Loader2, HeartPulse } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaRecommendationCard } from './NovaRecommendationCard';
+import { SecondMemoryCard } from './SecondMemoryCard';
 import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWeeklyReviews, ConnectedEnergyBudget } from './ConnectedRecoveryModules';
 import { PressurePatternCapture } from './PressurePatternCapture';
 import { RelationalLoadSignal } from './RelationalLoadSignal';
@@ -263,6 +264,8 @@ export const RecoveryIntelligenceHub = () => {
         <p className="text-xs text-text-muted">A quieter view. No streaks, pressure or extra tasks. You can switch back anytime.</p>
       )}
       {outcomeError && <p role="alert" className="text-xs text-red-600">{outcomeError}</p>}
+      {!loading && !floorMode && <SecondMemoryCard />}
+
       {!loading && resumePrompt?.hasIncomplete && resumePrompt.tab && (
         <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
           <h3 className="text-sm font-semibold text-text-main">{resumePrompt.title || 'Where was I?'}</h3>
