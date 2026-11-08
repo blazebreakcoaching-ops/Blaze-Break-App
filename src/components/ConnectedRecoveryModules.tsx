@@ -773,14 +773,14 @@ export const ConnectedNovaPermissions = () => {
       // requires both to be true (an AND gate), and exposing them as two
       // separate toggles would just be confusing since there's no real
       // scenario where a user would want one on and the other off.
-      ...(key === 'allowNovaMemory' ? { allowNovaUseSavedMemories: newValue } : {}),
+      ...(key === 'allowNovaMemory' ? { allowNovaUseSavedMemories: newValue, ...(!newValue ? { allowAdaptiveIntelligence: false } : {}) } : {}),
       updatedAt: new Date().toISOString()
     };
     setPerms(newPerms);
     try {
       await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
         [key]: newValue,
-        ...(key === 'allowNovaMemory' ? { allowNovaUseSavedMemories: newValue } : {}),
+        ...(key === 'allowNovaMemory' ? { allowNovaUseSavedMemories: newValue, ...(!newValue ? { allowAdaptiveIntelligence: false } : {}) } : {}),
         updatedAt: new Date().toISOString(),
       }, { merge: true });
     } catch(e) { setError('This entry could not be saved.'); setPerms(perms); }
