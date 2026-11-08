@@ -35,6 +35,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
     pathway: "",
     purpose: "",
     novaTone: "direct",
+    letNovaLearn: false,
     primaryDrain: "",
   } as any);
 
@@ -180,11 +181,11 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                   setProfile((p) => ({ ...p, letNovaLearn: next }));
                 }}
                 role="switch"
-                aria-checked={profile.letNovaLearn !== false}
+                aria-checked={profile.letNovaLearn === true}
                 aria-label="Personalised learning: let Nova adjust its suggestions based on your check-ins"
                 className={cn(
                   "w-10 h-6 shrink-0 rounded-full transition-colors relative",
-                  profile.letNovaLearn !== false
+                  profile.letNovaLearn === true
                     ? "bg-primary"
                     : "bg-surface dark:bg-surface",
                 )}
@@ -192,7 +193,7 @@ export const SituationalOnboarding = ({ onComplete }: OnboardingProps) => {
                 <div
                   className={cn(
                     "w-4 h-4 rounded-full bg-surface absolute top-1 transition-transform shadow-sm",
-                    profile.letNovaLearn !== false ? "left-5" : "left-1",
+                    profile.letNovaLearn === true ? "left-5" : "left-1",
                   )}
                 />
               </button>
