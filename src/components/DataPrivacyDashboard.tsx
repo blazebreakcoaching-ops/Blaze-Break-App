@@ -42,6 +42,7 @@ export const DataPrivacyDashboard = ({
   // (src/lib/nova-brain.ts) until the real doc loads.
   const [allowCalendarSignals, setAllowCalendarSignals] = useState(true);
   const [adaptiveAllowed, setAdaptiveAllowed] = useState(false);
+  const [novaMemoryAllowed, setNovaMemoryAllowed] = useState(false);
   const [adaptivePreferred, setAdaptivePreferred] = useState<string[]>([]);
   const [adaptiveAvoided, setAdaptiveAvoided] = useState<string[]>([]);
   const [adaptiveSaving, setAdaptiveSaving] = useState(false);
@@ -84,6 +85,7 @@ export const DataPrivacyDashboard = ({
       if (snap.exists()) {
         const data = snap.data();
         setAdaptiveAllowed(data.allowAdaptiveIntelligence === true);
+        setNovaMemoryAllowed(data.allowNovaMemory === true && data.allowNovaUseSavedMemories === true);
         const known = new Set(['guided_reset', 'one_less_thing', 'capacity_firewall', 'recovery_fuel', 'my_patterns']);
         setAdaptivePreferred(Array.isArray(data.adaptivePreferredModules) ? data.adaptivePreferredModules.filter((v: unknown) => typeof v === 'string' && known.has(v)) : []);
         setAdaptiveAvoided(Array.isArray(data.adaptiveAvoidedModules) ? data.adaptiveAvoidedModules.filter((v: unknown) => typeof v === 'string' && known.has(v)) : []);
@@ -191,13 +193,16 @@ export const DataPrivacyDashboard = ({
           </div>
           <button type="button" role="switch" aria-checked={adaptiveAllowed}
             aria-label="Allow Nova to learn from my feedback"
-            disabled={adaptiveSaving}
+            disabled={adaptiveSaving || (!adaptiveAllowed && !novaMemoryAllowed)}
             onClick={() => saveAdaptivePreferences({ allowAdaptiveIntelligence: !adaptiveAllowed })}
             className={cn("rounded-full px-3 py-1 text-xs font-semibold border",
               adaptiveAllowed ? "bg-primary text-white border-primary" : "bg-surface text-text-muted border-border")}>
             {adaptiveAllowed ? 'On' : 'Off'}
           </button>
         </div>
+        {!novaMemoryAllowed && !adaptiveAllowed && (
+          <p className="text-xs text-text-muted">Enable Nova Memory in Privacy Controls first.</p>
+        )}
         {adaptiveAllowed && (
           <div className="space-y-2">
             <p className="text-xs text-text-muted">Optional choices. Nova can also learn from your feedback. You can change these anytime.</p>
