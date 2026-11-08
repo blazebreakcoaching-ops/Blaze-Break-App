@@ -233,4 +233,13 @@ export const fr: Partial<Record<TranslationKey, string>> = {
   "support.directoryDesc": "Trouver des services de soutien dans d'autres pays",
   "support.emergency": "Services d'urgence",
   "support.askCall": "Demander à {name} de m'appeler",
+  "onboarding.welcomeTitle": "Bienvenue. Avançons étape par étape.",
+  "onboarding.welcomeQuestion": "Qu'est-ce qui vous amène ici aujourd'hui ?",
+  "onboarding.pathwayTitle": "Parlons un peu de votre travail",
+  "onboarding.pathwayQuestion": "Quelle description vous correspond le mieux ?",
+  "onboarding.pressureTitle": "Ce qui vous pèse",
+  "onboarding.pressureQuestion": "Qu'est-ce qui vous épuise le plus en ce moment ?",
+  "onboarding.novaToneTitle": "Comment Nova devrait vous parler",
+  "onboarding.novaToneQuestion": "Comment souhaitez-vous que Nova communique avec vous ?",
+
 };
