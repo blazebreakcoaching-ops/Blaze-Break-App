@@ -143,3 +143,12 @@ Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site
 - Added 28 choice translations per locale for the seven-question quick Fingerprint. Translation keys reflect canonical question IDs and numeric option values, which remain unchanged in the POST payload. Full 14-question assessment deliberately falls back to original English question/answer wording in a non-English locale with a translated disclosure.
 - Corrected Fingerprint error/render priority and removed the raw internal category name from the customer view. Added and amended source tests, including `i18n/onboarding-options.test.ts` and `i18n/fingerprint-quick-options.test.ts`.
 - All 12 catalogues now contain 320 source keys. **No language review or assessment equivalence claim.** No executable build/test pass has occurred; no merge/deployment/Actions. Release gate remains blocked.
+
+## Batch 11 follow-up — onboarding identity/timer cleanup
+
+- Reset `SituationalOnboarding` draft answers, consent toggles, progress step and error state when the authenticated user ID changes. The reset uses the current interface language and the same fail-closed defaults for learning/reminders.
+- Cancel the 400 ms option auto-advance timer on account changes, unmount and manual Next. The delayed callback checks the still-authenticated UID before changing the displayed question.
+- Guard completion UI state against late success/failure callbacks from a previous signed-in account. The underlying `onComplete` API retains its own account-ownership responsibilities; authenticated end-to-end account-switch tests remain a required gate.
+- Extended `i18n/onboarding-options.test.ts` for source-level regression coverage. Not executed on a local checkout.
+
+No merge to main, GitHub Actions or deployment.
