@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Loader2, HeartPulse } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { secureApiFetch } from '../lib/secure-api';
 import { NovaRecommendationCard } from './NovaRecommendationCard';
+import { SecondMemoryCard } from './SecondMemoryCard';
 import { ConnectedMoodPulse, ConnectedBodyCheckIn, ConnectedWeeklyReviews, ConnectedEnergyBudget } from './ConnectedRecoveryModules';
 import { PressurePatternCapture } from './PressurePatternCapture';
 import { RelationalLoadSignal } from './RelationalLoadSignal';
@@ -38,6 +39,12 @@ interface PendingOutcomeCheck {
   selectedModule: string | null;
 }
 
+interface AdaptiveExplanation {
+  basis: 'explicit_preference' | 'confirmed_outcomes';
+  preference: 'preferred' | 'avoided' | 'neutral';
+  samples: number;
+}
+
 interface RoutingDecisionResponse {
   decisionId: string | null;
   selectedRoute: RouteType;
@@ -50,6 +57,8 @@ interface RoutingDecisionResponse {
   evidenceDetail: string | null;
   evidenceSource: EvidenceSource | null;
   pendingOutcomeCheck: PendingOutcomeCheck | null;
+  adaptiveLearningUsed?: boolean;
+  adaptiveExplanation?: AdaptiveExplanation | null;
 }
 
 const HELPFULNESS_OPTIONS: { value: 'better' | 'same' | 'not_really' | 'not_sure'; label: string }[] = [
@@ -234,6 +243,21 @@ export const RecoveryIntelligenceHub = () => {
           </div>
         </div>
       )}
+
+      {!loading && !error && decision?.adaptiveLearningUsed === true && decision.adaptiveExplanation && (
+        <div className="rounded-lg border border-border bg-surface p-3 space-y-2" aria-live="polite">
+          <p className="text-xs text-text-muted">
+            {decision.adaptiveExplanation.basis === 'explicit_preference'
+              ? 'Your saved preference helped shape this suggestion.'
+              : 'Your past feedback in a similar situation helped shape this suggestion.'}
+          </p>
+          <button type="button" className="text-xs text-primary underline" onClick={() => navigateToTab('privacy')}>
+            Review Nova learning and feedback
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && auth.currentUser && <SecondMemoryCard minimal />}
 
       {!loading && !error && decision && !dismissed && (
         <NovaRecommendationCard
