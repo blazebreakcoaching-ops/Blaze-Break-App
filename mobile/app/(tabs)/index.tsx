@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/lib/auth-context';
 import { secureApiFetch } from '../../src/lib/secure-api';
 import { DailyCheckInModal } from '../../src/components/DailyCheckInModal';
+import { readPersonalProfile, type PersonalProfile } from '../../src/lib/personal-profile';
+import { personalWelcome } from '../../../personal-welcome';
 
 type Recommendation = {
   tool: string;
@@ -43,6 +45,8 @@ const TAB_ROUTES: Record<string, string> = {
 export default function PulseScreen() {
   const styles = useThemedStyles();
   const { user } = useAuth();
+  const [welcomeProfile, setWelcomeProfile] = useState<{ uid: string; value: PersonalProfile } | null>(null);
+  const [welcomeTime, setWelcomeTime] = useState(() => new Date());
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(true);
   const [weeklyRecap, setWeeklyRecap] = useState<WeeklyRecap | null>(null);
@@ -76,6 +80,19 @@ export default function PulseScreen() {
   };
 
   const load = useCallback(async () => {
+    const currentUid = user?.uid;
+    setWelcomeTime(new Date());
+    if (currentUid && !user?.isAnonymous) {
+      try {
+        const value = await readPersonalProfile(currentUid);
+        // readPersonalProfile rejects changes to the current signed-in account
+        setWelcomeProfile({ uid: currentUid, value });
+      } catch {
+        setWelcomeProfile(null);
+      }
+    } else {
+      setWelcomeProfile(null);
+    }
     setOutcomeError(null);
     setRecommendationLoading(true);
     try {
@@ -109,7 +126,7 @@ export default function PulseScreen() {
     } catch {
       setWeeklyRecap(null);
     }
-  }, []);
+  }, [user?.uid, user?.isAnonymous]);
 
   // Loads on mount AND whenever Pulse regains focus (e.g. after completing
   // a Reset tool or Check-in) - useFocusEffect alone covers both, since
@@ -156,6 +173,24 @@ export default function PulseScreen() {
             <Ionicons name="person-circle-outline" size={28} color={styles.colors.accent} />
           </TouchableOpacity>
         </View>
+
+        {welcomeProfile?.uid === user?.uid && welcomeProfile.value.enabled && (() => {
+          const greeting = personalWelcome({
+            now: welcomeTime,
+            timeZone: welcomeProfile.value.timeZone,
+            preferredName: welcomeProfile.value.preferredName,
+            allowName: welcomeProfile.value.useName,
+            tone: welcomeProfile.value.tone,
+            locale: welcomeProfile.value.language,
+            seed: user?.uid || 'welcome',
+          });
+          return (
+            <View style={styles.welcome}>
+              <Text style={styles.welcomeTitle} accessibilityRole="header">{greeting.greeting}</Text>
+              <Text style={styles.welcomeMessage}>{greeting.message}</Text>
+            </View>
+          );
+        })()}
 
         {user?.isAnonymous && (
           <TouchableOpacity style={styles.signUpBanner} onPress={() => router.push('/sign-up')}>
@@ -233,6 +268,9 @@ const createThemedStyles = (colors: NativeThemeColors) => StyleSheet.create({
   container: { padding: 20, paddingBottom: 40 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   header: { fontSize: 28, fontWeight: '800' },
+  welcome: { marginBottom: 16, gap: 5 },
+  welcomeTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
+  welcomeMessage: { fontSize: 14, lineHeight: 21, color: colors.muted },
   signUpBanner: {
     backgroundColor: colors.accentSoft,
     borderRadius: 12,

@@ -9,6 +9,7 @@ import { useAuth } from '../src/lib/auth-context';
 import { getNovaMemoryConsent, setNovaMemoryConsent } from '../src/lib/nova-memory-consent';
 import { useNativeTheme } from '../src/lib/native-theme';
 import { Text } from '../src/lib/native-ui';
+import { PersonalWelcomeSettings } from '../src/components/PersonalWelcomeSettings';
 import type { NativeThemeColors, NativeAppearanceMode } from '../src/lib/native-theme-palette';
 
 export default function AccountScreen() {
@@ -100,6 +101,8 @@ export default function AccountScreen() {
           </TouchableOpacity>
         </>
       )}
+
+      {uid && !isAnonymous && <PersonalWelcomeSettings uid={uid} />}
 
       <View style={styles.appearanceSection}>
         <Text style={styles.appearanceTitle}>Appearance</Text>
