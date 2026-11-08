@@ -17,6 +17,15 @@ describe('NHEI security/coordination contracts', () => {
     expect(createHandler).toContain('transaction.create(ref');
   });
 
+  it('invalidates shared Nova memory reads and writes on account changes', () => {
+    const brain = read('src/lib/nova-brain.ts');
+    expect(brain).toContain('let brainGeneration = 0');
+    expect(brain).toContain('generation !== brainGeneration || cachedUid !== uid');
+    expect(brain).toContain('return auth.currentUser?.uid && auth.currentUser.uid === cachedUid ? cachedBrain : []');
+    expect(brain).toContain('if (!existing?.canEdit) return;');
+    expect(brain).toContain('if (existingIndex === -1 || !cachedBrain[existingIndex].canEdit) return;');
+  });
+
   it('keeps forgotten ratings forgotten after a late retry', () => {
     const code = read('nhei-routing-outcome.ts');
     expect(code).toContain('previous.feedbackWithdrawnAt');
