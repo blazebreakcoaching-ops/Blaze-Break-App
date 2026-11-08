@@ -115,8 +115,7 @@ const NOVA_PERMISSION_DEFAULTS = {
 // who never separately visits Settings > Nova Privacy Controls would
 // otherwise leave Nova completely context-blind. allowMemory carries
 // through exactly what the user chose on the onboarding consent step.
-export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean) => {
-  (async () => {
+export const initNovaPermissionsForNewUser = async (uid: string, allowMemory: boolean): Promise<boolean> => {
     try {
       const db = await getDb();
       const { doc, setDoc } = await import('firebase/firestore');
@@ -126,11 +125,12 @@ export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean)
         allowNovaUseSavedMemories: allowMemory,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      return true;
     } catch {
-      // Non-fatal - Nova just stays context-blind for this session; the next
-      // successful write (e.g. a later Settings change) will fix it.
+      // The caller can leave memory inactive rather than presenting a save
+      // as successful when the consent record could not be created.
+      return false;
     }
-  })();
 };
 
 // Backfills the same defaults for anyone who onboarded before this existed
