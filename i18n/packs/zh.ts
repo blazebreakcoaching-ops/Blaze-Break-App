@@ -320,4 +320,5 @@ export const zh: Partial<Record<TranslationKey, string>> = {
   "fingerprint.option.meaning.2": "目标感逐渐被行政杂务淹没。",
   "fingerprint.option.meaning.3": "完全失去目标感，只是在勉强维持。",
   "fingerprint.option.meaning.4": "我已经想不起做有意义的事是什么感觉。",
+  "fingerprint.fullEnglishNotice": "完整的14题评估目前使用英语题目和选项。翻译审核仍在进行中。",
 };
