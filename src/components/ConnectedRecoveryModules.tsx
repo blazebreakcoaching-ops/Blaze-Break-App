@@ -66,7 +66,7 @@ export const ConnectedDailyCheckIn = ({ onClose, onReviewWithNova, onComplete }:
   useEffect(() => { fetchHistory(); }, [uid]);
 
   const handleSubmit = async () => {
-    if (!uid) return;
+    if (!uid || !loaded) return;
     setLoading(true); setError('');
     try {
       const docId = editingId || Date.now().toString();
@@ -681,6 +681,7 @@ export const ConnectedGoals = () => {
 export const ConnectedNovaPermissions = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   // Matches the real defaults set at onboarding (nova-brain.ts's
   // initNovaPermissionsForNewUser/ensureNovaPermissionsExist) - only used
   // as a fallback before fetchPerms below resolves, or for the rare
@@ -710,8 +711,8 @@ export const ConnectedNovaPermissions = () => {
     allowFocusSessions: true,
     allowSomaticResets: true,
     allowRecoveryAlly: true,
-    allowNovaMemory: true,
-    allowNovaUseSavedMemories: true, // mirrored by memory toggle
+    allowNovaMemory: false,
+    allowNovaUseSavedMemories: false, // fail closed until the real consent document loads
     allowAdaptiveIntelligence: false // optional, disabled until user enables it
   });
   
@@ -753,12 +754,16 @@ export const ConnectedNovaPermissions = () => {
       const snap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
       if (snap.exists()) {
         const data = snap.data() as any;
-        setPerms(prev => ({
-          ...prev,
-          ...data
+        setPerms(prev => ({ ...prev, ...data,
+          allowNovaMemory: data.allowNovaMemory === true,
+          allowNovaUseSavedMemories: data.allowNovaUseSavedMemories === true,
+          allowAdaptiveIntelligence: data.allowAdaptiveIntelligence === true,
         }));
+      } else {
+        setError('Your Nova privacy settings have not been created yet. Please complete account setup.');
       }
-    } catch(e) { setError('You do not have permission to access this record.'); }
+      setLoaded(snap.exists());
+    } catch(e) { setError('Could not load Nova privacy settings.'); setLoaded(false); }
   };
   useEffect(() => { fetchPerms(); }, [uid]);
 
@@ -808,7 +813,7 @@ export const ConnectedNovaPermissions = () => {
             </div>
             <button
               onClick={() => toggle(k as any)}
-              disabled={loading}
+              disabled={loading || !loaded || (k === "allowAdaptiveIntelligence" && !v && !(perms.allowNovaMemory && perms.allowNovaUseSavedMemories))}
               role="switch"
               aria-checked={!!v}
               aria-label={permissionsLabels[k] || k}
