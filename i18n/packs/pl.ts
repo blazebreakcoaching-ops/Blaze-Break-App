@@ -242,4 +242,12 @@ export const pl: Partial<Record<TranslationKey, string>> = {
   "onboarding.novaToneTitle": "Jak Nova powinna z Tobą rozmawiać",
   "onboarding.novaToneQuestion": "Jak Nova powinna się z Tobą komunikować?",
 
+  "fingerprint.choiceTitle": "Ile masz teraz czasu?",
+  "fingerprint.choiceSubtitle": "Wybierz krótszą lub dłuższą ankietę. Możesz zmienić zdanie.",
+  "fingerprint.quickTitle": "Krótka ankieta — około 90 sekund",
+  "fingerprint.fullTitle": "Pełna ankieta — około 3–4 minuty",
+  "fingerprint.progress": "Pytanie {current} z {total}",
+  "fingerprint.working": "Nova analizuje Twoje odpowiedzi...",
+  "fingerprint.errorTitle": "Nie udało się ukończyć ankiety",
+  "fingerprint.retry": "Spróbuj ponownie",
 };
