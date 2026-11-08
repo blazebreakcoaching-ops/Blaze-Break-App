@@ -242,4 +242,12 @@ export const ur: Partial<Record<TranslationKey, string>> = {
   "onboarding.novaToneTitle": "نووا کو آپ سے کیسے بات کرنی چاہیے",
   "onboarding.novaToneQuestion": "آپ چاہتے ہیں کہ نووا آپ سے کس انداز میں بات کرے؟",
 
+  "fingerprint.choiceTitle": "ابھی آپ کے پاس کتنا وقت ہے؟",
+  "fingerprint.choiceSubtitle": "مختصر یا تفصیلی جائزہ منتخب کریں۔ آپ اپنی رائے بدل سکتے ہیں۔",
+  "fingerprint.quickTitle": "مختصر جائزہ — تقریباً 90 سیکنڈ",
+  "fingerprint.fullTitle": "مکمل جائزہ — تقریباً 3 سے 4 منٹ",
+  "fingerprint.progress": "سوال {current} از {total}",
+  "fingerprint.working": "نووا آپ کے جوابات کا جائزہ لے رہی ہے...",
+  "fingerprint.errorTitle": "آپ کا جائزہ مکمل نہیں ہو سکا",
+  "fingerprint.retry": "دوبارہ کوشش کریں",
 };
