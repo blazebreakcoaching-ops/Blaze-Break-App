@@ -15117,8 +15117,12 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         const outcomeSnap = await db.collection("users").doc(user.uid)
           .collection("recovery_routing_decisions")
           .orderBy("createdAt", "desc").limit(100).get();
+        const recentFeedbackCutoffMs = nowMs - 90 * 24 * 60 * 60 * 1000;
         const outcomes = outcomeSnap.docs
           .map(d => d.data())
+          .filter(d => typeof d.createdAt === 'string' &&
+            Number.isFinite(Date.parse(d.createdAt)) &&
+            Date.parse(d.createdAt) >= recentFeedbackCutoffMs)
           .filter(d => d.outcome === 'completed' &&
             ['better','same','not_really','not_sure'].includes(d.helpfulness) &&
             typeof d.selectedModule === 'string' && isKnownRoutingModule(d.selectedModule))
