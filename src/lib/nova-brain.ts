@@ -219,6 +219,12 @@ export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): 
 // categories, so flipping this doesn't silently reset someone's other
 // preferences.
 export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
+  if (!uid || auth.currentUser?.uid !== uid) return;
+  // Withdraw locally immediately: never keep old consent active while the network resolves.
+  if (!enabled) {
+    setNovaLearningAllowedForUid(uid, false);
+    clearNovaBrainCache();
+  }
   (async () => {
     try {
       const db = await getDb();
@@ -226,6 +232,7 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
       await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
         allowNovaMemory: enabled,
         allowNovaUseSavedMemories: enabled,
+        ...(!enabled ? { allowAdaptiveIntelligence: false } : {}),
         updatedAt: new Date().toISOString(),
       }, { merge: true });
     } catch {
@@ -245,20 +252,33 @@ export const initNovaBrain = (uid: string): Promise<void> => {
     let loadedMemories: NovaMemory[] = [];
     let succeeded = false;
     try {
-      const { getDocs, query, orderBy } = await import('firebase/firestore');
-      const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
-      loadedMemories = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
-      succeeded = true;
+      const { getDocs, getDoc, doc, query, orderBy } = await import('firebase/firestore');
+      const db = await getDb();
+      if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+      const permissionSnap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
+      if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+      // A saved onboarding preference alone is not authority to read old memories.
+      const permitted = permissionSnap.exists() &&
+        permissionSnap.data().allowNovaMemory === true &&
+        permissionSnap.data().allowNovaUseSavedMemories === true;
+      if (permitted && isNovaLearningAllowed()) {
+        const snap = await getDocs(query(await memoriesCollection(uid), orderBy('createdAt', 'desc')));
+        loadedMemories = snap.docs.map(d => ({ id: d.id, ...d.data() } as NovaMemory));
+        succeeded = true;
+      }
     } catch {
-      // Do not automatically write replacement memory during a failed read.
+      // Unknown consent or failed read must not reuse cached personal memory.
     }
-    // Account switches and sign-outs invalidate any unfinished fetches.
-    if (cachedUid !== uid || requestedEpoch !== cacheEpoch) return;
+    // Account switches, sign-outs and consent withdrawal invalidate pending reads.
+    if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
     cacheLoadSucceeded = succeeded;
-    // A newly-added memory may have been saved locally while Firestore
-    // was still loading. Merge by id instead of erasing that new entry.
-    const localIds = new Set(cachedBrain.map(m => m.id));
-    cachedBrain = [...cachedBrain, ...loadedMemories.filter(m => !localIds.has(m.id))];
+    if (!succeeded) {
+      cachedBrain = [];
+    } else {
+      // Only merge optimistic local edits once active consent and the read succeed.
+      const localIds = new Set(cachedBrain.map(m => m.id));
+      cachedBrain = [...cachedBrain, ...loadedMemories.filter(m => !localIds.has(m.id))];
+    }
     announceNovaBrainUpdated();
   })();
   return initPromise;
@@ -360,7 +380,7 @@ export const logJourney = (action: string, details?: string) => {
 };
 
 export const deleteNovaMemory = (id: string) => {
-  if (!isCurrentBrainOwner()) return;
+  if (!isCurrentBrainOwner() || !cachedBrain.some(m => m.id === id && m.canEdit)) return;
   cachedBrain = cachedBrain.filter(m => m.id !== id);
   announceNovaBrainUpdated();
 
@@ -414,9 +434,9 @@ export const updateNovaMemoryBySourceAndType = (
 // cachedBrain, so other open surfaces (NovaChat.tsx, EvolutionEngine.tsx)
 // would keep showing the old content until a reload.
 export const editNovaMemoryContent = (id: string, content: string) => {
-  if (!isCurrentBrainOwner()) return;
+  if (!isCurrentBrainOwner() || !content.trim() || content.length > 1000) return;
   const existingIndex = cachedBrain.findIndex(m => m.id === id);
-  if (existingIndex === -1) return;
+  if (existingIndex === -1 || !cachedBrain[existingIndex].canEdit) return;
 
   const updated: NovaMemory = {
     ...cachedBrain[existingIndex],
