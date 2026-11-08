@@ -241,4 +241,12 @@ export const zh: Partial<Record<TranslationKey, string>> = {
   "onboarding.pressureQuestion": "目前什么最消耗你的精力？",
   "onboarding.novaToneTitle": "Nova 应该如何与你交谈",
   "onboarding.novaToneQuestion": "你希望 Nova 以什么方式与你沟通？",
+  "fingerprint.choiceTitle": "你现在有多少时间？",
+  "fingerprint.choiceSubtitle": "选择较短或较长的自我检查，之后可以改变主意。",
+  "fingerprint.quickTitle": "快速检查 — 约90秒",
+  "fingerprint.fullTitle": "完整检查 — 约3至4分钟",
+  "fingerprint.progress": "第 {current} 题，共 {total} 题",
+  "fingerprint.working": "Nova 正在查看你的回答...",
+  "fingerprint.errorTitle": "无法完成本次检查",
+  "fingerprint.retry": "重试",
 };
