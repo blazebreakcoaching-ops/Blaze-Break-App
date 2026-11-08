@@ -135,3 +135,11 @@ Phase 1 audit is an **initial inventory**, not a complete call-site-by-call-site
 - Added `i18n/fingerprint-question-prompts.test.ts` and extended `nhei-recovery-account-isolation-contract.test.ts`. GitHub source reads confirm 268 distinct-looking catalogue entries and all fourteen new question keys in every pack, but the tests have **not been run**.
 - Blockers: translate every Fingerprint answer option before claiming full alternate-language assessment; conduct human review of translation meaning and safety, measurement equivalence, RTL/layout, accessibility; run TypeScript, Vitest, Firestore emulator and authenticated staging E2E at exact integrated SHA. Other pending features include billing, reports, privacy, notifications, and remaining NHEI branch reconciliation.
 - No Actions, main merge, backend migration or deployment.
+
+## Batch 11 — multilingual onboarding and 7-question Fingerprint choice integration
+
+- Added 23 localised onboarding display strings per catalogue (four subtitles, 17 answer displays, two profile headings). Onboarding now renders the localised display value while persisting unchanged English answer tokens. All 12 packs contain the keys.
+- Consent regression: reminders start explicitly disabled; checked state requires `sendNovaNudges === true`. Nova adaptive learning still requires its separate affirmative choice.
+- Added 28 choice translations per locale for the seven-question quick Fingerprint. Translation keys reflect canonical question IDs and numeric option values, which remain unchanged in the POST payload. Full 14-question assessment deliberately falls back to original English question/answer wording in a non-English locale with a translated disclosure.
+- Corrected Fingerprint error/render priority and removed the raw internal category name from the customer view. Added and amended source tests, including `i18n/onboarding-options.test.ts` and `i18n/fingerprint-quick-options.test.ts`.
+- All 12 catalogues now contain 320 source keys. **No language review or assessment equivalence claim.** No executable build/test pass has occurred; no merge/deployment/Actions. Release gate remains blocked.
