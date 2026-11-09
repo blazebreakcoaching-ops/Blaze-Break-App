@@ -47,7 +47,7 @@ describe('Command Centre aggregate outcomes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View platform outcomes' }));
     await waitFor(() => expect(mocks.api).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/Completion: Insufficient evidence/)).toBeTruthy();
-    expect(screen.getByText(/fewer than 20 events/)).toBeTruthy();
+    expect(screen.getAllByText(/fewer than 20 events/)).toHaveLength(2);
     expect(screen.getByText(/Observational, not causal/)).toBeTruthy();
     expect(mocks.api).toHaveBeenCalledWith('/api/admin/product-intelligence?days=90');
     expect(mocks.api).toHaveBeenCalledWith('/api/admin/recovery-outcomes?days=90');

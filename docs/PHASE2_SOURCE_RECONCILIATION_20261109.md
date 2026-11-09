@@ -202,3 +202,22 @@ Runtime testing and staging privacy verification are still mandatory.
   not causal. No person-level or employer-linked information is exposed.
 - Added React component tests for no eager queries, role visibility and
   low-sample masking. These are authored, **not executed**.
+
+## Phase 2 source inventory and route contract (final source pass)
+
+- The full Git-tree inventory is in `docs/PHASE2_MAIN_VS_INTEGRATION_INVENTORY_20261109.md`. Current
+  `main` has 717 source files and integration 1271; 230
+  common paths differ, 5 main-only and 559
+  integration-only. Main-only NHEI helper/contracts were reviewed, not
+  copied, since this would revive duplicate outcome semantics.
+- A new source-wiring contract traces the live Nova app/chat + gated
+  agentic wrapper, deterministic Recovery Hub, member-only Intelligence
+  and Report, organisation membership/manager coaching, Evolution
+  governance, and Command Centre aggregate outcomes to the
+  **existing protected server routes**. It also requires that
+  NHEI activation remain behind current safeguards.
+- Product Intelligence component test now checks both low-sample
+  feature cards rather than incorrectly expecting only one match.
+- **Engineering source closure is not test acceptance:** project dependencies,
+  end-to-end tests, named Firebase database indexes, translations and
+  safeguarding review remain unverified in this connector-only session.
