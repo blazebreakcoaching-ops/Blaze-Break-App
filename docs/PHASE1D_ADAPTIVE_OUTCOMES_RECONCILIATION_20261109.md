@@ -21,6 +21,11 @@ The older `main` report calculated adapted-vs-standard recovery outcomes, but th
 - Firestore emulator: persistence, deduplication, Pulse-vs-Hub, clarification and provenance.
 - Recovery outcome route: duplicate completion, correction without a double count and forgotten-feedback retry.
 
+## Attribution integrity follow-up
+- Require an allowlisted reason and a non-empty module name before recording true adaptive provenance; malformed input can no longer inflate comparison groups.
+- Added emulator regression cases for missing/invalid reason and blank module.
+- Runtime verification still unexecuted; the PR remains a draft.
+
 ## Required offline verification before merging
 - Check out this exact commit in a clean environment and run `npm ci --legacy-peer-deps`, `npm run lint`, `npm test`, and `npm run verify:integration:offline`.
 - Run `npm run test:emulator` with the isolated Firestore/Auth emulators actually active. Skipped emulator suites do not count as passing.

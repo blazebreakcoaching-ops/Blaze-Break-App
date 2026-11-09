@@ -163,10 +163,14 @@ export async function reserveRecommendationOffer(
         return;
       }
 
-      // Pulse and unanswered clarification never acquire adaptive credit.
-      const adaptiveLearningUsed = input.sourceSurface === 'recovery_hub' && input.selectedModule !== null && input.adaptiveLearningUsed === true;
-      const adaptiveBasis = adaptiveLearningUsed && (input.adaptiveBasis === 'explicit_preference' || input.adaptiveBasis === 'confirmed_outcomes')
+      // A caller's true flag is not evidence unless a concrete Hub module
+      // was selected for an allowlisted adaptive reason.
+      const validAdaptiveBasis = input.adaptiveBasis === 'explicit_preference' || input.adaptiveBasis === 'confirmed_outcomes'
         ? input.adaptiveBasis : null;
+      const adaptiveLearningUsed = input.sourceSurface === 'recovery_hub'
+        && typeof input.selectedModule === 'string' && input.selectedModule.length > 0
+        && input.adaptiveLearningUsed === true && validAdaptiveBasis !== null;
+      const adaptiveBasis = adaptiveLearningUsed ? validAdaptiveBasis : null;
       tx.set(sessionRef, nextSessionCounterState(current, today, 'recommendationsOffered'), { merge: true });
       tx.set(newDecisionRef, {
         createdAt: new Date(input.nowMs).toISOString(),

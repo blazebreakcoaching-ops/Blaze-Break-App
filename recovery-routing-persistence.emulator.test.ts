@@ -318,6 +318,22 @@ describe('Firestore emulator: adaptive provenance survives reservations', () => 
     expect(first).toMatchObject({ kind: 'reserved', adaptiveLearningUsed: false, adaptiveBasis: null });
     expect(reused).toMatchObject({ kind: 'reused', adaptiveLearningUsed: false, adaptiveBasis: null });
   });
+  it('rejects adaptive attribution without a valid reason or module', async () => {
+    for (const [uid, options] of [
+      ['emu_missing_basis', { adaptiveLearningUsed: true }],
+      ['emu_wrong_basis', { adaptiveLearningUsed: true, adaptiveBasis: 'unrecognised' }],
+      ['emu_blank_module', { adaptiveLearningUsed: true, adaptiveBasis: 'confirmed_outcomes', selectedModule: '' }],
+    ] as const) {
+      const result = await reserveRecommendationOffer(db, uid, baseOffer({
+        sourceSurface: 'recovery_hub',
+        ...options,
+      } as unknown as Partial<Parameters<typeof reserveRecommendationOffer>[2]>));
+      expect(result).toMatchObject({ kind: 'reserved', adaptiveLearningUsed: false, adaptiveBasis: null });
+      const snapshot = await db.collection(`users/${uid}/recovery_routing_decisions`).get();
+      expect(snapshot.docs).toHaveLength(1);
+      expect(snapshot.docs[0].data()).toMatchObject({ adaptiveLearningUsed: false, adaptiveBasis: null });
+    }
+  });
   it('never labels an unanswered clarification as adaptively selected', async () => {
     const result = await reserveRecommendationOffer(db, 'emu_non_module', baseOffer({
       selectedModule: null, routingOutcome: 'needs_clarification', sourceSurface: 'recovery_hub',
