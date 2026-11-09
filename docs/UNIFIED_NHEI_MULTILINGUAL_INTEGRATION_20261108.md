@@ -322,3 +322,10 @@ staging identity and real cross-account journeys remain release gates.
 - The screen tracks **Firebase User session identity** as well as UID: resets settings when the Firebase session changes (even for the same UID), blocks stale Firestore reads/writes, and prevents an obsolete reset callback from changing the active account's settings. All other memory/permission semantics are unchanged.
 - Choices have explicit translated screen-reader labels with the module name and chosen preference. Added i18n coverage and source-contract regression tests.
 - Translation packs outside English remain unreviewed drafts; this code is committed but no TypeScript/Vitest/browser/RTL/staging verification was executable here. No rules, deployment or production mutation.
+
+## Phase 1S — Nova permission-service session integrity (9 November 2026)
+
+- The create-only permission transaction now rejects onboarding work from an obsolete Firebase User, even if the new session has the same UID.
+- Calendar aggregation consent reads and writes retain the initiating Firebase User identity across asynchronous database work, blocking stale responses and grants. The asynchronous Nova Memory consent update also checks session ownership before writing.
+- Existing default-off and server-side permissions are unchanged; no new data collection is enabled.
+- Added race regression tests for same-UID reauthentication and foreign UID initialization. Runtime tests, Firebase emulator and live staging remain unexecuted release gates. No production changes.

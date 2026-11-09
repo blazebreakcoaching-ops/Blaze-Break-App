@@ -65,6 +65,18 @@ describe('Calendar aggregation needs a separate affirmative choice', () => {
     expect(mocks.runTransaction).not.toHaveBeenCalled();
   });
 
+  it('rejects a new Firebase session for the same UID during consent', async () => {
+    const originalSession = mocks.auth.currentUser;
+    mocks.get.mockImplementationOnce(async () => {
+      mocks.auth.currentUser = { uid: 'account-A' };
+      return { exists: () => false };
+    });
+    await expect(saveCalendarSignalConsent('account-A', true)).rejects.toThrow('Account changed');
+    expect(mocks.auth.currentUser).not.toBe(originalSession);
+    expect(mocks.set).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+  
   it('rejects a mid-request account switch before committing consent', async () => {
     mocks.get.mockImplementationOnce(async () => {
       mocks.auth.currentUser = { uid: 'account-B' };
