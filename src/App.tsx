@@ -1189,14 +1189,23 @@ export default function App() {
   // one GET /api/org/:orgId/executive-work-design checks server-side.
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   useEffect(() => {
-    if (!user) return;
-    secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
-      setManagedTeams(data.managedTeams || []);
+    // The organisation API, not onboarding role preferences, determines
+    // these navigation privileges. Clear them immediately on every login
+    // change and never consume the previous session's delayed response.
+    let active = true;
+    setManagedTeams([]); setIsHrViewer(false); setIsOrgAdmin(false);
+    const session = user;
+    if (!session || auth.currentUser !== session) return () => { active = false; };
+    void secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
+      if (!active || auth.currentUser !== session) return;
+      setManagedTeams(Array.isArray(data.managedTeams)
+        ? data.managedTeams.filter((team: unknown): team is string => typeof team === 'string') : []);
       setIsHrViewer(data.isHrViewer === true);
       setIsOrgAdmin(data.isOrgAdmin === true);
     }).catch(() => {
-      // Non-critical - the "My Team"/"HR"/"Executive Work Design" nav entries just stay hidden if this fails.
+      // Missing data or a revoked role must never retain the old navigation.
     });
+    return () => { active = false; };
   }, [user]);
 
   const [flow, setFlow] = useState<AppFlow>("landing");

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../lib/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFocusTrap } from '../lib/useFocusTrap';
 import { 
@@ -50,6 +51,8 @@ export const PrivacyVault = ({
   onProfileUpdate: (p: UserProfileData) => void,
   onAwardPoints?: (amount: number, reason: string) => void
 }) => {
+  const { user } = useAuth();
+  const orgReadGeneration = useRef(0);
   const [activeTab, setActiveTab] = useState<'zones' | 'compliance' | 'org' | 'consent' | 'governance' | 'audit' | 'policies'>('zones');
   const flags = useFeatureFlags();
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
@@ -87,39 +90,56 @@ export const PrivacyVault = ({
   }, [showLeaveConfirm]);
 
   const fetchOrgStatus = async () => {
-    if (!auth.currentUser) return;
+    const session = user;
+    if (!session || auth.currentUser !== session) return;
+    const generation = ++orgReadGeneration.current;
+    const current = () => auth.currentUser === session
+      && orgReadGeneration.current === generation;
     setOrgLoading(true);
     setOrgError('');
     try {
       const res = await secureApiFetch('/api/org/me');
       const data = await res.json();
+      if (!current()) return;
       setOrgStatus(data);
+      setPrivacyStatus(null); setPrivacyReceipts([]);
       if (data.organisationId) {
         try {
           const statusRes = await secureApiFetch(`/api/org/${data.organisationId}/my-privacy-status`);
-          if (statusRes.ok) setPrivacyStatus(await statusRes.json());
-        } catch (e) {
-          // Non-fatal - the transparency panel just stays hidden if this fails.
+          const status = await statusRes.json();
+          if (current()) setPrivacyStatus(status);
+        } catch {
+          // The transparency panel remains hidden if permissions are unavailable.
         }
+        if (!current()) return;
         try {
           const receiptsRes = await secureApiFetch(`/api/org/${data.organisationId}/privacy-receipts`);
-          if (receiptsRes.ok) setPrivacyReceipts((await receiptsRes.json()).receipts || []);
-        } catch (e) {
-          // Non-fatal - the receipts section just stays hidden if this fails.
+          const receipts = await receiptsRes.json();
+          if (current()) setPrivacyReceipts(Array.isArray(receipts.receipts) ? receipts.receipts : []);
+        } catch {
+          // Receipt visibility is independent of whether other org data loaded.
         }
       }
-    } catch (e) {
-      setOrgError('Could not load your organisation status.');
+    } catch {
+      if (current()) setOrgError('Could not load your organisation status.');
+    } finally {
+      if (current()) setOrgLoading(false);
     }
-    setOrgLoading(false);
   };
 
   useEffect(() => {
-    if (activeTab === 'org') fetchOrgStatus();
-  }, [activeTab]);
+    orgReadGeneration.current += 1;
+    setOrgStatus(null); setPrivacyStatus(null); setPrivacyReceipts([]);
+    setOrgLoading(false); setOrgError(''); setJoinCodeInput('');
+    setJoining(false); setConsentSaving(false); setLeaving(false);
+    setShowLeaveConfirm(false);
+    if (activeTab === 'org' && user && auth.currentUser === user) void fetchOrgStatus();
+    return () => { orgReadGeneration.current += 1; };
+  }, [activeTab, user]);
 
   const handleJoinOrg = async () => {
-    if (!joinCodeInput.trim()) return;
+    const session = user;
+    if (!joinCodeInput.trim() || !session || auth.currentUser !== session) return;
     setJoining(true);
     setOrgError('');
     try {
@@ -128,6 +148,7 @@ export const PrivacyVault = ({
         data: { joinCode: joinCodeInput.trim() },
       });
       const data = await res.json();
+      if (auth.currentUser !== session) return;
       if (!res.ok) {
         setOrgError(data.error || 'Could not join that organisation.');
       } else {
@@ -135,39 +156,54 @@ export const PrivacyVault = ({
         await fetchOrgStatus();
       }
     } catch (e) {
-      setOrgError(e instanceof SecureApiError ? e.message : 'Could not join that organisation.');
+      if (auth.currentUser === session)
+        setOrgError(e instanceof SecureApiError ? e.message : 'Could not join that organisation.');
+    } finally {
+      if (auth.currentUser === session) setJoining(false);
     }
-    setJoining(false);
   };
 
   const handleToggleOrgConsent = async (next: boolean) => {
-    if (!auth.currentUser) return;
+    const session = user;
+    if (!session || auth.currentUser !== session) return;
     setConsentSaving(true);
     try {
-      await setDoc(doc(db, 'users', auth.currentUser.uid), {
+      await setDoc(doc(db, 'users', session.uid), {
         shareAnonymizedDataWithOrg: next,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      if (auth.currentUser !== session) return;
       setOrgStatus(prev => prev ? { ...prev, shareAnonymizedDataWithOrg: next } : prev);
       await handleAuditAction(next ? 'Enabled anonymised org data sharing' : 'Disabled anonymised org data sharing', 'organisation', next ? 'authorised' : 'denied');
-    } catch (e) {
-      setOrgError('Could not save that change.');
+    } catch {
+      if (auth.currentUser === session) setOrgError('Could not save that change.');
+    } finally {
+      if (auth.currentUser === session) setConsentSaving(false);
     }
-    setConsentSaving(false);
   };
 
   const handleLeaveOrg = async () => {
+    const session = user;
+    if (!session || auth.currentUser !== session) return;
     setLeaving(true);
     setOrgError('');
     try {
       await secureApiFetch('/api/org/leave', { method: 'POST' });
+      if (auth.currentUser !== session) return;
       await handleAuditAction('Left Organisation', 'organisation', 'deleted');
-      setOrgStatus({ organisationId: null });
-    } catch (e) {
-      setOrgError('Could not leave the organisation. Please try again.');
+      if (auth.currentUser === session) {
+        setOrgStatus({ organisationId: null });
+        setPrivacyStatus(null); setPrivacyReceipts([]);
+      }
+    } catch {
+      if (auth.currentUser === session)
+        setOrgError('Could not leave the organisation. Please try again.');
+    } finally {
+      if (auth.currentUser === session) {
+        setLeaving(false);
+        setShowLeaveConfirm(false);
+      }
     }
-    setLeaving(false);
-    setShowLeaveConfirm(false);
   };
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);

@@ -5,12 +5,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // (removed by an admin, unverified email, domain not approved, revoked
 // invitation). secureApiFetch throws on any non-OK response, so a
 // `!res.ok` branch never runs; the message has to come from the error.
-const mocks = vi.hoisted(() => ({ secureApiFetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  secureApiFetch: vi.fn(),
+  user: { uid: 'u1', email: 'u1@test.dev' } as { uid: string; email: string } | null,
+}));
+vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: mocks.user }) }));
 vi.mock('../lib/secure-api.ts', async () => {
   const actual = await vi.importActual<any>('../lib/secure-api.ts');
   return { ...actual, secureApiFetch: mocks.secureApiFetch };
 });
-vi.mock('../lib/firebase', () => ({ auth: { currentUser: { uid: 'u1', email: 'u1@test.dev' } } }));
+vi.mock('../lib/firebase', () => ({
+  auth: { get currentUser() { return mocks.user; } },
+}));
 vi.mock('../lib/firestore', () => ({ db: {} }));
 vi.mock('firebase/auth', () => ({ signOut: vi.fn() }));
 vi.mock('firebase/firestore', () => ({ doc: vi.fn(), setDoc: vi.fn() }));
@@ -31,6 +37,7 @@ const { SecureApiError } = await import('../lib/secure-api.ts');
 const { PrivacyVault } = await import('./PrivacyVault');
 
 beforeEach(() => {
+  mocks.user = { uid: 'u1', email: 'u1@test.dev' };
   mocks.secureApiFetch.mockReset();
 });
 

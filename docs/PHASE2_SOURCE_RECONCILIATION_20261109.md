@@ -142,3 +142,18 @@ Runtime testing and staging privacy verification are still mandatory.
 - Added a rendered React regression for old-request completion after
   same-UID reauthentication. This work does not add employer disclosure,
   AI analysis or new data stores. Tests remain unexecuted here.
+
+## Phase 2 — Organisation membership and privacy boundaries
+
+- The main app's My Team/HR/Executive Work Design nav flags now reset
+  whenever Firebase User changes and apply `GET /api/org/me` only while
+  the initiating Firebase User session is still active. Missing/denied
+  membership fails closed instead of preserving an earlier role.
+- Privacy Vault's Organisation view now resets member, consent receipt and
+  cohort-transparency state on account change or tab departure, and rejects
+  delayed previous-session `/api/org/me`, `my-privacy-status` and
+  `privacy-receipts` reads. Its join, consent and leave handlers guard
+  UI updates after a session change.
+- Existing server-side org membership checks, privacy thresholds and
+  explicit member consent remain the authority; no employer access to
+  individual coaching data is added. New rendered regression added.
