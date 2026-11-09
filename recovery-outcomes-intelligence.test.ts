@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { summarizeModuleOutcomes, summarizePlatformModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 
 const decision = (overrides: Partial<RoutingDecisionRecord>): RoutingDecisionRecord => ({
   selectedModule: 'breathing_reset',
@@ -83,6 +83,33 @@ describe('summarizeModuleOutcomes', () => {
     const [summary] = summarizeModuleOutcomes(decisions);
     expect(summary.sufficientSample).toBe(false);
     expect(summary.sampleThreshold).toBe(20);
+  });
+});
+
+describe('summarizePlatformModuleOutcomes (rate denominator gate)', () => {
+  it('masks misleading early rates on administrator views', () => {
+    const rows = [decision({ outcome: 'completed', helpfulness: 'better' })];
+    const [platform] = summarizePlatformModuleOutcomes(rows);
+    expect(platform).toMatchObject({ resolved: 1, completionRate: null, netPositiveRate: null, sufficientSample: false });
+    // Personal reporting remains unchanged: a user may see early own data.
+    const [personal] = summarizeModuleOutcomes(rows, 3);
+    expect(personal).toMatchObject({ resolved: 1, completionRate: 1, netPositiveRate: 1, sufficientSample: false });
+  });
+  it('does not reveal a rate from one rating despite enough completed interventions', () => {
+    const rows = [
+      decision({ outcome: 'completed', helpfulness: 'better' }),
+      ...Array.from({ length: 19 }, () => decision({ outcome: 'completed', helpfulness: 'not_sure' })),
+    ];
+    const [summary] = summarizePlatformModuleOutcomes(rows);
+    expect(summary).toMatchObject({ resolved: 20, completionRate: 1, sufficientSample: true, netPositiveRate: null });
+  });
+  it('shows rates when both their own denominators are sufficiently large', () => {
+    const rows = Array.from({ length: 20 }, (_, i) => decision({
+      outcome: 'completed', helpfulness: i < 10 ? 'better' : 'same',
+    }));
+    expect(summarizePlatformModuleOutcomes(rows)[0]).toMatchObject({
+      resolved: 20, completionRate: 1, netPositiveRate: 0.5,
+    });
   });
 });
 

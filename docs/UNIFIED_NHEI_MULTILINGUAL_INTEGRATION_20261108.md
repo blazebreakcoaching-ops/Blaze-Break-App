@@ -184,3 +184,9 @@ No merge to main, GitHub Actions or deployment.
 - Reset `userRecord.isAdmin` from current claims/verified identity rather than leaving a stale mutable true flag.
 - Added source-policy and pure-helper regressions. This does not alter user login, Firebase console settings or API permissions.
 - The work is committed for offline tests and a real account/role acceptance review. No tests were executed via GitHub Actions or deployed.
+
+## Phase 1H — platform recovery sample gating (9 November 2026)
+
+- Administrator recovery outcomes no longer expose success/completion percentages on inadequate denominators; informative ratings must independently meet the statistical threshold.
+- The member's own history remains visible, unchanged; no B2B/employer visibility added.
+- Three pure tests and one route test added. Work committed to development branch only, without runtime verification.

@@ -100,6 +100,23 @@ export function summarizeModuleOutcomes(
   return summaries.sort((a, b) => b.recommended - a.recommended);
 }
 
+// Platform-facing rates require sufficient DENOMINATOR evidence for each
+// individual rate. Twenty resolved offers do not make one helpfulness
+// rating reliable. Keep personal member history and its early-pattern
+// display unchanged: this stricter projection is only for admin reporting.
+export function summarizePlatformModuleOutcomes(
+  decisions: RoutingDecisionRecord[],
+): ModuleOutcomeSummary[] {
+  return summarizeModuleOutcomes(decisions).map(summary => {
+    const rated = summary.helpfulness.better + summary.helpfulness.same + summary.helpfulness.not_really;
+    return {
+      ...summary,
+      completionRate: summary.resolved >= summary.sampleThreshold ? summary.completionRate : null,
+      netPositiveRate: rated >= summary.sampleThreshold ? summary.netPositiveRate : null,
+    };
+  });
+}
+
 // Observational outcome comparison only; it cannot establish a causal effect.
 export interface AdaptiveFeedbackGroup {
   rated: number;

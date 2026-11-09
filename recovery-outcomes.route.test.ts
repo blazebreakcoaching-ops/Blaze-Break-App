@@ -62,6 +62,19 @@ describe('GET /api/admin/recovery-outcomes', () => {
     expect(summary.sufficientSample).toBe(true); // 25 resolved >= default threshold of 20
   });
 
+  it('hides statistically unsupported platform rates without hiding outcome counts', async () => {
+    for (let i = 0; i < 5; i++) {
+      seedDoc(`users/early_${i}/recovery_routing_decisions/d${i}`, {
+        createdAt: now(), selectedModule: 'breathing_reset', outcome: 'completed', helpfulness: 'better',
+      });
+    }
+    const res = await request(app).get('/api/admin/recovery-outcomes').set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(res.body.modules[0]).toMatchObject({
+      recommended: 5, resolved: 5, sufficientSample: false, completionRate: null, netPositiveRate: null,
+    });
+  });
+
   it('excludes decisions older than the lookback window', async () => {
     const stale = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString();
     seedDoc('users/user_old/recovery_routing_decisions/old1', {

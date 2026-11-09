@@ -74,7 +74,7 @@ import { NHEI_KNOWLEDGE_REVIEWER_ROLE } from './nhei-authority-contract';
 import { handleNheiKnowledgeReviewRequest } from './nhei-knowledge-review-service-boundary';
 import { listAllKnowledgeEntriesForReview } from './nhei-knowledge-service';
 import { importKnowledgeContentLibrary } from './nhei-knowledge-import-service';
-import { summarizeModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { summarizeModuleOutcomes, summarizePlatformModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL, getSupportedThinkingLevels } from './ai-model-registry';
 import { estimateModelCostUsd } from './ai-model-price-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -8632,7 +8632,7 @@ app.get("/api/admin/recovery-outcomes", verifyAppCheck, authenticateFirebaseUser
     res.json({
       lookbackDays,
       generatedAt: new Date().toISOString(),
-      modules: summarizeModuleOutcomes(decisions),
+      modules: summarizePlatformModuleOutcomes(decisions),
       adaptiveComparison: summarizeAdaptiveOutcomes(decisions),
     });
   } catch (err: any) {
