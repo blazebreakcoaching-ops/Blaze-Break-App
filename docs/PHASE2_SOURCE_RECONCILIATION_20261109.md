@@ -38,3 +38,15 @@ differing common files, which must not be blindly merged.
   cross-user staging are **not yet executable or run** via this connection.
 - Phase 1 release gates remain pending. No GitHub Actions, production
   deployment, merge to main, or NHEI mode/agentic activation.
+
+## Rendered-component regression additions
+
+- `SecondMemoryCard.session.test.tsx`: actual React rendering test for a delayed
+  response arriving after same-UID reauthentication, plus sign-out erasure.
+- `PastNovaMemoriesReview.session.test.tsx`: actual React rendering test for
+  delayed Firestore memory reads after same-UID reauthentication and account
+  switches. These use the existing jsdom component-test project, not a parallel
+  test runner or invented test data store.
+- Tests have been **authored, not executed** with the repository's package
+  installation. Run `npm run test:components` as part of the exact-SHA offline
+  integration gate before merging.
