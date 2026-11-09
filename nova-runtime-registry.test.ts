@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildNovaRuntimeReport } from './nova-runtime-registry';
+import { buildNovaRuntimeReport, resolveNovaChatProvider } from './nova-runtime-registry';
 
 const baseInput = { novaChatProviderEnv: undefined, geminiConfigured: true, vertexConfigured: false, claudeConfigured: false };
 
@@ -13,7 +13,7 @@ describe('buildNovaRuntimeReport', () => {
 
   it('switches nova_text_chat to claude only when both the env var is set AND claude is actually configured', () => {
     const notConfigured = buildNovaRuntimeReport({ ...baseInput, novaChatProviderEnv: 'claude', claudeConfigured: false });
-    expect(notConfigured.find((r) => r.surface === 'nova_text_chat')!.activeProvider).toBe('gemini');
+    expect(notConfigured.find((r) => r.surface === 'nova_text_chat')!.activeProvider).toBe('unavailable');
 
     const configured = buildNovaRuntimeReport({ ...baseInput, novaChatProviderEnv: 'claude', claudeConfigured: true });
     const textChat = configured.find((r) => r.surface === 'nova_text_chat')!;
@@ -23,7 +23,7 @@ describe('buildNovaRuntimeReport', () => {
 
   it('switches nova_text_chat to vertex only when both the env var is set AND vertex is actually configured', () => {
     const notConfigured = buildNovaRuntimeReport({ ...baseInput, novaChatProviderEnv: 'vertex', vertexConfigured: false });
-    expect(notConfigured.find((r) => r.surface === 'nova_text_chat')!.activeProvider).toBe('gemini');
+    expect(notConfigured.find((r) => r.surface === 'nova_text_chat')!.activeProvider).toBe('unavailable');
 
     const configured = buildNovaRuntimeReport({ ...baseInput, novaChatProviderEnv: 'vertex', vertexConfigured: true });
     expect(configured.find((r) => r.surface === 'nova_text_chat')!.activeProvider).toBe('vertex');
@@ -44,5 +44,22 @@ describe('buildNovaRuntimeReport', () => {
   it('reports exactly the three real Nova surfaces, no more', () => {
     const report = buildNovaRuntimeReport(baseInput);
     expect(report.map((r) => r.surface).sort()).toEqual(['nova_live_voice', 'nova_text_chat', 'nova_voice_tts']);
+  });
+});
+
+describe('Nova explicit-provider isolation', () => {
+  it('defaults to Gemini but never treats an unavailable selection as Gemini', () => {
+    expect(resolveNovaChatProvider(baseInput).activeProvider).toBe('gemini');
+    expect(resolveNovaChatProvider({ ...baseInput, novaChatProviderEnv: 'gemini' }).activeProvider).toBe('gemini');
+    for (const value of ['vertex', 'claude', 'unexpected-provider', 'Gemini', ' ']) {
+      const input = { ...baseInput, novaChatProviderEnv: value };
+      expect(resolveNovaChatProvider(input).activeProvider).toBeNull();
+      expect(buildNovaRuntimeReport(input)[0]).toMatchObject({
+        requestedProvider: value, activeProvider: 'unavailable', activeModel: 'unavailable', readiness: 'unavailable',
+      });
+    }
+  });
+  it('does not report the default as available without a Gemini key', () => {
+    expect(resolveNovaChatProvider({ ...baseInput, geminiConfigured: false }).activeProvider).toBeNull();
   });
 });

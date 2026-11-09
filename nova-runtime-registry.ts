@@ -39,6 +39,8 @@ export interface NovaRuntimeSurfaceReport {
   label: string;
   activeProvider: string;
   activeModel: string;
+  requestedProvider?: string;
+  readiness?: 'ready' | 'unavailable';
   providerOptions: NovaRuntimeProviderOption[];
   systemPromptSource: string;
   promptVersioning: 'none';
@@ -52,15 +54,31 @@ export interface NovaRuntimeInputs {
   claudeConfigured: boolean;
 }
 
-// Mirrors server.ts's own useClaudeForThisChat/useVertexForThisChat
-// resolution exactly (NOVA_CHAT_PROVIDER env var, gated on the
-// corresponding client actually being initialized) - this function
-// doesn't invent a different precedence, it reports the real one.
+export type NovaChatProvider = 'gemini' | 'vertex' | 'claude';
+export interface NovaChatProviderSelection {
+  requestedProvider: string;
+  activeProvider: NovaChatProvider | null;
+}
+export function resolveNovaChatProvider(input: NovaRuntimeInputs): NovaChatProviderSelection {
+  // Only an unset override chooses Gemini by default. Any explicit
+  // misconfiguration must fail closed, not reroute user data elsewhere.
+  const requestedProvider = input.novaChatProviderEnv || 'gemini';
+  const configured = requestedProvider === 'gemini' ? input.geminiConfigured
+    : requestedProvider === 'vertex' ? input.vertexConfigured
+    : requestedProvider === 'claude' ? input.claudeConfigured
+    : false;
+  return {
+    requestedProvider,
+    activeProvider: configured ? requestedProvider as NovaChatProvider : null,
+  };
+}
+
+// Share the live route's provider decision, including unavailable states.
 export const buildNovaRuntimeReport = (input: NovaRuntimeInputs): NovaRuntimeSurfaceReport[] => {
-  const useClaude = input.novaChatProviderEnv === 'claude' && input.claudeConfigured;
-  const useVertex = input.novaChatProviderEnv === 'vertex' && input.vertexConfigured;
-  const textChatActiveProvider = useClaude ? 'claude' : useVertex ? 'vertex' : 'gemini';
-  const textChatActiveModel = useClaude ? 'claude-sonnet-5' : 'gemini-3.5-flash';
+  const selection = resolveNovaChatProvider(input);
+  const textChatActiveProvider = selection.activeProvider ?? 'unavailable';
+  const textChatActiveModel = selection.activeProvider === 'claude' ? 'claude-sonnet-5'
+    : selection.activeProvider ? 'gemini-3.5-flash' : 'unavailable';
 
   return [
     {
@@ -68,6 +86,8 @@ export const buildNovaRuntimeReport = (input: NovaRuntimeInputs): NovaRuntimeSur
       label: 'Nova Text Chat',
       activeProvider: textChatActiveProvider,
       activeModel: textChatActiveModel,
+      requestedProvider: selection.requestedProvider,
+      readiness: selection.activeProvider ? 'ready' : 'unavailable',
       providerOptions: [
         { provider: 'gemini', model: 'gemini-3.5-flash', configured: input.geminiConfigured, selectionEnvVar: null },
         { provider: 'vertex', model: 'gemini-3.5-flash', configured: input.vertexConfigured, selectionEnvVar: 'NOVA_CHAT_PROVIDER=vertex' },
