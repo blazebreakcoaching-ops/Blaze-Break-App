@@ -13,6 +13,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { AdminPeopleDirectory, type DirectoryUser } from './AdminPeopleDirectory';
 import { AdminAuditHistory } from './AdminAuditHistory';
 import { AdminAccountAuditHistory } from './AdminAccountAuditHistory';
+import { PlatformOutcomeIntelligencePanel } from './PlatformOutcomeIntelligencePanel';
 import { formatFeedbackCategory } from '../lib/feedback-format';
 import { PLATFORM_ADMIN_ROLES, PLATFORM_ADMIN_ROLE_LABELS, isPlatformAdminRole } from '../../admin-roles';
 import { DEVICE_CHANNELS } from '../../desktop-deployment';
@@ -3607,6 +3608,9 @@ export const AdminDashboard = () => {
             </div>
           </div>
         )}
+        {/* Existing aggregate-only content endpoints; loaded on demand,
+            never when someone simply opens the Command Centre. */}
+        {activeTab === 'somatic' && <PlatformOutcomeIntelligencePanel />}
       </div>
 
       {/* Account Control Drawer - the single consolidated surface for

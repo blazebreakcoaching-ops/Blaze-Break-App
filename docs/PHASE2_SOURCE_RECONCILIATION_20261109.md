@@ -184,3 +184,21 @@ Runtime testing and staging privacy verification are still mandatory.
 - Added source contract covering ten existing protected components and
   their real API connectors; runtime/real multi-account tests remain
   outstanding before this is accepted as secure.
+
+## Phase 2 — Command Centre bridge to existing aggregate intelligence
+
+- The backend already exposes `GET /api/admin/product-intelligence`
+  and `GET /api/admin/recovery-outcomes`, both gated by
+  `content.manage`. Connected these read-only platform summaries to
+  the **existing** Command Centre Recovery Statistics tab through
+  `PlatformOutcomeIntelligencePanel`, without a new nav tab/DB or
+  telemetry pipeline.
+- Only platform roles with `content.manage` (plus verified owner
+  bootstrap) see the open control. Both APIs are queried on deliberate
+  click, not on page mount. The server remains the authority.
+- The panel shows factual platform event counts and bounded, backend-
+  masked outcome rates. Missing/small denominators say "Insufficient
+  evidence"; prior learning attribution stays explicitly observational,
+  not causal. No person-level or employer-linked information is exposed.
+- Added React component tests for no eager queries, role visibility and
+  low-sample masking. These are authored, **not executed**.
