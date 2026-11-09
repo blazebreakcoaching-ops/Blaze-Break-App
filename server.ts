@@ -19154,12 +19154,28 @@ app.delete("/api/recovery/my-feedback/:id", verifyAppCheck, authenticateFirebase
     const user = requireAuth(req);
     const id = String(req.params.id ?? '');
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid feedback ID." });
-    const ref = getDb().collection("users").doc(user.uid)
+    const db = getDb();
+    const ref = db.collection("users").doc(user.uid)
       .collection("recovery_routing_decisions").doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) return res.status(404).json({ error: "Feedback not found." });
-    await ref.update({ helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
-    res.json({ ok: true });
+    // Withdrawal and completion/correction use the same transactional
+    // decision document. A concurrent late rating cannot resurrect a
+    // forgotten answer after the forget operation has committed.
+    let result: 'forgotten' | 'already_forgotten' | 'not_found' | 'not_completed' = 'not_found';
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) { result = 'not_found'; return; }
+      const data = snap.data()!;
+      if (data.outcome !== 'completed') { result = 'not_completed'; return; }
+      if (data.feedbackWithdrawnAt) { result = 'already_forgotten'; return; }
+      tx.set(ref, {
+        helpfulness: FieldValue.delete(),
+        feedbackWithdrawnAt: new Date().toISOString(),
+      }, { merge: true });
+      result = 'forgotten';
+    });
+    if (result === 'not_found') return res.status(404).json({ error: "Feedback not found." });
+    if (result === 'not_completed') return res.status(409).json({ error: "There is no completed feedback to forget." });
+    res.json({ ok: true, alreadyForgotten: result === 'already_forgotten' });
   } catch (err: any) {
     logger.error("Personal recovery feedback erasure failed", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -19179,12 +19195,25 @@ app.post("/api/recovery/reset-adaptive-learning", verifyAppCheck, authenticateFi
     const permissionsRef = db.collection('users').doc(user.uid).collection('nova_permissions').doc('current');
     const permissionsSnap = await permissionsRef.get();
     if (!permissionsSnap.exists) return res.status(409).json({ error: "Nova permissions are not initialised." });
-    await permissionsRef.set({
-      allowAdaptiveIntelligence: false,
-      adaptivePreferredModules: [],
-      adaptiveAvoidedModules: [],
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
+    // Preserve a durable, server-only reset boundary before erasing ratings.
+    // The existing recovery_routing collection is already read-only to
+    // clients under firestore.rules, so no new collection or rules needed.
+    const resetRef = db.collection('users').doc(user.uid).collection('recovery_routing').doc('learning_reset_state');
+    await db.runTransaction(async tx => {
+      const [freshPermissions, previousReset] = await Promise.all([
+        tx.get(permissionsRef), tx.get(resetRef),
+      ]);
+      if (!freshPermissions.exists) throw new Error('Nova permissions disappeared during reset');
+      const previousAt = Date.parse(previousReset.data()?.lastResetAt ?? '');
+      const resetAt = new Date(Math.max(Date.now(), Number.isFinite(previousAt) ? previousAt : 0)).toISOString();
+      tx.set(permissionsRef, {
+        allowAdaptiveIntelligence: false,
+        adaptivePreferredModules: [],
+        adaptiveAvoidedModules: [],
+        updatedAt: resetAt,
+      }, { merge: true });
+      tx.set(resetRef, { lastResetAt: resetAt }, { merge: true });
+    });
 
     // A bounded batch protects the service. If there are more records,
     // the user can repeat the request without losing what was done.
@@ -19200,6 +19229,13 @@ app.post("/api/recovery/reset-adaptive-learning", verifyAppCheck, authenticateFi
       for (const doc of snap.docs) batch.update(doc.ref, { helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
       await batch.commit();
       erased += snap.size;
+    }
+    // When the twentieth page happens to contain exactly the final 100
+    // ratings, do not incorrectly claim a partial reset without checking.
+    if (!complete) {
+      complete = (await decisionsRef
+        .where('helpfulness', 'in', ['better', 'same', 'not_really', 'not_sure'])
+        .limit(1).get()).empty;
     }
     res.json({
       ok: true, adaptiveLearningEnabled: false, ratingsErased: erased, complete,
@@ -19255,6 +19291,21 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
         return;
       }
       const data = decisionSnap.data()!;
+
+      // A reset can race an offline client's delayed feedback submission.
+      // Read the durable, server-only reset boundary INSIDE this transaction:
+      // concurrent resets cause a retry rather than reviving erased ratings.
+      if (typedAction === 'completed') {
+        const resetRef = db.collection('users').doc(user.uid)
+          .collection('recovery_routing').doc('learning_reset_state');
+        const resetSnap = await tx.get(resetRef);
+        const resetAt = Date.parse(resetSnap.data()?.lastResetAt ?? '');
+        const offeredAt = Date.parse(typeof data.createdAt === 'string' ? data.createdAt : '');
+        if (Number.isFinite(resetAt) && (!Number.isFinite(offeredAt) || offeredAt <= resetAt)) {
+          outcomeResult = 'feedback_withdrawn';
+          return;
+        }
+      }
 
       // A forgotten subjective rating cannot be resurrected by a delayed retry.
       if (typedAction === 'completed' && data.feedbackWithdrawnAt) {

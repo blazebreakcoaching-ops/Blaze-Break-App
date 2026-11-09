@@ -59,11 +59,16 @@ export function adaptInterventionCandidates(
       preference = 'preferred';
       basis = 'explicit_preference';
     } else {
-      const recent = context.outcomes
-        .filter(outcome => outcome.sourceModule === candidate.sourceModule &&
-          outcome.feedback !== 'not_sure' &&
-          (!context.currentBandwidthBand || outcome.bandwidthBand === context.currentBandwidthBand))
-        .slice(-MAX_RECENT_ADAPTIVE_OUTCOMES);
+      // Never infer a pattern from different or UNKNOWN capacity
+      // contexts. Declared user preferences above remain independent of
+      // whether the person has recorded a current capacity band.
+      const recent = context.currentBandwidthBand
+        ? context.outcomes
+            .filter(outcome => outcome.sourceModule === candidate.sourceModule &&
+              outcome.feedback !== 'not_sure' &&
+              outcome.bandwidthBand === context.currentBandwidthBand)
+            .slice(-MAX_RECENT_ADAPTIVE_OUTCOMES)
+        : [];
       samples = recent.length;
       if (samples >= MIN_ADAPTIVE_OUTCOMES) {
         const better = recent.filter(outcome => outcome.feedback === 'better').length;

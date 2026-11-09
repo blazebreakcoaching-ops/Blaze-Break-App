@@ -190,3 +190,29 @@ No merge to main, GitHub Actions or deployment.
 - Administrator recovery outcomes no longer expose success/completion percentages on inadequate denominators; informative ratings must independently meet the statistical threshold.
 - The member's own history remains visible, unchanged; no B2B/employer visibility added.
 - Three pure tests and one route test added. Work committed to development branch only, without runtime verification.
+
+## Phase 1I — adaptive evidence, feedback withdrawal and reset reliability (9 November 2026)
+
+Audited the live Recovery Hub route, learning engine, data-rights endpoints,
+Firestore rules and outcome transaction semantics. Implemented:
+- Consent stays opt-in; **inferred** adaptation now requires a real current
+  capacity band and matching past feedback bands. Explicitly declared
+  preferences remain available where a band is unknown.
+- Individual feedback forget uses a Firestore transaction against the same
+  document used by outcome correction; repeated forget calls are idempotent.
+- Reset now writes a durable `users/{uid}/recovery_routing/learning_reset_state`
+  boundary (existing Firestore rules permit owner reads but deny client writes),
+  then clears ratings. An in-flight/delayed completion of an **older** decision
+  checks that boundary in its own transaction and cannot restore withdrawn
+  ratings. Newly offered decisions after reset can be rated normally.
+- Reset now checks whether an exact 20x100 erase has exhausted all records,
+  instead of falsely reporting a partial reset when exactly 2,000 were cleared.
+- Added account-isolation, repeated withdrawal, correction race, old/new
+  reset-boundary, consent and capacity-alignment regressions.
+- No new database collection, additional navigation, feature flag, rules
+  change, GitHub Action or deployment. Existing paths/behaviour reused.
+
+**Verification:** source validated against current branch snapshots and
+written as a single phase commit, but not compiled or run under the full
+repository test suite here. The offline Firestore emulator, Vitest, TypeScript,
+staging identity and real cross-account journeys remain release gates.
