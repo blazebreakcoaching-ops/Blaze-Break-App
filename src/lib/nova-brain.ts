@@ -40,19 +40,24 @@ export interface NovaMemory {
 
 let cachedBrain: NovaMemory[] = [];
 let cachedUid: string | null = null;
+// A fresh Firebase session for the same UID must not inherit cached private
+// memories or an in-flight permission read from the prior login.
+let cachedSession: typeof auth.currentUser = null;
 let initPromise: Promise<void> | null = null;
 let cacheEpoch = 0;
 let cacheLoadSucceeded = false;
 
 export const isNovaBrainReadyForAutoSync = (uid: string): boolean =>
-  cachedUid === uid && auth.currentUser?.uid === uid && cacheLoadSucceeded;
+  cachedUid === uid && cachedSession !== null &&
+  auth.currentUser === cachedSession && cacheLoadSucceeded;
 
 const announceNovaBrainUpdated = () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('nova-brain-updated'));
 };
 
 const isCurrentBrainOwner = () =>
-  !!auth.currentUser?.uid && cachedUid === auth.currentUser.uid;
+  cachedSession !== null && auth.currentUser === cachedSession &&
+  cachedUid === cachedSession.uid;
 
 // Store only a consent bit, never private profile answers. The account
 // must be verified by Firebase Auth before a client memory write is allowed.
@@ -252,10 +257,14 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
 };
 
 export const initNovaBrain = (uid: string): Promise<void> => {
-  if (cachedUid === uid && initPromise) return initPromise;
+  const session = auth.currentUser;
+  // A delayed caller for an old account must not evict the new account's cache.
+  if (!uid || !session || session.uid !== uid) return Promise.resolve();
+  if (cachedUid === uid && cachedSession === session && initPromise) return initPromise;
   const requestedEpoch = ++cacheEpoch;
   cachedUid = uid;
-  cachedBrain = []; // Clear the previous account immediately on switch.
+  cachedSession = session;
+  cachedBrain = []; // Clear memory on ANY session switch, even for the same UID.
   cacheLoadSucceeded = false;
   announceNovaBrainUpdated();
   initPromise = (async () => {
@@ -264,9 +273,9 @@ export const initNovaBrain = (uid: string): Promise<void> => {
     try {
       const { getDocs, getDoc, doc, query, orderBy } = await import('firebase/firestore');
       const db = await getDb();
-      if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+      if (cachedUid !== uid || cachedSession !== session || requestedEpoch !== cacheEpoch || auth.currentUser !== session) return;
       const permissionSnap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
-      if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+      if (cachedUid !== uid || cachedSession !== session || requestedEpoch !== cacheEpoch || auth.currentUser !== session) return;
       // A saved onboarding preference alone is not authority to read old memories.
       const permitted = permissionSnap.exists() &&
         permissionSnap.data().allowNovaMemory === true &&
@@ -280,7 +289,7 @@ export const initNovaBrain = (uid: string): Promise<void> => {
       // Unknown consent or failed read must not reuse cached personal memory.
     }
     // Account switches, sign-outs and consent withdrawal invalidate pending reads.
-    if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+    if (cachedUid !== uid || cachedSession !== session || requestedEpoch !== cacheEpoch || auth.currentUser !== session) return;
     cacheLoadSucceeded = succeeded;
     if (!succeeded) {
       cachedBrain = [];
@@ -298,6 +307,7 @@ export const clearNovaBrainCache = () => {
   ++cacheEpoch;
   cachedBrain = [];
   cachedUid = null;
+  cachedSession = null;
   initPromise = null;
   cacheLoadSucceeded = false;
   announceNovaBrainUpdated();

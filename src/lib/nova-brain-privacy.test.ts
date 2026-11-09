@@ -81,6 +81,41 @@ describe('Nova local memory cache isolation', () => {
     expect(getNovaBrain().map(m => m.id)).toEqual(['B-only']);
   });
 
+  it('invalidates both stored memories and in-flight reads after same-UID reauthentication', async () => {
+    const oldRequest = deferred<ReturnType<typeof snap>>();
+    mocks.getDocs.mockImplementationOnce(() => oldRequest.promise)
+      .mockResolvedValueOnce(snap('new-session-only'));
+    setNovaLearningAllowedForUid('account-A', true);
+    const firstLoad = initNovaBrain('account-A');
+    await vi.waitFor(() => expect(mocks.getDocs).toHaveBeenCalledTimes(1));
+    const oldUser = mocks.auth.currentUser;
+
+    // The UID stayed the same, but Firebase provided a new User session.
+    mocks.auth.currentUser = { uid: 'account-A' };
+    expect(mocks.auth.currentUser).not.toBe(oldUser);
+    expect(getNovaBrain()).toEqual([]);
+    expect(isNovaBrainReadyForAutoSync('account-A')).toBe(false);
+
+    await initNovaBrain('account-A');
+    await vi.waitFor(() => expect(mocks.getDocs).toHaveBeenCalledTimes(2));
+    expect(getNovaBrain().map(m => m.id)).toEqual(['new-session-only']);
+    oldRequest.resolve(snap('previous-session-secret'));
+    await firstLoad;
+    expect(getNovaBrain().map(m => m.id)).toEqual(['new-session-only']);
+  });
+
+  it('does not let old delayed init for another account reset new account cache', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
+    mocks.getDocs.mockResolvedValueOnce(snap('A-existing'));
+    await initNovaBrain('account-A');
+    mocks.auth.currentUser = { uid: 'account-B' };
+    setNovaLearningAllowedForUid('account-B', true);
+    mocks.getDocs.mockResolvedValueOnce(snap('B-existing'));
+    await initNovaBrain('account-B');
+    await initNovaBrain('account-A');
+    expect(getNovaBrain().map(m => m.id)).toEqual(['B-existing']);
+  });
+
   it('keeps newly-added same-account memories if Firestore finishes later', async () => {
     setNovaLearningAllowedForUid('account-A', true);
     const pending = deferred<ReturnType<typeof snap>>();

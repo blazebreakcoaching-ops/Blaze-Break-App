@@ -50,3 +50,14 @@ differing common files, which must not be blindly merged.
 - Tests have been **authored, not executed** with the repository's package
   installation. Run `npm run test:components` as part of the exact-SHA offline
   integration gate before merging.
+
+## Phase 2 cache reconciliation — same UID, new session
+
+The shared `nova-brain.ts` cache now records the Firebase User instance that
+originally passed permission hydration, rather than treating UID equality alone
+as authority. Same-UID reauthentication hides the old cache immediately and
+forces a fresh permissions/memory read. A late old-session Firestore read cannot
+replace the new session's cache. An old-account `initNovaBrain` call also cannot
+evict the active user's cache. Added targeted race tests to the existing pure/
+jsdom memory-privacy suite. This is one cache, not a second memory store.
+Runtime testing and staging privacy verification are still mandatory.
