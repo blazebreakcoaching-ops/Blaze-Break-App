@@ -216,3 +216,18 @@ Firestore rules and outcome transaction semantics. Implemented:
 written as a single phase commit, but not compiled or run under the full
 repository test suite here. The offline Firestore emulator, Vitest, TypeScript,
 staging identity and real cross-account journeys remain release gates.
+
+## Phase 1J — Nova runtime registry and voice reporting accuracy (9 November 2026)
+
+- Text, Claude, Live voice and speech model names in Evolution's admin report
+  now reuse `ai-model-registry.ts`, so selected model overrides are visible
+  accurately instead of displaying stale hardcoded identifiers.
+- Gemini credential presence and the existing `NOVA_LIVE_VOICE_ENABLED`
+  kill switch now determine whether Live voice is reported as active.
+  TTS has its own status and remains separate from the Live kill switch.
+- Corrected old startup logs promising a silent Gemini fallback, which
+  would mislead operators after explicit-provider fail-closed work.
+- Unit and admin-route regressions authored; source committed on development.
+  A 'ready' label means locally configured only, not live provider/IAM tested.
+- No live credentials, model defaults, Firebase rules, GitHub Actions or
+  deployments changed. Runtime verification remains outstanding.

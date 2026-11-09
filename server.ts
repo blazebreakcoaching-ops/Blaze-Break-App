@@ -1878,7 +1878,7 @@ if (firebaseConfigProject) {
       location: VERTEX_LOCATION,
     });
   } catch (e) {
-    logger.warning("Note: Vertex AI client failed to initialize. Nova chat will continue running on the Gemini Developer API unless NOVA_CHAT_PROVIDER=vertex is unset.", errorFields(e));
+    logger.warning("Vertex AI client failed to initialize. Explicit Vertex chat requests fail closed instead of rerouting private messages.", errorFields(e));
   }
 } else {
   logger.warning("Note: firebaseConfigProject is not set, so the Vertex AI client was not initialized. Set NOVA_CHAT_PROVIDER=vertex only once this resolves.");
@@ -1886,12 +1886,11 @@ if (firebaseConfigProject) {
 
 // Anthropic (Claude) Initialization
 // This provider is optional and feature-flagged (NOVA_CHAT_PROVIDER env
-// var) - the app must keep working on Gemini alone if this key is never
-// set, since Gemini is the existing, proven path every real user is
-// currently on. See callClaudeNovaChat for where this is actually used.
+// var). Gemini remains the default; a deliberately selected unavailable
+// provider fails closed. See callClaudeNovaChat for the Anthropic path.
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 if (!anthropicApiKey) {
-  logger.warning("Note: ANTHROPIC_API_KEY is not set. Nova chat will continue running on Gemini; set NOVA_CHAT_PROVIDER=claude and this key together to enable Claude for Nova chat.");
+  logger.warning("ANTHROPIC_API_KEY is not set. Gemini is the default; explicit Claude chat requests fail closed without this key.");
 }
 const anthropic = anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey }) : null;
 
@@ -10408,6 +10407,7 @@ app.get("/api/admin/evolution/nova-runtime", verifyAppCheck, authenticateFirebas
       geminiConfigured: !!apiKey && apiKey !== "MY_GEMINI_API_KEY",
       vertexConfigured: aiVertex !== null,
       claudeConfigured: anthropic !== null,
+      novaLiveVoiceEnabled: NOVA_LIVE_VOICE_ENABLED,
     });
     res.json({ surfaces });
   } catch (err: any) {

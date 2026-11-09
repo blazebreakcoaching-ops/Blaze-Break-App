@@ -24,6 +24,8 @@
 // genuinely buildable, honest first step - observability over what
 // actually runs today - not the full spec.
 
+import { GEMINI_TEXT_MODEL, GEMINI_LIVE_MODEL, GEMINI_TTS_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
+
 export const NOVA_RUNTIME_SURFACES = ['nova_text_chat', 'nova_live_voice', 'nova_voice_tts'] as const;
 export type NovaRuntimeSurface = (typeof NOVA_RUNTIME_SURFACES)[number];
 
@@ -40,7 +42,8 @@ export interface NovaRuntimeSurfaceReport {
   activeProvider: string;
   activeModel: string;
   requestedProvider?: string;
-  readiness?: 'ready' | 'unavailable';
+  // Ready here means configured locally; live IAM/provider connectivity is not verified.
+  readiness?: 'ready' | 'unavailable' | 'disabled';
   providerOptions: NovaRuntimeProviderOption[];
   systemPromptSource: string;
   promptVersioning: 'none';
@@ -52,6 +55,7 @@ export interface NovaRuntimeInputs {
   geminiConfigured: boolean;
   vertexConfigured: boolean;
   claudeConfigured: boolean;
+  novaLiveVoiceEnabled?: boolean;
 }
 
 export type NovaChatProvider = 'gemini' | 'vertex' | 'claude';
@@ -77,8 +81,11 @@ export function resolveNovaChatProvider(input: NovaRuntimeInputs): NovaChatProvi
 export const buildNovaRuntimeReport = (input: NovaRuntimeInputs): NovaRuntimeSurfaceReport[] => {
   const selection = resolveNovaChatProvider(input);
   const textChatActiveProvider = selection.activeProvider ?? 'unavailable';
-  const textChatActiveModel = selection.activeProvider === 'claude' ? 'claude-sonnet-5'
-    : selection.activeProvider ? 'gemini-3.5-flash' : 'unavailable';
+  const textChatActiveModel = selection.activeProvider === 'claude' ? CLAUDE_CHAT_MODEL
+    : selection.activeProvider ? GEMINI_TEXT_MODEL : 'unavailable';
+  const liveReadiness = input.novaLiveVoiceEnabled === false ? 'disabled'
+    : input.geminiConfigured ? 'ready' : 'unavailable';
+  const ttsReadiness = input.geminiConfigured ? 'ready' : 'unavailable';
 
   return [
     {
@@ -89,37 +96,41 @@ export const buildNovaRuntimeReport = (input: NovaRuntimeInputs): NovaRuntimeSur
       requestedProvider: selection.requestedProvider,
       readiness: selection.activeProvider ? 'ready' : 'unavailable',
       providerOptions: [
-        { provider: 'gemini', model: 'gemini-3.5-flash', configured: input.geminiConfigured, selectionEnvVar: null },
-        { provider: 'vertex', model: 'gemini-3.5-flash', configured: input.vertexConfigured, selectionEnvVar: 'NOVA_CHAT_PROVIDER=vertex' },
-        { provider: 'claude', model: 'claude-sonnet-5', configured: input.claudeConfigured, selectionEnvVar: 'NOVA_CHAT_PROVIDER=claude' },
+        { provider: 'gemini', model: GEMINI_TEXT_MODEL, configured: input.geminiConfigured, selectionEnvVar: null },
+        { provider: 'vertex', model: GEMINI_TEXT_MODEL, configured: input.vertexConfigured, selectionEnvVar: 'NOVA_CHAT_PROVIDER=vertex' },
+        { provider: 'claude', model: CLAUDE_CHAT_MODEL, configured: input.claudeConfigured, selectionEnvVar: 'NOVA_CHAT_PROVIDER=claude' },
       ],
       systemPromptSource: 'NOVA_SYSTEM_PROMPT + per-user context addendum + NOVA_SAFETY_INSTRUCTIONS (server.ts)',
       promptVersioning: 'none',
-      evidence: 'server.ts: NOVA_SYSTEM_PROMPT/NOVA_SAFETY_INSTRUCTIONS constants; shared resolveNovaChatProvider gate selects a configured provider or fails closed; MODEL = "claude-sonnet-5" in the Claude chat path.',
+      evidence: 'server.ts: NOVA_SYSTEM_PROMPT/NOVA_SAFETY_INSTRUCTIONS, shared resolveNovaChatProvider; text and Claude model identifiers use ai-model-registry.ts.',
     },
     {
       surface: 'nova_live_voice',
       label: 'Nova Live Voice',
-      activeProvider: 'gemini',
-      activeModel: 'gemini-3.1-flash-live-preview',
+      activeProvider: liveReadiness === 'ready' ? 'gemini' : 'unavailable',
+      activeModel: liveReadiness === 'ready' ? GEMINI_LIVE_MODEL : 'unavailable',
+      requestedProvider: 'gemini',
+      readiness: liveReadiness,
       providerOptions: [
-        { provider: 'gemini', model: 'gemini-3.1-flash-live-preview', configured: input.geminiConfigured, selectionEnvVar: null },
+        { provider: 'gemini', model: GEMINI_LIVE_MODEL, configured: input.geminiConfigured, selectionEnvVar: null },
       ],
       systemPromptSource: 'NOVA_LIVE_VOICE_PERSONA + per-user context addendum (server.ts)',
       promptVersioning: 'none',
-      evidence: 'server.ts: NOVA_LIVE_VOICE_PERSONA constant; model: "gemini-3.1-flash-live-preview" in the Nova Live WebSocket handler. No NOVA_CHAT_PROVIDER-style switch exists for this surface - only one provider is wired.',
+      evidence: 'server.ts: NOVA_LIVE_VOICE_PERSONA, GEMINI_LIVE_MODEL and NOVA_LIVE_VOICE_ENABLED; Live voice remains Gemini-only.',
     },
     {
       surface: 'nova_voice_tts',
       label: 'Nova Voice Playback (TTS)',
-      activeProvider: 'gemini',
-      activeModel: 'gemini-3.1-flash-tts-preview',
+      activeProvider: ttsReadiness === 'ready' ? 'gemini' : 'unavailable',
+      activeModel: ttsReadiness === 'ready' ? GEMINI_TTS_MODEL : 'unavailable',
+      requestedProvider: 'gemini',
+      readiness: ttsReadiness,
       providerOptions: [
-        { provider: 'gemini', model: 'gemini-3.1-flash-tts-preview', configured: input.geminiConfigured, selectionEnvVar: null },
+        { provider: 'gemini', model: GEMINI_TTS_MODEL, configured: input.geminiConfigured, selectionEnvVar: null },
       ],
       systemPromptSource: 'No persona system prompt - a per-message style instruction wrapped around the text to speak (server.ts)',
       promptVersioning: 'none',
-      evidence: 'server.ts: model: "gemini-3.1-flash-tts-preview"; "Say in a warm, natural British English accent..." wrapper text at the TTS call site.',
+      evidence: 'server.ts: /api/nova/speech uses GEMINI_TTS_MODEL from ai-model-registry.ts; the Live voice kill switch does not disable TTS.',
     },
   ];
 };

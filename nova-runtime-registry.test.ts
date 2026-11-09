@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildNovaRuntimeReport, resolveNovaChatProvider } from './nova-runtime-registry';
+import { GEMINI_TEXT_MODEL, GEMINI_LIVE_MODEL, GEMINI_TTS_MODEL, CLAUDE_CHAT_MODEL } from './ai-model-registry';
 
 const baseInput = { novaChatProviderEnv: undefined, geminiConfigured: true, vertexConfigured: false, claudeConfigured: false };
 
@@ -8,7 +9,7 @@ describe('buildNovaRuntimeReport', () => {
     const report = buildNovaRuntimeReport(baseInput);
     const textChat = report.find((r) => r.surface === 'nova_text_chat')!;
     expect(textChat.activeProvider).toBe('gemini');
-    expect(textChat.activeModel).toBe('gemini-3.5-flash');
+    expect(textChat.activeModel).toBe(GEMINI_TEXT_MODEL);
   });
 
   it('switches nova_text_chat to claude only when both the env var is set AND claude is actually configured', () => {
@@ -18,7 +19,7 @@ describe('buildNovaRuntimeReport', () => {
     const configured = buildNovaRuntimeReport({ ...baseInput, novaChatProviderEnv: 'claude', claudeConfigured: true });
     const textChat = configured.find((r) => r.surface === 'nova_text_chat')!;
     expect(textChat.activeProvider).toBe('claude');
-    expect(textChat.activeModel).toBe('claude-sonnet-5');
+    expect(textChat.activeModel).toBe(CLAUDE_CHAT_MODEL);
   });
 
   it('switches nova_text_chat to vertex only when both the env var is set AND vertex is actually configured', () => {
@@ -61,5 +62,37 @@ describe('Nova explicit-provider isolation', () => {
   });
   it('does not report the default as available without a Gemini key', () => {
     expect(resolveNovaChatProvider({ ...baseInput, geminiConfigured: false }).activeProvider).toBeNull();
+  });
+});
+
+describe('Nova runtime model and voice-switch accuracy', () => {
+  it('reports the exact model constants used by live call sites', () => {
+    const [chat, live, tts] = buildNovaRuntimeReport(baseInput);
+    expect(chat.activeModel).toBe(GEMINI_TEXT_MODEL);
+    expect(live.activeModel).toBe(GEMINI_LIVE_MODEL);
+    expect(tts.activeModel).toBe(GEMINI_TTS_MODEL);
+    expect(chat.providerOptions.find(p => p.provider === 'vertex')?.model).toBe(GEMINI_TEXT_MODEL);
+  });
+
+  it('does not show disabled Live as active while leaving TTS available', () => {
+    const [, live, tts] = buildNovaRuntimeReport({ ...baseInput, novaLiveVoiceEnabled: false });
+    expect(live).toMatchObject({ activeProvider: 'unavailable', activeModel: 'unavailable', readiness: 'disabled' });
+    expect(live.providerOptions[0].model).toBe(GEMINI_LIVE_MODEL);
+    expect(tts).toMatchObject({ activeProvider: 'gemini', activeModel: GEMINI_TTS_MODEL, readiness: 'ready' });
+  });
+
+  it('does not label Live or TTS available without a Gemini credential', () => {
+    for (const surface of buildNovaRuntimeReport({ ...baseInput, geminiConfigured: false })) {
+      expect(surface).toMatchObject({ activeProvider: 'unavailable', activeModel: 'unavailable', readiness: 'unavailable' });
+    }
+  });
+
+  it('keeps Live/TTS model identities independent of text Claude selection', () => {
+    const [chat, live, tts] = buildNovaRuntimeReport({
+      ...baseInput, novaChatProviderEnv: 'claude', claudeConfigured: true,
+    });
+    expect(chat.activeModel).toBe(CLAUDE_CHAT_MODEL);
+    expect(live.activeModel).toBe(GEMINI_LIVE_MODEL);
+    expect(tts.activeModel).toBe(GEMINI_TTS_MODEL);
   });
 });

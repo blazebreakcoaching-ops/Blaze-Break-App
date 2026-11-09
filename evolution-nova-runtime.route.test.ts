@@ -49,6 +49,10 @@ describe('GET /api/admin/evolution/nova-runtime', () => {
     for (const s of res.body.surfaces) {
       expect(s.promptVersioning).toBe('none');
     }
+    const live = res.body.surfaces.find((s: any) => s.surface === 'nova_live_voice');
+    const tts = res.body.surfaces.find((s: any) => s.surface === 'nova_voice_tts');
+    expect(live.readiness).toBe(live.providerOptions[0].configured ? 'ready' : 'unavailable');
+    expect(tts.readiness).toBe(tts.providerOptions[0].configured ? 'ready' : 'unavailable');
   });
 
   it('reports the actual default provider readiness instead of an invented Gemini fallback', async () => {
