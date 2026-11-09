@@ -157,3 +157,15 @@ Runtime testing and staging privacy verification are still mandatory.
 - Existing server-side org membership checks, privacy thresholds and
   explicit member consent remain the authority; no employer access to
   individual coaching data is added. New rendered regression added.
+
+## Phase 2 — personal export and audit history boundary
+
+- Sensitive personal-data export now checks the initiating Firebase User
+  session after the audit entry and **after** parsing the server export,
+  before creating the download blob. A login change cannot silently
+  deliver the previous member's private JSON into the new account's UI.
+- Privacy Vault audit log reads reset on account change and discard
+  old-session asynchronous results. Log refreshes also remain session-owned.
+- Added a source contract for these asynchronous boundaries. A rendered
+  export/print-browser acceptance test is still needed; not represented
+  here as executed.

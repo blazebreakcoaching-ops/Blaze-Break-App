@@ -233,12 +233,20 @@ export const PrivacyVault = ({
   const [acknowledgedNoRecovery, setAcknowledgedNoRecovery] = useState(false);
 
   useEffect(() => {
-    if (activeTab === 'audit') {
-      getAuditLogs().then(setAuditLogs);
+    const session = user;
+    let active = true;
+    setAuditLogs([]);
+    if (activeTab === 'audit' && session && auth.currentUser === session) {
+      void getAuditLogs().then(logs => {
+        if (active && auth.currentUser === session) setAuditLogs(logs);
+      }).catch(() => { /* Audit visibility fails closed. */ });
     }
-  }, [activeTab, profile.fullName]);
+    return () => { active = false; };
+  }, [activeTab, user, profile.fullName]);
 
   const handleAuditAction = async (action: string, target?: string, status: 'authorised' | 'denied' | 'anonymised' | 'deleted' | 'verified' = 'authorised') => {
+    const session = user;
+    if (!session || auth.currentUser !== session) return;
     await logAuditAction({
       userId: profile.fullName || 'anonymous',
       action,
@@ -248,9 +256,9 @@ export const PrivacyVault = ({
     });
 
     // Refresh logs if already viewing audit tab
-    if (activeTab === 'audit') {
+    if (activeTab === 'audit' && auth.currentUser === session) {
       const logs = await getAuditLogs();
-      setAuditLogs(logs);
+      if (auth.currentUser === session) setAuditLogs(logs);
     }
   };
 
@@ -273,11 +281,17 @@ export const PrivacyVault = ({
   }, [showDownloadConfirm]);
 
   const processDownload = async () => {
+    const session = user;
+    if (!session || auth.currentUser !== session) return;
     setShowDownloadConfirm(false);
     await handleAuditAction('Request Data Export', undefined, 'verified');
+    if (auth.currentUser !== session) return;
     try {
       const res = await secureApiFetch('/api/user/export');
       const data = await res.json();
+      // Parsing/export formatting are also async: the initiating user
+      // must still be signed in before a private file is created.
+      if (auth.currentUser !== session) return;
       if (!res.ok) throw new Error(data.error || 'Export failed');
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -289,9 +303,12 @@ export const PrivacyVault = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e: any) {
+      if (auth.currentUser !== session) return;
       console.error('Export failed:', e);
       setExportError(e?.message || 'Could not build your export right now. Please try again.');
-      setTimeout(() => setExportError(null), 6000);
+      setTimeout(() => {
+        if (auth.currentUser === session) setExportError(null);
+      }, 6000);
     }
   };
 
