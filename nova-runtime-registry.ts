@@ -95,7 +95,7 @@ export const buildNovaRuntimeReport = (input: NovaRuntimeInputs): NovaRuntimeSur
       ],
       systemPromptSource: 'NOVA_SYSTEM_PROMPT + per-user context addendum + NOVA_SAFETY_INSTRUCTIONS (server.ts)',
       promptVersioning: 'none',
-      evidence: 'server.ts: NOVA_SYSTEM_PROMPT/NOVA_SAFETY_INSTRUCTIONS constants; useClaudeForThisChat/useVertexForThisChat provider switch; MODEL = "claude-sonnet-5" in the Claude chat path.',
+      evidence: 'server.ts: NOVA_SYSTEM_PROMPT/NOVA_SAFETY_INSTRUCTIONS constants; shared resolveNovaChatProvider gate selects a configured provider or fails closed; MODEL = "claude-sonnet-5" in the Claude chat path.',
     },
     {
       surface: 'nova_live_voice',
