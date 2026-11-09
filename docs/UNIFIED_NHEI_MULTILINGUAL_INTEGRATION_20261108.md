@@ -269,3 +269,19 @@ staging identity and real cross-account journeys remain release gates.
 - No new customer navigation, Firestore indexes/rules, backend data
   model, GitHub Actions or deployments. Source committed for offline
   runtime/component tests and authenticated staging review.
+
+## Phase 1M — multilingual feedback privacy controls (9 November 2026)
+
+- Localised every static feedback review, erasure/reset, paging, error and
+  accessibility label through the existing `useI18n()` runtime and all
+  twelve bundled language packs, adding 27 checked translation keys.
+- Existing `common.save` translation reused; displayed dates follow
+  the selected locale. API enum values and authenticated calls are unchanged.
+- Dynamic recovery module display names remain in the legacy English
+  formatter and require the full recovery-tools translation audit.
+- The English pack remains authoritative; all eleven translated packs
+  are **unreviewed machine drafts**, not approved safety or legal text.
+- Checked twelve-language key coverage, placeholder compatibility and
+  guarded account/session behavior at source level. Full TypeScript,
+  Vitest, RTL, native-language, screen-reader and staging verification
+  have not yet been executed.
