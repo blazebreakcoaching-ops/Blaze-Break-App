@@ -300,3 +300,11 @@ staging identity and real cross-account journeys remain release gates.
 - Checks compare the original Firebase User object, so sign-out/sign-in to the **same UID** also rejects stale results. Dev-only E2E mock-auth is preserved.
 - Added four isolated unit tests: stable session, account switch while awaiting a token, switch after request dispatch, and same-UID new session. Existing quota, MFA, App Check, transport and provider boundaries remain unchanged.
 - This cannot undo a server-side action that completed before an account change, so mutating requests still rely on server-side auth, transactions and idempotency. Runtime tests and live account-switch E2E remain required.
+
+## Phase 1P — verified owner navigation and feedback session isolation (9 November 2026)
+
+- Reconciled all three owner UI checks: AuthProvider's role helper no longer grants unrestricted staff navigation to an unverified literal email. App.tsx and the token-claims mapping already used `isVerifiedOwnerBootstrapIdentity`; the AuthProvider now uses the same shared verifier. No new bypass or privilege claim.
+- Clear the mutable client-only `isAdmin` marker at the start of an auth callback, before attempting to refresh verified claims. An unsuccessful claim fetch cannot silently retain an earlier marker.
+- Feedback History now uses Firebase User object identity, **not only UID**, to reject stale loads and mutations from a previous session and reset pagination on same-UID re-authentication. The shared secure API's Phase 1O guard remains the central transport layer.
+- Reconciled the UI's legacy pagination test with translated strings from Phase 1M. Both tests now enforce translated loading/older controls and the current-session guard, instead of expecting stale literal English.
+- Source-level assertions checked before commit; the full Vitest, TypeScript, web build, authenticated browser E2E and staging checks remain **unexecuted** here. No Firebase rules/claims, admin grants, deployment, GitHub Actions or production changes.

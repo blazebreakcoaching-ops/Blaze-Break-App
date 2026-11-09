@@ -22,6 +22,8 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
     not_sure: t('feedback.unsure'),
   };
   const uid = user?.uid ?? null;
+  // The same UID in a new Firebase User object is still a new session.
+  // Never display a prior session's feedback after re-authentication.
   const generation = useRef(0);
   const [items, setItems] = useState<FeedbackItem[]>([]);
   const [expanded, setExpanded] = useState(false);
@@ -34,7 +36,7 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const load = useCallback(async (cursor?: string) => {
-    if (!uid || auth.currentUser?.uid !== uid) return;
+    if (!uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
     setError('');
     if (cursor) setLoadingMore(true);
@@ -42,7 +44,7 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       const path = '/api/recovery/my-feedback' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : '');
       const res = await secureApiFetch(path);
       const data = await res.json() as { items?: FeedbackItem[]; nextCursor?: string | null };
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
       if (cursor) {
         // Defensive dedup in case data changed between page requests.
         setItems(previous => {
@@ -55,18 +57,18 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       setNextCursor(data.nextCursor ?? null);
       setLoaded(true);
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError(t('feedback.error.history'));
+      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.history'));
     } finally {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setLoadingMore(false);
+      if (auth.currentUser === user && generation.current === requestGeneration) setLoadingMore(false);
     }
-  }, [uid, t]);
+  }, [uid, user, t]);
   useEffect(() => {
     generation.current += 1;
     setItems([]); setLoaded(false); setNextCursor(null); setLoadingMore(false);
     setExpanded(false); setEditingId(null); setConfirmReset(false);
     setBusyId(null); setError('');
     return () => { generation.current += 1; };
-  }, [uid]);
+  }, [user]);
   useEffect(() => { if (expanded && !loaded) void load(); }, [expanded, loaded, load]);
   const correct = async (id: string) => {
     if (busyId || !uid || auth.currentUser?.uid !== uid) return;
@@ -77,14 +79,14 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       await secureApiFetch('/api/recovery/routing-outcome', {
         method: 'POST', data: { decisionId: id, action: 'completed', helpfulness: editValue },
       });
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
       setItems(previous => previous.map(item => item.id === id
         ? { ...item, helpfulness: editValue } : item));
       setEditingId(null);
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError(t('feedback.error.correct'));
+      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.correct'));
     } finally {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setBusyId(null);
+      if (auth.currentUser === user && generation.current === requestGeneration) setBusyId(null);
     }
   };
   const resetLearning = async () => {
@@ -97,16 +99,16 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
         method: 'POST', data: { confirm: 'RESET_MY_LEARNING' },
       });
       const result = await res.json() as { complete: boolean };
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
       setConfirmReset(false);
       setItems([]);
       setNextCursor(null);
       onReset?.();
       if (!result.complete) setError(t('feedback.error.incomplete'));
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError(t('feedback.error.reset'));
+      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.reset'));
     } finally {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setBusyId(null);
+      if (auth.currentUser === user && generation.current === requestGeneration) setBusyId(null);
     }
   };
   const remove = async (id: string) => {
@@ -116,12 +118,12 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
     setError('');
     try {
       await secureApiFetch('/api/recovery/my-feedback/' + encodeURIComponent(id), { method: 'DELETE' });
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
       setItems(previous => previous.filter(item => item.id !== id));
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError(t('feedback.error.forget'));
+      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.forget'));
     } finally {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setBusyId(null);
+      if (auth.currentUser === user && generation.current === requestGeneration) setBusyId(null);
     }
   };
   return (

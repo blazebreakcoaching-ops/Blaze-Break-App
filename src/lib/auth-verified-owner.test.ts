@@ -17,5 +17,11 @@ describe('client platform-owner bootstrap identity', () => {
     expect(source).toContain("else if (verifiedBootstrapOwner)");
     expect(source).not.toContain("userRecord.email === 'teampublication@gmail.com'");
     expect(source).not.toContain("userRecord.email === 'teampublication@googlemail.com'");
+    expect(source).toContain('(userRecord as any).isAdmin = false;');
+    expect(source).toContain('if (!user) return false;');
+    expect(source).toContain('const isSuperAdminUser = isVerifiedOwnerBootstrapIdentity(user)');
+    expect(source).not.toMatch(/user\?\.email\s*===\s*['"]teampublication@/);
+    const app = readFileSync('src/App.tsx', 'utf8');
+    expect(app).toContain('const isSuperAdminUser = isVerifiedOwnerBootstrapIdentity(user)');
   });
 });

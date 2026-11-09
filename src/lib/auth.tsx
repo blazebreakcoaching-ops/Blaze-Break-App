@@ -322,6 +322,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       if (userRecord && !userRecord.isAnonymous) setMfaPending(true);
       if (userRecord) {
+        // Never carry a mutable client-only admin marker over from a
+        // previous auth callback if the current claims fetch fails.
+        (userRecord as any).isAdmin = false;
         (window as any).__ACTIVE_USER_UID__ = userRecord.uid;
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
@@ -585,9 +588,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   
   const hasRole = (allowedRoles: AuthRole[]) => {
-    // Both owner email variants - see the matching fix/comment on
-    // isSuperAdminUser in App.tsx for why this needs both.
-    const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || user?.email === 'teampublication@googlemail.com' || (user as any)?.isAdmin === true;
+    if (!user) return false;
+    // Use the same verified owner bootstrap rule as App.tsx and the
+    // claims-mapping step above. Email possession alone never grants UI
+    // permissions, even while Firebase verification is still pending.
+    const isSuperAdminUser = isVerifiedOwnerBootstrapIdentity(user)
+      || (user as any)?.isAdmin === true;
     if (isSuperAdminUser) return true;
     return allowedRoles.includes(appRole);
   };

@@ -22,6 +22,7 @@ describe('adaptive feedback localisation', () => {
     expect(src).toContain("t('feedback.forgetAria'");
     expect(src).toContain('intlLocale(locale)');
     expect(src).toContain("'?cursor=' + encodeURIComponent(cursor)");
-    expect(src).toContain('auth.currentUser?.uid !== uid');
+    expect(src).toContain('auth.currentUser !== user');
+    expect(src).toContain('}, [user]);');
   });
 });
