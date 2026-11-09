@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const server = readFileSync('server.ts', 'utf8');
 const manifest = JSON.parse(readFileSync('firestore.indexes.json', 'utf8'));
 const filteredGroupQueries = [...server.matchAll(
-  /collectionGroup\\(\\s*["']([^"']+)["']\\s*\\)\\s*\\.where\\(\\s*["']([^"']+)["']/g,
+  /collectionGroup\(\s*["']([^"']+)["']\s*\)\s*\.where\(\s*["']([^"']+)["']/g,
 )].map(match => ({ collectionGroup: match[1], fieldPath: match[2] }));
 
 describe('collection-group query index declarations', () => {
