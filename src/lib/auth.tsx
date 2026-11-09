@@ -5,6 +5,7 @@ import { secureApiFetch, publicPasswordApiFetch } from './secure-api';
 import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken, MFA_SESSION_REQUIRED_EVENT } from './mfa-session';
 import { mayCommitAuthCallback } from './auth-callback-ownership';
 import { AuthRole } from '../types';
+import { isVerifiedOwnerBootstrapIdentity } from '../../admin-roles';
 
 interface AuthContextType {
   user: (User & { isAdmin?: boolean }) | null;
@@ -355,12 +356,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const tokenResult = await userRecord.getIdTokenResult();
             if (!stillCurrent()) return;
             const claims = tokenResult.claims;
-            if (claims.admin || claims.platform_admin || claims.platformOwner || userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
-              (userRecord as any).isAdmin = true;
-            }
+            // The backend's owner bootstrap requires verified email ownership.
+            // Mere possession of an unverified address is never a staff role.
+            const verifiedBootstrapOwner = isVerifiedOwnerBootstrapIdentity({
+              email: userRecord.email,
+              emailVerified: userRecord.emailVerified,
+              email_verified: claims.email_verified === true,
+            });
+            (userRecord as any).isAdmin = claims.admin === true
+              || claims.platform_admin === true || claims.platformOwner === true
+              || verifiedBootstrapOwner;
             if (claims.role) {
               role = claims.role as AuthRole;
-            } else if (userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
+            } else if (verifiedBootstrapOwner) {
               role = 'platform_owner';
             }
           } catch(e) {

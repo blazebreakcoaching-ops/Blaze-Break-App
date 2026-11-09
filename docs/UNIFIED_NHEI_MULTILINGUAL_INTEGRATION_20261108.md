@@ -176,3 +176,11 @@ No merge to main, GitHub Actions or deployment.
 - Added a hard Vite `DEV` guard so a production bundle cannot enable the localhost emulator solely because a mistaken `VITE_USE_FIREBASE_EMULATOR=true` variable was supplied.
 - Added isolated jsdom/Vitest regressions for concurrent calls, failed and retried setup, and production flag leakage.
 - Staging/production credentials, project IDs, deployment, Firebase rules and Actions untouched. Tests authored, not executed in this environment.
+
+## Phase 1G — client bootstrap-owner verification parity (9 November 2026)
+
+- Fixed an inconsistent legacy email-only owner gate in `src/lib/auth.tsx`: the signed-in client's role and admin display now reuse `isVerifiedOwnerBootstrapIdentity` from the shared `admin-roles.ts`, with Firebase's verified-email state.
+- No new role source or privileged bootstrap email was introduced. Backend grants already use the verified-only rule; unverified identities no longer appear as platform owners in the frontend.
+- Reset `userRecord.isAdmin` from current claims/verified identity rather than leaving a stale mutable true flag.
+- Added source-policy and pure-helper regressions. This does not alter user login, Firebase console settings or API permissions.
+- The work is committed for offline tests and a real account/role acceptance review. No tests were executed via GitHub Actions or deployed.
