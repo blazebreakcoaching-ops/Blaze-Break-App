@@ -231,3 +231,24 @@ staging identity and real cross-account journeys remain release gates.
   A 'ready' label means locally configured only, not live provider/IAM tested.
 - No live credentials, model defaults, Firebase rules, GitHub Actions or
   deployments changed. Runtime verification remains outstanding.
+
+## Phase 1K — Firestore collection-group index completeness (9 November 2026)
+
+- Audited all 16 literal `server.ts` collection-group call sites. Ten
+  distinct collection-group/field combinations perform filtering and
+  require collection-group-scope single-field indexes; the manifest only
+  contained composite collection-scope indexes.
+- Declared all ten missing `COLLECTION_GROUP` ascending field indexes in
+  `firestore.indexes.json` using `fieldOverrides`. Kept each field's
+  collection-scope ASCENDING and DESCENDING modes to preserve existing
+  member-level reads. All five previous composite indexes are unchanged.
+- Covered recovery outcome reporting, product activity, support sharing
+  links, usage, nudges, pulse monitoring and entitlement lookups.
+- Added a source/manifest regression test that detects missing group index
+  declarations on later additions.
+- **No index deployment**; the live database might still lack these indexes.
+  Firebase index deployment is a separate operator/release step for the
+  configured named Firestore database, with index build status verification.
+  Do not claim the corresponding API routes are release-ready yet.
+- No Firestore rules, code routes, GitHub Actions, secrets or staging/production
+  environments changed. Static inventory validated; Vitest not executed.
