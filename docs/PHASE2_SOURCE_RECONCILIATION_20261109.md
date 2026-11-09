@@ -83,3 +83,21 @@ Runtime testing and staging privacy verification are still mandatory.
 - Only code/source checks and test declarations were performed through
   the GitHub connector; the repository's Vitest, TypeScript, emulator
   and real staging checks have **NOT** been executed or passed.
+
+## Phase 2 — latest routing answer and multilingual recovery feedback
+
+- The Recovery Hub previously had an account/session generation guard but
+  **no request-order guard** within a session. A slow earlier POST could
+  replace a newer explicit user choice. Added a monotonic in-component
+  `latestDecisionRequest` counter. Only the most recently requested
+  routing answer may change the decision, loading, error or pending feedback.
+- A delayed rating save now clears only the pending decision it actually
+  answered, preserving a newer pending feedback question if one appeared.
+- Unified the recovery feedback prompt and four helpfulness choices with
+  already-reviewed-in-source (but not human-reviewed) feedback translations.
+  Module names now use the same locale helper as feedback history and
+  adaptive settings, without changing module ID or route semantics.
+- The child Nova Memory and recovery insight sections now render only when
+  Auth's active Firebase User is the same session as the parent React view.
+- Source contract assertions extended. Automated Vitest/browser tests not
+  executed; no live functions, indices, permissions or deployment touched.

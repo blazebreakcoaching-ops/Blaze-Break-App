@@ -12,7 +12,8 @@ import { PressurePatternCapture } from './PressurePatternCapture';
 import { RelationalLoadSignal } from './RelationalLoadSignal';
 import { RecoveryInsightsPanel } from './RecoveryInsightsPanel';
 import { ReturnToWorkPlanner } from './ReturnToWorkPlanner';
-import { MODULE_TARGET_TAB, moduleDisplayName } from '../../recovery-decision-copy';
+import { MODULE_TARGET_TAB } from '../../recovery-decision-copy';
+import { localizedRecoveryModuleName } from '../../i18n/recovery-module-labels';
 import type { RouteType, RoutingOutcome, ReasonCode, ConfidenceLevel, EvidenceSource } from '../../recovery-routing-engine';
 import type { BandwidthBand } from '../../recovery-capacity-gate';
 import { RECOVERY_DIRECTION_LABELS, type RecoveryDirectionBand } from '../../recovery-direction-engine';
@@ -72,12 +73,12 @@ interface RoutingDecisionResponse {
   adaptiveExplanation?: AdaptiveExplanation | null;
 }
 
-const HELPFULNESS_OPTIONS: { value: 'better' | 'same' | 'not_really' | 'not_sure'; label: string }[] = [
-  { value: 'better', label: 'A little better' },
-  { value: 'same', label: 'About the same' },
-  { value: 'not_really', label: 'Not really' },
-  { value: 'not_sure', label: 'Not sure' },
-];
+const HELPFULNESS_OPTIONS = [
+  { value: 'better', labelKey: 'feedback.better' },
+  { value: 'same', labelKey: 'feedback.same' },
+  { value: 'not_really', labelKey: 'feedback.notReally' },
+  { value: 'not_sure', labelKey: 'feedback.unsure' },
+] as const;
 
 type ExploreTool =
   | { label: string; kind: 'navigate'; tab: string }
@@ -118,9 +119,12 @@ const navigateToTab = (tab: string) => {
 
 export const RecoveryIntelligenceHub = () => {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const accountUid = user?.uid ?? null;
   const requestGeneration = useRef(0);
+  // Multiple choices can trigger overlapping POST routing decisions while
+  // retaining one Firebase session. Only the latest requested answer wins.
+  const latestDecisionRequest = useRef(0);
   const [decision, setDecision] = useState<RoutingDecisionResponse | null>(null);
   const [direction, setDirection] = useState<RecoveryDirectionResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,26 +175,31 @@ export const RecoveryIntelligenceHub = () => {
     const session = user;
     if (!session || session.uid !== accountUid || auth.currentUser !== session) return;
     const generation = requestGeneration.current;
+    const requestId = ++latestDecisionRequest.current;
     setLoading(true);
     setError('');
     setDismissed(false);
     try {
       const res = await secureApiFetch('/api/recovery/routing-decision', { method: 'POST', data: body });
       const data = await res.json() as RoutingDecisionResponse;
-      if (auth.currentUser !== session || generation !== requestGeneration.current) return;
+      if (auth.currentUser !== session || generation !== requestGeneration.current
+        || requestId !== latestDecisionRequest.current) return;
       setDecision(data);
       setPendingOutcomeCheck(data.pendingOutcomeCheck ?? null);
     } catch {
-      if (auth.currentUser === session && generation === requestGeneration.current) {
+      if (auth.currentUser === session && generation === requestGeneration.current
+        && requestId === latestDecisionRequest.current) {
         setError('Your latest recommendation isn\'t available yet.');
       }
     } finally {
-      if (auth.currentUser === session && generation === requestGeneration.current) setLoading(false);
+      if (auth.currentUser === session && generation === requestGeneration.current
+        && requestId === latestDecisionRequest.current) setLoading(false);
     }
   }, [accountUid, user]);
 
   useEffect(() => {
     requestGeneration.current += 1;
+    latestDecisionRequest.current += 1;
     setDecision(null); setDirection(null); setPendingOutcomeCheck(null); setResumePrompt(null);
     setShowExplore(false); setExpandedTool(null); setShowMoodCheck(false);
     setError(''); setOutcomeError(''); setDismissed(false); setLoading(!!accountUid);
@@ -274,8 +283,13 @@ export const RecoveryIntelligenceHub = () => {
 
   const handlePendingOutcomeAnswer = async (helpfulness: 'better' | 'same' | 'not_really' | 'not_sure') => {
     if (!pendingOutcomeCheck || auth.currentUser !== user) return;
-    const saved = await reportOutcome(pendingOutcomeCheck.decisionId, 'completed', helpfulness);
-    if (saved) setPendingOutcomeCheck(null);
+    const answeredId = pendingOutcomeCheck.decisionId;
+    const saved = await reportOutcome(answeredId, 'completed', helpfulness);
+    if (saved) {
+      // A new routing decision may have introduced a different pending rating
+      // while the old one was saving. Do not erase that new question.
+      setPendingOutcomeCheck(current => current?.decisionId === answeredId ? null : current);
+    }
   };
 
   return (
@@ -318,7 +332,10 @@ export const RecoveryIntelligenceHub = () => {
       {!loading && !error && pendingOutcomeCheck && (
         <div className="rounded-xl border border-border bg-surface p-5 space-y-3">
           <p className="text-sm font-bold text-text-main">
-            How did {moduleDisplayName(pendingOutcomeCheck.selectedModule)} go?
+            {t('feedback.outcome')}
+            <span className="block font-normal text-xs text-text-muted mt-1">
+              {localizedRecoveryModuleName(locale, pendingOutcomeCheck.selectedModule)}
+            </span>
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {HELPFULNESS_OPTIONS.map((option) => (
@@ -327,7 +344,7 @@ export const RecoveryIntelligenceHub = () => {
                 onClick={() => handlePendingOutcomeAnswer(option.value)}
                 className="py-2.5 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors"
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
           </div>
@@ -347,7 +364,7 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
-      {!loading && !error && !floorMode && auth.currentUser && <SecondMemoryCard minimal />}
+      {!loading && !error && !floorMode && auth.currentUser === user && <SecondMemoryCard minimal />}
 
       {!loading && !error && decision && !dismissed && (
         <NovaRecommendationCard
@@ -385,7 +402,7 @@ export const RecoveryIntelligenceHub = () => {
         </div>
       )}
 
-      {!floorMode && auth.currentUser && <RecoveryInsightsPanel />}
+      {!floorMode && auth.currentUser === user && <RecoveryInsightsPanel />}
 
       {!floorMode && <div className="rounded-xl border border-border bg-surface">
         <button

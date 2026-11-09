@@ -11,6 +11,17 @@ describe('Phase 2 Nova recovery-session unification', () => {
     expect(hub).toContain('setShowExplore(false); setExpandedTool(null); setShowMoodCheck(false);');
     expect(hub).not.toContain('auth.currentUser?.uid === uid');
   });
+  it('does not render stale overlapping routing requests or clear a newer feedback question', () => {
+    const hub = source('src/components/RecoveryIntelligenceHub.tsx');
+    expect(hub).toContain('const requestId = ++latestDecisionRequest.current;');
+    expect(hub).toContain('requestId !== latestDecisionRequest.current');
+    expect(hub).toContain('latestDecisionRequest.current += 1;');
+    expect(hub).toContain('current?.decisionId === answeredId ? null : current');
+    expect(hub).toContain("localizedRecoveryModuleName(locale, pendingOutcomeCheck.selectedModule)");
+    expect(hub).toContain("t('feedback.outcome')");
+    expect(hub).toContain('t(option.labelKey)');
+    expect(hub).not.toContain('moduleDisplayName(pendingOutcomeCheck.selectedModule)');
+  });
   it('keeps Second Memory member-owned across same-UID login changes', () => {
     const card = source('src/components/SecondMemoryCard.tsx');
     expect(card).toContain('auth.currentUser !== user || generation !== requestGeneration.current');
