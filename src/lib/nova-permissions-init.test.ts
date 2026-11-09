@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  auth: { currentUser: { uid: 'test-account' } as { uid: string } | null },
   getDb: vi.fn(async () => ({})),
   get: vi.fn(),
   set: vi.fn(),
   runTransaction: vi.fn(),
 }));
 vi.mock('./firebase', () => ({
-  auth: { currentUser: { uid: 'test-account' } },
+  auth: mocks.auth,
   getDb: mocks.getDb,
 }));
 vi.mock('firebase/firestore', () => ({
@@ -22,6 +23,7 @@ vi.mock('../../nova-memory-governance', () => ({
 import { ensureNovaPermissionsExist } from './nova-brain';
 
 beforeEach(() => {
+  mocks.auth.currentUser = { uid: 'test-account' };
   mocks.get.mockReset();
   mocks.set.mockReset();
   mocks.getDb.mockClear();
@@ -58,6 +60,23 @@ describe('safe creation of Nova permissions', () => {
       'users/test-account/nova_permissions/current',
       expect.objectContaining({ allowNovaMemory: true, allowNovaUseSavedMemories: true }),
     );
+  });
+
+  it('never creates permissions for an onboarding session that has been replaced', async () => {
+    const originalSession = mocks.auth.currentUser;
+    mocks.get.mockImplementationOnce(async () => {
+      mocks.auth.currentUser = { uid: 'test-account' };
+      return { exists: () => false };
+    });
+    await ensureNovaPermissionsExist('test-account', true);
+    expect(mocks.auth.currentUser).not.toBe(originalSession);
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+  
+  it('refuses a permission request for another Firebase account', async () => {
+    await ensureNovaPermissionsExist('other-account', true);
+    expect(mocks.runTransaction).not.toHaveBeenCalled();
+    expect(mocks.set).not.toHaveBeenCalled();
   });
 
   it('fails closed if Firestore cannot safely initialise permissions', async () => {

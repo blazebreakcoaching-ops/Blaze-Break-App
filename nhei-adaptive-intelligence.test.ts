@@ -32,8 +32,8 @@ describe('NHEI adaptive intelligence', () => {
 
   it('requires at least three consistently positive outcomes', () => {
     const result = adaptInterventionCandidates([candidate()], {
-      learningEnabled: true,
-      outcomes: Array.from({ length: 3 }, () => ({ sourceModule: 'recover', feedback: 'better' as const })),
+      learningEnabled: true, currentBandwidthBand: 'low_bandwidth',
+      outcomes: Array.from({ length: 3 }, () => ({ sourceModule: 'recover', feedback: 'better' as const, bandwidthBand: 'low_bandwidth' as const })),
     });
     expect(result.candidates[0].userPreferenceMatch).toBe('preferred');
     expect(result.explanations[0].basis).toBe('confirmed_outcomes');
@@ -99,7 +99,8 @@ describe('adaptive routing integration', () => {
     const b = candidate({ candidateId: 'b-recover', sourceModule: 'my_patterns' });
     const decision = selectRoute([a, b], band, EMPTY_SESSION_STATE, {
       learningEnabled: true,
-      outcomes: Array.from({ length: 3 }, () => ({ sourceModule: 'my_patterns', feedback: 'better' as const })),
+      currentBandwidthBand: 'reflective_bandwidth',
+      outcomes: Array.from({ length: 3 }, () => ({ sourceModule: 'my_patterns', feedback: 'better' as const, bandwidthBand: 'reflective_bandwidth' as const })),
     });
     expect(decision.selectedCandidate?.sourceModule).toBe('my_patterns');
   });
@@ -116,5 +117,33 @@ describe('adaptive routing integration', () => {
       learningEnabled: true, outcomes: [], preferredModules: ['my_patterns'],
     });
     expect(decision.selectedCandidate?.candidateId).toBe('urgent');
+  });
+});
+
+describe('adaptive inference uses comparable capacity evidence', () => {
+  it('never infers preference without a known current capacity context', () => {
+    const result = adaptInterventionCandidates([candidate()], {
+      learningEnabled: true,
+      outcomes: Array.from({ length: 5 }, () => ({ sourceModule: 'recover', feedback: 'better' as const, bandwidthBand: 'low_bandwidth' as const })),
+    });
+    expect(result.candidates[0].userPreferenceMatch).toBe('neutral');
+    expect(result.explanations).toEqual([]);
+  });
+
+  it('does not treat past unknown capacity as comparable to a known band', () => {
+    const result = adaptInterventionCandidates([candidate()], {
+      learningEnabled: true,
+      currentBandwidthBand: 'low_bandwidth',
+      outcomes: Array.from({ length: 4 }, () => ({ sourceModule: 'recover', feedback: 'better' as const })),
+    });
+    expect(result.candidates[0].userPreferenceMatch).toBe('neutral');
+  });
+
+  it('still honours a direct declared module preference without a recorded capacity band', () => {
+    const result = adaptInterventionCandidates([candidate()], {
+      learningEnabled: true, outcomes: [], preferredModules: ['recover'],
+    });
+    expect(result.candidates[0].userPreferenceMatch).toBe('preferred');
+    expect(result.explanations[0].basis).toBe('explicit_preference');
   });
 });

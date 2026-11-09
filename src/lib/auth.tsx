@@ -5,6 +5,7 @@ import { secureApiFetch, publicPasswordApiFetch } from './secure-api';
 import { getMfaSessionToken, setMfaSessionToken, clearMfaSessionToken, MFA_SESSION_REQUIRED_EVENT } from './mfa-session';
 import { mayCommitAuthCallback } from './auth-callback-ownership';
 import { AuthRole } from '../types';
+import { isVerifiedOwnerBootstrapIdentity } from '../../admin-roles';
 
 interface AuthContextType {
   user: (User & { isAdmin?: boolean }) | null;
@@ -321,6 +322,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       if (userRecord && !userRecord.isAnonymous) setMfaPending(true);
       if (userRecord) {
+        // Never carry a mutable client-only admin marker over from a
+        // previous auth callback if the current claims fetch fails.
+        (userRecord as any).isAdmin = false;
         (window as any).__ACTIVE_USER_UID__ = userRecord.uid;
         (window as any).__ACTIVE_USER_EMAIL__ = userRecord.email;
         
@@ -355,12 +359,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const tokenResult = await userRecord.getIdTokenResult();
             if (!stillCurrent()) return;
             const claims = tokenResult.claims;
-            if (claims.admin || claims.platform_admin || claims.platformOwner || userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
-              (userRecord as any).isAdmin = true;
-            }
+            // The backend's owner bootstrap requires verified email ownership.
+            // Mere possession of an unverified address is never a staff role.
+            const verifiedBootstrapOwner = isVerifiedOwnerBootstrapIdentity({
+              email: userRecord.email,
+              emailVerified: userRecord.emailVerified,
+              email_verified: claims.email_verified === true,
+            });
+            (userRecord as any).isAdmin = claims.admin === true
+              || claims.platform_admin === true || claims.platformOwner === true
+              || verifiedBootstrapOwner;
             if (claims.role) {
               role = claims.role as AuthRole;
-            } else if (userRecord.email === 'teampublication@gmail.com' || userRecord.email === 'teampublication@googlemail.com') {
+            } else if (verifiedBootstrapOwner) {
               role = 'platform_owner';
             }
           } catch(e) {
@@ -577,9 +588,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   
   const hasRole = (allowedRoles: AuthRole[]) => {
-    // Both owner email variants - see the matching fix/comment on
-    // isSuperAdminUser in App.tsx for why this needs both.
-    const isSuperAdminUser = user?.email === 'teampublication@gmail.com' || user?.email === 'teampublication@googlemail.com' || (user as any)?.isAdmin === true;
+    if (!user) return false;
+    // Use the same verified owner bootstrap rule as App.tsx and the
+    // claims-mapping step above. Email possession alone never grants UI
+    // permissions, even while Firebase verification is still pending.
+    const isSuperAdminUser = isVerifiedOwnerBootstrapIdentity(user)
+      || (user as any)?.isAdmin === true;
     if (isSuperAdminUser) return true;
     return allowedRoles.includes(appRole);
   };

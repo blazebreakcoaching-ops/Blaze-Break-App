@@ -15,14 +15,17 @@ value, Nova chat returns a 401 rather than failing silently.
 
 **`NOVA_CHAT_PROVIDER`** — controls which backend handles Nova chat.
 Unset (default): Gemini Developer API, exactly as today.
-`claude`: routes to Anthropic, only if `ANTHROPIC_API_KEY` is also set
-and valid — otherwise silently falls back to Gemini.
-`vertex`: routes to Gemini via Vertex AI instead of the Developer API
-— same models, different access path with UK/EU data residency. Only
-activates if the Vertex client initialized successfully (see below).
+`claude`: routes to Anthropic only when its API key is configured.
+`vertex`: routes through Vertex AI when the Vertex client initialises,
+using the specified Google Cloud region (default London).
 
-Any other value, or a misconfigured target provider, falls straight
-through to Gemini. This can't take Nova chat down by itself.
+**Fail-closed routing:** unavailable Claude/Vertex selections and invalid
+provider names return HTTP 503 (`nova_provider_unavailable`) without
+sending the chat to another provider. Only unset or explicit `gemini`
+selects the Gemini Developer API. A missing Gemini key retains its
+historical 401 response. Initialised clients still need IAM and real-call
+verification before use. This preserves intentional provider/data-location
+choices instead of silently overriding them.
 
 **`ANTHROPIC_API_KEY`** — needed only if `NOVA_CHAT_PROVIDER=claude`.
 Not currently set to anything real — the personal Claude.ai

@@ -160,3 +160,183 @@ No merge to main, GitHub Actions or deployment.
 - Inspected `package.json` and `package-lock.json`: 68 direct dependency specifications match. Lockfile records Vite 8.3.5, @vitejs/plugin-react 5.2.0, @tailwindcss/vite 4.3.2, Vitest 4.1.12, TypeScript 5.8.3, React/React DOM 19.2.7, with compatible declared peer ranges. This is lockfile compatibility inspection, not `npm ci` or installed dependency verification.
 - Local container has Node 22.16.0 but cannot resolve github.com; there is no full repository checkout or lockfile-installed `node_modules`. Consequently **npm ci, npm run lint, npm run build and Vitest could not be run** at the actual integrated SHA. Current GitHub commit status checks contain no test results for the build-fix commit.
 - Exact next release verification must run from a clean checkout of this branch with `EXPECTED_RELEASE_SHA` set to the exact head and the existing `npm run verify:web:offline` / `npm run verify:integration:offline` scripts. These existing scripts, not new GitHub Actions or deployments, collect trustworthy build/test logs. Do not merge or deploy on source-only evidence.
+
+## Phase 1E — Nova provider-selection isolation (9 November 2026)
+
+- Nova text chat and the admin runtime registry now share one provider-resolution helper.
+- The default Gemini route remains; explicit Vertex/Claude or unknown provider choices fail closed when unavailable rather than silently rerouting personal conversations.
+- Missing default Gemini key retains its existing 401 response; unavailable alternative providers return 503.
+- Unit and API regression tests added, provider documentation corrected. No live credentials or remote runtime settings changed.
+- These source changes are committed in development, NOT runtime tested. Sign-in, App Check and staging remain separate acceptance gates.
+
+## Phase 1F — Firebase emulator-target race fix (9 November 2026)
+
+- Corrected the shared client-side Firestore initialization: `getDb()` now publishes its cached instance only **after** emulator hookup completes.
+- Two overlapping callers share a single connection promise. A failed hookup remains a failure, instead of leaving a globally marked “connected” flag or returning a live-targeted Firestore instance on retry.
+- Added a hard Vite `DEV` guard so a production bundle cannot enable the localhost emulator solely because a mistaken `VITE_USE_FIREBASE_EMULATOR=true` variable was supplied.
+- Added isolated jsdom/Vitest regressions for concurrent calls, failed and retried setup, and production flag leakage.
+- Staging/production credentials, project IDs, deployment, Firebase rules and Actions untouched. Tests authored, not executed in this environment.
+
+## Phase 1G — client bootstrap-owner verification parity (9 November 2026)
+
+- Fixed an inconsistent legacy email-only owner gate in `src/lib/auth.tsx`: the signed-in client's role and admin display now reuse `isVerifiedOwnerBootstrapIdentity` from the shared `admin-roles.ts`, with Firebase's verified-email state.
+- No new role source or privileged bootstrap email was introduced. Backend grants already use the verified-only rule; unverified identities no longer appear as platform owners in the frontend.
+- Reset `userRecord.isAdmin` from current claims/verified identity rather than leaving a stale mutable true flag.
+- Added source-policy and pure-helper regressions. This does not alter user login, Firebase console settings or API permissions.
+- The work is committed for offline tests and a real account/role acceptance review. No tests were executed via GitHub Actions or deployed.
+
+## Phase 1H — platform recovery sample gating (9 November 2026)
+
+- Administrator recovery outcomes no longer expose success/completion percentages on inadequate denominators; informative ratings must independently meet the statistical threshold.
+- The member's own history remains visible, unchanged; no B2B/employer visibility added.
+- Three pure tests and one route test added. Work committed to development branch only, without runtime verification.
+
+## Phase 1I — adaptive evidence, feedback withdrawal and reset reliability (9 November 2026)
+
+Audited the live Recovery Hub route, learning engine, data-rights endpoints,
+Firestore rules and outcome transaction semantics. Implemented:
+- Consent stays opt-in; **inferred** adaptation now requires a real current
+  capacity band and matching past feedback bands. Explicitly declared
+  preferences remain available where a band is unknown.
+- Individual feedback forget uses a Firestore transaction against the same
+  document used by outcome correction; repeated forget calls are idempotent.
+- Reset now writes a durable `users/{uid}/recovery_routing/learning_reset_state`
+  boundary (existing Firestore rules permit owner reads but deny client writes),
+  then clears ratings. An in-flight/delayed completion of an **older** decision
+  checks that boundary in its own transaction and cannot restore withdrawn
+  ratings. Newly offered decisions after reset can be rated normally.
+- Reset now checks whether an exact 20x100 erase has exhausted all records,
+  instead of falsely reporting a partial reset when exactly 2,000 were cleared.
+- Added account-isolation, repeated withdrawal, correction race, old/new
+  reset-boundary, consent and capacity-alignment regressions.
+- No new database collection, additional navigation, feature flag, rules
+  change, GitHub Action or deployment. Existing paths/behaviour reused.
+
+**Verification:** source validated against current branch snapshots and
+written as a single phase commit, but not compiled or run under the full
+repository test suite here. The offline Firestore emulator, Vitest, TypeScript,
+staging identity and real cross-account journeys remain release gates.
+
+## Phase 1J — Nova runtime registry and voice reporting accuracy (9 November 2026)
+
+- Text, Claude, Live voice and speech model names in Evolution's admin report
+  now reuse `ai-model-registry.ts`, so selected model overrides are visible
+  accurately instead of displaying stale hardcoded identifiers.
+- Gemini credential presence and the existing `NOVA_LIVE_VOICE_ENABLED`
+  kill switch now determine whether Live voice is reported as active.
+  TTS has its own status and remains separate from the Live kill switch.
+- Corrected old startup logs promising a silent Gemini fallback, which
+  would mislead operators after explicit-provider fail-closed work.
+- Unit and admin-route regressions authored; source committed on development.
+  A 'ready' label means locally configured only, not live provider/IAM tested.
+- No live credentials, model defaults, Firebase rules, GitHub Actions or
+  deployments changed. Runtime verification remains outstanding.
+
+## Phase 1K — Firestore collection-group index completeness (9 November 2026)
+
+- Audited all 16 literal `server.ts` collection-group call sites. Ten
+  distinct collection-group/field combinations perform filtering and
+  require collection-group-scope single-field indexes; the manifest only
+  contained composite collection-scope indexes.
+- Declared all ten missing `COLLECTION_GROUP` ascending field indexes in
+  `firestore.indexes.json` using `fieldOverrides`. Kept each field's
+  collection-scope ASCENDING and DESCENDING modes to preserve existing
+  member-level reads. All five previous composite indexes are unchanged.
+- Covered recovery outcome reporting, product activity, support sharing
+  links, usage, nudges, pulse monitoring and entitlement lookups.
+- Added a source/manifest regression test that detects missing group index
+  declarations on later additions.
+- **No index deployment**; the live database might still lack these indexes.
+  Firebase index deployment is a separate operator/release step for the
+  configured named Firestore database, with index build status verification.
+  Do not claim the corresponding API routes are release-ready yet.
+- No Firestore rules, code routes, GitHub Actions, secrets or staging/production
+  environments changed. Static inventory validated; Vitest not executed.
+
+## Phase 1L — member feedback history pagination and privacy UX (9 November 2026)
+
+- The member-specific `GET /api/recovery/my-feedback` now accepts a
+  validated, owner-scoped document cursor and scans only bounded chunks
+  of the existing chronologically indexed decisions (3 x 60 max).
+- Continues until it finds up to 30 real rated completions, instead of
+  silently dropping earlier feedback whenever the 60 newest decisions
+  are unrated. Returns `nextCursor` without exposing foreign records.
+- The existing Adaptive Feedback History UI now supports "Show older
+  ratings", loading state, refresh-on-error, cross-account generation
+  guards and cursor reset after member changes or learning reset.
+- Added API tests for 70-entry pagination, sparse historical ratings,
+  malformed/foreign cursors and a UI-source contract.
+- No new customer navigation, Firestore indexes/rules, backend data
+  model, GitHub Actions or deployments. Source committed for offline
+  runtime/component tests and authenticated staging review.
+
+## Phase 1M — multilingual feedback privacy controls (9 November 2026)
+
+- Localised every static feedback review, erasure/reset, paging, error and
+  accessibility label through the existing `useI18n()` runtime and all
+  twelve bundled language packs, adding 27 checked translation keys.
+- Existing `common.save` translation reused; displayed dates follow
+  the selected locale. API enum values and authenticated calls are unchanged.
+- Dynamic recovery module display names remain in the legacy English
+  formatter and require the full recovery-tools translation audit.
+- The English pack remains authoritative; all eleven translated packs
+  are **unreviewed machine drafts**, not approved safety or legal text.
+- Checked twelve-language key coverage, placeholder compatibility and
+  guarded account/session behavior at source level. Full TypeScript,
+  Vitest, RTL, native-language, screen-reader and staging verification
+  have not yet been executed.
+
+## Phase 1N — Authenticated API retry and Firebase initialization reliability (9 November 2026)
+
+- Restricted the protected API client's automatic expired-token retry to GET/HEAD on HTTP 401 only, at most once. Non-idempotent methods never silently replay, even if a caller forgets `noAuthRetry`. HTTP 403 and MFA challenges never auto-retry.
+- Parse authentication error codes once **before** deciding to retry, preserving immediate MFA-session expiry detection. A permission denial is no longer misleadingly described as proof that the member signed out.
+- Fixed `getDb()` failure caching: concurrent initialization requests still share one attempt; a failed attempt no longer permanently poisons later explicit attempts. The cached database is published only after emulator connection succeeds.
+- Expanded the already-existing targeted tests to cover GET retry, 401/403 POST refusal, MFA challenge refusal, network failure, concurrent Firestore initialization failure and later recovery.
+- Source and regression tests are committed for offline verification. Not yet executed with the complete repository/dependencies. No production, Firebase configuration, GitHub Actions, `main`, or deployment changed.
+
+## Phase 1O — same-session response ownership (9 November 2026)
+
+- The protected API client now checks that the original Firebase User session is still active **after** asynchronous token acquisition and **after** receiving the HTTP response. Results from account A are rejected with 409 rather than delivered to account B.
+- Checks compare the original Firebase User object, so sign-out/sign-in to the **same UID** also rejects stale results. Dev-only E2E mock-auth is preserved.
+- Added four isolated unit tests: stable session, account switch while awaiting a token, switch after request dispatch, and same-UID new session. Existing quota, MFA, App Check, transport and provider boundaries remain unchanged.
+- This cannot undo a server-side action that completed before an account change, so mutating requests still rely on server-side auth, transactions and idempotency. Runtime tests and live account-switch E2E remain required.
+
+## Phase 1P — verified owner navigation and feedback session isolation (9 November 2026)
+
+- Reconciled all three owner UI checks: AuthProvider's role helper no longer grants unrestricted staff navigation to an unverified literal email. App.tsx and the token-claims mapping already used `isVerifiedOwnerBootstrapIdentity`; the AuthProvider now uses the same shared verifier. No new bypass or privilege claim.
+- Clear the mutable client-only `isAdmin` marker at the start of an auth callback, before attempting to refresh verified claims. An unsuccessful claim fetch cannot silently retain an earlier marker.
+- Feedback History now uses Firebase User object identity, **not only UID**, to reject stale loads and mutations from a previous session and reset pagination on same-UID re-authentication. The shared secure API's Phase 1O guard remains the central transport layer.
+- Reconciled the UI's legacy pagination test with translated strings from Phase 1M. Both tests now enforce translated loading/older controls and the current-session guard, instead of expecting stale literal English.
+- Source-level assertions checked before commit; the full Vitest, TypeScript, web build, authenticated browser E2E and staging checks remain **unexecuted** here. No Firebase rules/claims, admin grants, deployment, GitHub Actions or production changes.
+
+## Phase 1Q — recovery module names across all twelve locales (9 November 2026)
+
+- Closed the remaining English-only module-name gap in the Adaptive Feedback History. All **15 existing routing modules** plus a generic unknown-module fallback now have bundled text in English, German, Dutch, French, Arabic, Spanish, Portuguese, Hindi, Urdu, Chinese, Bengali and Polish.
+- The feedback title and accessible Correct/Forget labels reuse the **same** translated module name. Routing IDs, module destinations, Nova's core decision copy, persisted data and API payloads are unchanged.
+- Added a pure helper that rejects unrecognized IDs rather than displaying internal identifiers; coverage tests cross-check the actual routing map and navigation map against all bundled locale packs.
+- Non-English labels are **translation drafts, not human-reviewed or safeguarding-approved**. RTL, native-speaker, screen-reader, build and end-to-end testing remain release gates. No deployment or feature activation occurred.
+
+## Phase 1R — Adaptive Intelligence control integration (9 November 2026)
+
+- Reconciled the **parent Nova Adaptive Controls** screen, not just its feedback history child, with the selected locale. All 14 static settings/consent/save/accessibility labels now have matching keys in the existing twelve bundled language packs. Existing recovery module names are reused from Phase 1Q; stored IDs are unchanged.
+- The screen tracks **Firebase User session identity** as well as UID: resets settings when the Firebase session changes (even for the same UID), blocks stale Firestore reads/writes, and prevents an obsolete reset callback from changing the active account's settings. All other memory/permission semantics are unchanged.
+- Choices have explicit translated screen-reader labels with the module name and chosen preference. Added i18n coverage and source-contract regression tests.
+- Translation packs outside English remain unreviewed drafts; this code is committed but no TypeScript/Vitest/browser/RTL/staging verification was executable here. No rules, deployment or production mutation.
+
+## Phase 1S — Nova permission-service session integrity (9 November 2026)
+
+- The create-only permission transaction now rejects onboarding work from an obsolete Firebase User, even if the new session has the same UID.
+- Calendar aggregation consent reads and writes retain the initiating Firebase User identity across asynchronous database work, blocking stale responses and grants. The asynchronous Nova Memory consent update also checks session ownership before writing.
+- Existing default-off and server-side permissions are unchanged; no new data collection is enabled.
+- Added race regression tests for same-UID reauthentication and foreign UID initialization. Runtime tests, Firebase emulator and live staging remain unexecuted release gates. No production changes.
+
+## Phase 1T — Privacy Dashboard truth-in-copy, account ownership and locale coverage (9 November 2026)
+
+- The parent Data Privacy Dashboard now protects Calendar consent against a same-UID new Firebase session, using original User-object ownership across asynchronous reads, writes and state updates, consistent with the child Adaptive Controls.
+- Replaced inaccurate references to "Core Biological" monitoring and legacy "Burnout Velocity" with accurate user-submitted check-ins and aggregate meeting metadata. The screen no longer calls that user-initiated data stream a required biological signal; no change to what the app actually stores or checks.
+- Added 18 customer-facing privacy-dashboard translation keys in the existing 12 bundled locales, with translated switch accessibility labels and error states. The developer-only internal route IDs and Firestore permissions remain unchanged.
+- Added translation-key, placeholder, source ownership and truthful-copy tests. Machine-draft translations require native-speaker and privacy/legal review. Offline TypeScript/build/emulator/real-browser verification is still outstanding.
+
+## Phase 1 engineering closeout — 9 November 2026
+
+The user-facing adaptive/feedback/consent phase has a consolidated source-code closeout in `docs/PHASE1_INTEGRATION_ENGINEERING_CLOSEOUT_20261109.md`. All 12 bundled locale packs were inspected from GitHub and each contained the 75 scoped feedback/module/adaptive/privacy keys with matching interpolation placeholders. The source-level identity and offline-gate assertions passed. **Full Vitest, build, emulator, staged account tests, native-speaker translation review and NHEI governance have not passed or been performed here.** The PR remains draft and unmerged. Phase 1 is implementation-assembled, not release-approved.

@@ -40,19 +40,24 @@ export interface NovaMemory {
 
 let cachedBrain: NovaMemory[] = [];
 let cachedUid: string | null = null;
+// A fresh Firebase session for the same UID must not inherit cached private
+// memories or an in-flight permission read from the prior login.
+let cachedSession: typeof auth.currentUser = null;
 let initPromise: Promise<void> | null = null;
 let cacheEpoch = 0;
 let cacheLoadSucceeded = false;
 
 export const isNovaBrainReadyForAutoSync = (uid: string): boolean =>
-  cachedUid === uid && auth.currentUser?.uid === uid && cacheLoadSucceeded;
+  cachedUid === uid && cachedSession !== null &&
+  auth.currentUser === cachedSession && cacheLoadSucceeded;
 
 const announceNovaBrainUpdated = () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('nova-brain-updated'));
 };
 
 const isCurrentBrainOwner = () =>
-  !!auth.currentUser?.uid && cachedUid === auth.currentUser.uid;
+  cachedSession !== null && auth.currentUser === cachedSession &&
+  cachedUid === cachedSession.uid;
 
 // Store only a consent bit, never private profile answers. The account
 // must be verified by Firebase Auth before a client memory write is allowed.
@@ -140,13 +145,18 @@ export const initNovaPermissionsForNewUser = (uid: string, allowMemory: boolean)
 
 /** Atomic create-only defaults: a concurrent consent edit always wins. */
 export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boolean) => {
+  const session = auth.currentUser;
+  // A late onboarding request must not grant permissions under a new session.
+  if (!uid || !session || session.uid !== uid) return;
   try {
     const db = await getDb();
+    if (auth.currentUser !== session) return;
     const { doc, runTransaction } = await import('firebase/firestore');
+    if (auth.currentUser !== session) return;
     const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
     await runTransaction(db, async (transaction) => {
       const snap = await transaction.get(ref);
-      if (snap.exists()) return;
+      if (auth.currentUser !== session || snap.exists()) return;
       transaction.set(ref, {
         ...NOVA_PERMISSION_DEFAULTS,
         allowNovaMemory: allowMemory === true,
@@ -165,15 +175,16 @@ export const ensureNovaPermissionsExist = async (uid: string, allowMemory: boole
 // for coaching. Missing/failed consent reads must fail closed. Onboarding
 // may create a permissions document, and the user can change it in Settings.
 export const isCalendarSignalConsentGranted = async (uid: string): Promise<boolean> => {
-  if (!uid || auth.currentUser?.uid !== uid) return false;
+  const session = auth.currentUser;
+  if (!uid || !session || session.uid !== uid) return false;
   try {
     const db = await getDb();
-    if (auth.currentUser?.uid !== uid) return false;
+    if (auth.currentUser !== session) return false;
     const { doc, getDoc } = await import('firebase/firestore');
     const snap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
-    // Never let an old account's delayed read authorise a background sync
-    // after another Firebase identity has taken over the browser.
-    return auth.currentUser?.uid === uid && snap.exists() &&
+    // A stale permission read must not start background sync,
+    // including after a same-UID reauthentication.
+    return auth.currentUser === session && snap.exists() &&
       hasExplicitCalendarSignalConsent(snap.data());
   } catch {
     return false;
@@ -183,14 +194,15 @@ export const isCalendarSignalConsentGranted = async (uid: string): Promise<boole
 /** An explicit Calendar choice may create a new permission record, but
  * must never replace the customer's existing granular consent choices. */
 export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): Promise<void> => {
-  if (!uid || auth.currentUser?.uid !== uid) throw new Error('Account changed');
+  const session = auth.currentUser;
+  if (!uid || !session || session.uid !== uid) throw new Error('Account changed');
   const db = await getDb();
-  if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+  if (auth.currentUser !== session) throw new Error('Account changed');
   const { doc, runTransaction } = await import('firebase/firestore');
   const ref = doc(db, 'users', uid, 'nova_permissions', 'current');
   await runTransaction(db, async (transaction) => {
     const snap = await transaction.get(ref);
-    if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+    if (auth.currentUser !== session) throw new Error('Account changed');
     const explicitOptInAt = enabled === true ? new Date().toISOString() : null;
     if (snap.exists()) {
       transaction.update(ref, {
@@ -211,7 +223,7 @@ export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): 
       });
     }
   });
-  if (auth.currentUser?.uid !== uid) throw new Error('Account changed');
+  if (auth.currentUser !== session) throw new Error('Account changed');
 };
 
 // Updates just the memory-specific permissions from Settings or the Trust
@@ -219,7 +231,8 @@ export const saveCalendarSignalConsent = async (uid: string, enabled: boolean): 
 // categories, so flipping this doesn't silently reset someone's other
 // preferences.
 export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
-  if (!uid || auth.currentUser?.uid !== uid) return;
+  const session = auth.currentUser;
+  if (!uid || !session || session.uid !== uid) return;
   // Withdraw locally immediately: never keep old consent active while the network resolves.
   if (!enabled) {
     setNovaLearningAllowedForUid(uid, false);
@@ -228,7 +241,9 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
   (async () => {
     try {
       const db = await getDb();
+      if (auth.currentUser !== session) return;
       const { doc, setDoc } = await import('firebase/firestore');
+      if (auth.currentUser !== session) return;
       await setDoc(doc(db, 'users', uid, 'nova_permissions', 'current'), {
         allowNovaMemory: enabled,
         allowNovaUseSavedMemories: enabled,
@@ -242,10 +257,14 @@ export const setNovaMemoryConsent = (uid: string, enabled: boolean) => {
 };
 
 export const initNovaBrain = (uid: string): Promise<void> => {
-  if (cachedUid === uid && initPromise) return initPromise;
+  const session = auth.currentUser;
+  // A delayed caller for an old account must not evict the new account's cache.
+  if (!uid || !session || session.uid !== uid) return Promise.resolve();
+  if (cachedUid === uid && cachedSession === session && initPromise) return initPromise;
   const requestedEpoch = ++cacheEpoch;
   cachedUid = uid;
-  cachedBrain = []; // Clear the previous account immediately on switch.
+  cachedSession = session;
+  cachedBrain = []; // Clear memory on ANY session switch, even for the same UID.
   cacheLoadSucceeded = false;
   announceNovaBrainUpdated();
   initPromise = (async () => {
@@ -254,9 +273,9 @@ export const initNovaBrain = (uid: string): Promise<void> => {
     try {
       const { getDocs, getDoc, doc, query, orderBy } = await import('firebase/firestore');
       const db = await getDb();
-      if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+      if (cachedUid !== uid || cachedSession !== session || requestedEpoch !== cacheEpoch || auth.currentUser !== session) return;
       const permissionSnap = await getDoc(doc(db, 'users', uid, 'nova_permissions', 'current'));
-      if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+      if (cachedUid !== uid || cachedSession !== session || requestedEpoch !== cacheEpoch || auth.currentUser !== session) return;
       // A saved onboarding preference alone is not authority to read old memories.
       const permitted = permissionSnap.exists() &&
         permissionSnap.data().allowNovaMemory === true &&
@@ -270,7 +289,7 @@ export const initNovaBrain = (uid: string): Promise<void> => {
       // Unknown consent or failed read must not reuse cached personal memory.
     }
     // Account switches, sign-outs and consent withdrawal invalidate pending reads.
-    if (cachedUid !== uid || requestedEpoch !== cacheEpoch || auth.currentUser?.uid !== uid) return;
+    if (cachedUid !== uid || cachedSession !== session || requestedEpoch !== cacheEpoch || auth.currentUser !== session) return;
     cacheLoadSucceeded = succeeded;
     if (!succeeded) {
       cachedBrain = [];
@@ -288,16 +307,21 @@ export const clearNovaBrainCache = () => {
   ++cacheEpoch;
   cachedBrain = [];
   cachedUid = null;
+  cachedSession = null;
   initPromise = null;
   cacheLoadSucceeded = false;
   announceNovaBrainUpdated();
 };
 
 const persistMemory = (uid: string, memory: NovaMemory) => {
+  const session = auth.currentUser;
+  if (!session || session.uid !== uid || cachedSession !== session) return;
   (async () => {
     try {
       const db = await getDb();
+      if (auth.currentUser !== session || cachedSession !== session || !isNovaLearningAllowed()) return;
       const { doc, setDoc } = await import('firebase/firestore');
+      if (auth.currentUser !== session || cachedSession !== session || !isNovaLearningAllowed()) return;
       await setDoc(doc(db, 'users', uid, 'nova_memories', memory.id), {
         type: memory.type,
         content: memory.content,
@@ -318,10 +342,14 @@ const persistMemory = (uid: string, memory: NovaMemory) => {
 };
 
 const persistDelete = (uid: string, id: string) => {
+  const session = auth.currentUser;
+  if (!session || session.uid !== uid || cachedSession !== session) return;
   (async () => {
     try {
       const db = await getDb();
+      if (auth.currentUser !== session || cachedSession !== session) return;
       const { doc, deleteDoc } = await import('firebase/firestore');
+      if (auth.currentUser !== session || cachedSession !== session) return;
       await deleteDoc(doc(db, 'users', uid, 'nova_memories', id));
     } catch {
       // Non-fatal, same reasoning as persistMemory.

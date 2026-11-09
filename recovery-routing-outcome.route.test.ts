@@ -159,3 +159,29 @@ describe('POST /api/recovery/routing-outcome', () => {
     errorSpy.mockRestore();
   });
 });
+
+describe('recovery outcome retry and withdrawal protection', () => {
+  it('counts repeated completion once and allows a correction without another count', async () => {
+    seedDoc(`users/${USER}/recovery_routing_decisions/d_retries`, {
+      createdAt: new Date().toISOString(), selectedModule: 'guided_reset',
+    });
+    const req = (helpfulness: string) => request(app).post('/api/recovery/routing-outcome').set(auth(USER))
+      .send({ decisionId: 'd_retries', action: 'completed', helpfulness });
+    const [a, b] = await Promise.all([req('better'), req('better')]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.interventionsCompleted).toBe(1);
+    const correction = await req('not_really');
+    expect(correction.status).toBe(200);
+    expect(getDocRaw(`users/${USER}/recovery_routing_decisions/d_retries`)?.helpfulness).toBe('not_really');
+    expect(getDocRaw(`users/${USER}/recovery_routing/session_state`)?.interventionsCompleted).toBe(1);
+  });
+  it('blocks late feedback retries after a rating has been forgotten', async () => {
+    seedDoc(`users/${USER}/recovery_routing_decisions/d_forgot`, {
+      selectedModule: 'guided_reset', outcome: 'completed', feedbackWithdrawnAt: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/recovery/routing-outcome').set(auth(USER))
+      .send({ decisionId: 'd_forgot', action: 'completed', helpfulness: 'better' });
+    expect(res.status).toBe(409);
+    expect(getDocRaw(`users/${USER}/recovery_routing_decisions/d_forgot`)?.helpfulness).toBeUndefined();
+  });
+});

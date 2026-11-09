@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from './playwright-browser';
 import { defineConfig, devices } from '@playwright/test';
 
 // Phase 5E (directive §8) - the integrated Nova/NHEI journey, in a real
@@ -11,9 +12,8 @@ import { defineConfig, devices } from '@playwright/test';
 // Firestore/Firebase Auth/Gemini - directive §8's "mocked provider
 // responses."
 //
-// Uses the Chromium binary already present in this environment
-// (PLAYWRIGHT_BROWSERS_PATH points at /opt/pw-browsers) rather than
-// downloading a new one - see each project's launchOptions below.
+// Use the legacy sandbox Chromium when available; on macOS/Windows/normal Linux,
+// use Playwright-managed Chromium (install with: npx playwright install chromium).
 export default defineConfig({
   testDir: './tests/e2e',
   // Phase 5M (directive §8) - without this, this config's own testDir scan
@@ -44,14 +44,14 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 900 },
-        launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
+        launchOptions: chromiumLaunchOptions(),
       },
     },
     {
       name: 'mobile-chromium',
       use: {
         ...devices['Pixel 7'],
-        launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
+        launchOptions: chromiumLaunchOptions(),
       },
     },
   ],

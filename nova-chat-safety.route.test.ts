@@ -16,6 +16,8 @@ const h = vi.hoisted(() => {
   process.env.TEST_MODE = 'true';
   process.env.NODE_ENV = 'test';
   process.env.GEMINI_API_KEY = 'test-key-not-a-placeholder';
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.NOVA_CHAT_PROVIDER;
   return {
     lastConfig: null as any,
     sendMessage: vi.fn(async () => ({ text: 'ok', functionCalls: [] })),
@@ -125,6 +127,29 @@ describe('POST /api/nova/chat - crisis-safety instruction can never be dropped',
   it('the safety floor instructs against fabricating clinical/biometric facts', async () => {
     await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'Hello Nova' });
     expect(h.lastConfig.config.systemInstruction).toContain('Never fabricate clinical facts');
+  });
+
+  it('does not silently reroute unavailable Claude conversations to Gemini', async () => {
+    process.env.NOVA_CHAT_PROVIDER = 'claude';
+    try {
+      const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'Hello Nova' });
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('nova_provider_unavailable');
+      expect(h.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.NOVA_CHAT_PROVIDER;
+    }
+  });
+
+  it('rejects unknown explicit AI providers before calling Gemini', async () => {
+    process.env.NOVA_CHAT_PROVIDER = 'unknown';
+    try {
+      const res = await request(app).post('/api/nova/chat').set(auth(USER)).send({ message: 'Hello Nova' });
+      expect(res.status).toBe(503);
+      expect(h.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.NOVA_CHAT_PROVIDER;
+    }
   });
 
   it('500s if the model call throws', async () => {

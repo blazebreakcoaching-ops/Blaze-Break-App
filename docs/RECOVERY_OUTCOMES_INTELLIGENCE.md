@@ -103,3 +103,14 @@ Two differences from the admin route, both deliberate:
   would be wrong regardless of sample size - the flag here is for an
   eventual UI to show an honest "early days, N tries so far" caveat, not
   a reason to omit the module from the response.
+
+## Platform-only denominator reliability fix — 9 November 2026
+
+A new `summarizePlatformModuleOutcomes` projection masks administrator-visible
+`completionRate` until the module has at least 20 resolved outcomes and
+`netPositiveRate` until there are at least 20 actual informative ratings
+(better/same/not_really; `not_sure` is excluded). The existing per-member
+`/api/recovery/my-outcomes` calculations and counts remain unchanged.
+The sample threshold is a statistical reliability rule, **not** a privacy
+or anonymity claim. Unit and administrator-route regressions authored but
+not executed, awaiting the offline release gate.

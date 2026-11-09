@@ -74,6 +74,9 @@ export interface RecommendationOfferInput {
   consideredModules: string[];
   bandwidthBand: string | null;
   sourceSurface: 'pulse_home_recommendation' | 'recovery_hub';
+  // Non-sensitive provenance: whether adaptive intelligence influenced this recorded offer.
+  adaptiveLearningUsed?: boolean;
+  adaptiveBasis?: 'explicit_preference' | 'confirmed_outcomes' | null;
   // An explicit user request bypasses the budget *ceiling* (per
   // recovery-routing-engine.ts's own selectRoute rule) but never bypasses
   // deduplication - re-asking for the same still-open offer reuses its id.
@@ -87,9 +90,9 @@ export type RecommendationOfferResult =
   // The exact same offer (same module, still unresolved, within the
   // recency window) was already persisted - its real id is reused, no
   // second decision or counter increment for the one real event.
-  | { kind: 'reused'; decisionId: string }
+  | { kind: 'reused'; decisionId: string; adaptiveLearningUsed: boolean; adaptiveBasis: 'explicit_preference' | 'confirmed_outcomes' | null }
   // A genuinely new offer was persisted and counted.
-  | { kind: 'reserved'; decisionId: string }
+  | { kind: 'reserved'; decisionId: string; adaptiveLearningUsed: boolean; adaptiveBasis: 'explicit_preference' | 'confirmed_outcomes' | null }
   // The shared budget was genuinely exhausted at commit time - never
   // fabricated, never confused with an infrastructure failure.
   | { kind: 'budget_exhausted' }
@@ -141,7 +144,14 @@ export async function reserveRecommendationOffer(
       );
       const existingOpen = existingOpenSnap.docs[0];
       if (existingOpen && !(existingOpen.data() as Record<string, any> | undefined)?.outcome) {
-        result = { kind: 'reused', decisionId: existingOpen.id };
+        // A reused offer has its OWN historical provenance; never claim today's
+        // preferences caused an older, already-committed decision.
+        const existing = existingOpen.data() as Record<string, any> | undefined;
+        const reusedAdaptive = existing?.adaptiveLearningUsed === true;
+        const reusedBasis = existing?.adaptiveBasis === 'explicit_preference' || existing?.adaptiveBasis === 'confirmed_outcomes'
+          ? existing.adaptiveBasis as 'explicit_preference' | 'confirmed_outcomes' : null;
+        result = { kind: 'reused', decisionId: existingOpen.id,
+          adaptiveLearningUsed: reusedAdaptive, adaptiveBasis: reusedAdaptive ? reusedBasis : null };
         return;
       }
 
@@ -153,6 +163,14 @@ export async function reserveRecommendationOffer(
         return;
       }
 
+      // A caller's true flag is not evidence unless a concrete Hub module
+      // was selected for an allowlisted adaptive reason.
+      const validAdaptiveBasis = input.adaptiveBasis === 'explicit_preference' || input.adaptiveBasis === 'confirmed_outcomes'
+        ? input.adaptiveBasis : null;
+      const adaptiveLearningUsed = input.sourceSurface === 'recovery_hub'
+        && typeof input.selectedModule === 'string' && input.selectedModule.length > 0
+        && input.adaptiveLearningUsed === true && validAdaptiveBasis !== null;
+      const adaptiveBasis = adaptiveLearningUsed ? validAdaptiveBasis : null;
       tx.set(sessionRef, nextSessionCounterState(current, today, 'recommendationsOffered'), { merge: true });
       tx.set(newDecisionRef, {
         createdAt: new Date(input.nowMs).toISOString(),
@@ -164,8 +182,10 @@ export async function reserveRecommendationOffer(
         consideredModules: input.consideredModules,
         bandwidthBand: input.bandwidthBand,
         sourceSurface: input.sourceSurface,
+        adaptiveLearningUsed,
+        adaptiveBasis,
       });
-      result = { kind: 'reserved', decisionId: newDecisionRef.id };
+      result = { kind: 'reserved', decisionId: newDecisionRef.id, adaptiveLearningUsed, adaptiveBasis };
     });
     return result;
   } catch (error) {

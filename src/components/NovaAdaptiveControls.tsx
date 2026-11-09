@@ -4,27 +4,27 @@ import { auth } from '../lib/firebase';
 import { db } from '../lib/firestore';
 import { useAuth } from '../lib/auth';
 import { AdaptiveFeedbackHistory } from './AdaptiveFeedbackHistory';
+import { localizedRecoveryModuleName } from '../../i18n/recovery-module-labels';
+import { useI18n } from '../lib/i18n-react';
 
 // This is one UI surface for the existing users/{uid}/nova_permissions/current
 // consent document. It does not create a second personalisation store.
-const MODULES = [
-  ['guided_reset', 'Guided Reset'],
-  ['one_less_thing', 'One Less Thing'],
-  ['capacity_firewall', 'Capacity Firewall'],
-  ['recovery_fuel', 'Recovery Fuel'],
-  ['my_patterns', 'My Patterns'],
+const MODULE_IDS = [
+  'guided_reset', 'one_less_thing', 'capacity_firewall', 'recovery_fuel', 'my_patterns',
 ] as const;
 type SavedPreferences = {
   allowAdaptiveIntelligence?: boolean;
   adaptivePreferredModules?: string[];
   adaptiveAvoidedModules?: string[];
 };
-const knownModules = new Set<string>(MODULES.map(([id]) => id));
+const knownModules = new Set<string>(MODULE_IDS);
 
 export function NovaAdaptiveControls() {
   const { user } = useAuth();
+  const { t, locale } = useI18n();
   const uid = user?.uid ?? null;
-  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  // A same-UID sign-out/sign-in is a new session; never reuse its settings.
+  const [ownerSession, setOwnerSession] = useState<typeof user>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [retry, setRetry] = useState(0);
   const [enabled, setEnabled] = useState(false);
@@ -36,7 +36,7 @@ export function NovaAdaptiveControls() {
 
   useEffect(() => {
     let active = true;
-    setOwnerUid(null);
+    setOwnerSession(null);
     setEnabled(false);
     setMemoryAllowed(false);
     setPreferred([]);
@@ -44,12 +44,12 @@ export function NovaAdaptiveControls() {
     setSaving(false);
     setError('');
     setStatus('loading');
-    if (!uid || auth.currentUser?.uid !== uid) {
+    if (!user || !uid || auth.currentUser !== user) {
       setStatus('error');
       return () => { active = false; };
     }
     void getDoc(doc(db, 'users', uid, 'nova_permissions', 'current')).then(snap => {
-      if (!active || auth.currentUser?.uid !== uid) return;
+      if (!active || auth.currentUser !== user) return;
       const data = snap.exists() ? snap.data() : {};
       const canUseMemory = data.allowNovaMemory === true && data.allowNovaUseSavedMemories === true;
       setMemoryAllowed(canUseMemory);
@@ -60,18 +60,19 @@ export function NovaAdaptiveControls() {
       setAvoided(Array.isArray(data.adaptiveAvoidedModules)
         ? data.adaptiveAvoidedModules.filter((id: unknown): id is string => typeof id === 'string' && knownModules.has(id))
         : []);
-      setOwnerUid(uid);
+      setOwnerSession(user);
       setStatus('ready');
     }).catch(() => {
-      if (active && auth.currentUser?.uid === uid) setStatus('error');
+      if (active && auth.currentUser === user) setStatus('error');
     });
     return () => { active = false; };
-  }, [uid, retry]);
+  }, [user, retry]);
 
-  const canEdit = status === 'ready' && !!uid && uid === ownerUid && auth.currentUser?.uid === uid && !saving;
+  const canEdit = status === 'ready' && !!user && ownerSession === user && auth.currentUser === user && !saving;
   const save = async (changes: SavedPreferences) => {
+    const requestUser = user;
     const requestUid = uid;
-    if (!requestUid || !canEdit) return;
+    if (!requestUser || !requestUid || !canEdit) return;
     setSaving(true);
     setError('');
     try {
@@ -79,33 +80,33 @@ export function NovaAdaptiveControls() {
         // Recheck the authoritative consent before switching learning ON.
         const current = await getDoc(doc(db, 'users', requestUid, 'nova_permissions', 'current'));
         if (!current.exists() || current.data().allowNovaMemory !== true || current.data().allowNovaUseSavedMemories !== true) {
-          if (auth.currentUser?.uid === requestUid) {
+          if (auth.currentUser === requestUser) {
             setMemoryAllowed(false);
             setEnabled(false);
           }
           throw new Error('Nova Memory must be enabled before adaptation.');
         }
       }
-      if (auth.currentUser?.uid !== requestUid || ownerUid !== requestUid) return;
+      if (auth.currentUser !== requestUser || ownerSession !== requestUser) return;
       await setDoc(doc(db, 'users', requestUid, 'nova_permissions', 'current'), {
         ...changes,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
-      if (auth.currentUser?.uid !== requestUid || ownerUid !== requestUid) return;
+      if (auth.currentUser !== requestUser || ownerSession !== requestUser) return;
       if (typeof changes.allowAdaptiveIntelligence === 'boolean') setEnabled(changes.allowAdaptiveIntelligence);
       if (changes.adaptivePreferredModules) setPreferred(changes.adaptivePreferredModules);
       if (changes.adaptiveAvoidedModules) setAvoided(changes.adaptiveAvoidedModules);
     } catch {
-      if (auth.currentUser?.uid === requestUid && ownerUid === requestUid) {
-        setError('Your preference could not be saved. Please check Nova Memory and try again.');
+      if (auth.currentUser === requestUser && ownerSession === requestUser) {
+        setError(t('adaptive.saveError'));
       }
     } finally {
-      if (auth.currentUser?.uid === requestUid && ownerUid === requestUid) setSaving(false);
+      if (auth.currentUser === requestUser && ownerSession === requestUser) setSaving(false);
     }
   };
 
   const setModule = (id: string, choice: 'neutral' | 'preferred' | 'avoided') => {
-    if (!knownModules.has(id) || !enabled) return;
+    if (!knownModules.has(id) || !enabled || !canEdit) return;
     void save({
       adaptivePreferredModules: [...preferred.filter(x => x !== id), ...(choice === 'preferred' ? [id] : [])],
       adaptiveAvoidedModules: [...avoided.filter(x => x !== id), ...(choice === 'avoided' ? [id] : [])],
@@ -114,38 +115,37 @@ export function NovaAdaptiveControls() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-xl border border-border p-4 space-y-3" aria-label="Nova Adaptive Intelligence settings">
+      <section className="rounded-xl border border-border p-4 space-y-3" aria-label={t('adaptive.title')}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h4 className="font-semibold text-text-main">Nova Adaptive Intelligence</h4>
+            <h4 className="font-semibold text-text-main">{t('adaptive.title')}</h4>
             <p className="text-xs text-text-muted mt-1">
-              Optional. With your permission, Nova can adapt suggestions using your previous feedback.
-              Your direct request and safety boundaries always take priority.
+              {t('adaptive.description')}
             </p>
           </div>
-          <button type="button" role="switch" aria-checked={status === 'ready' && ownerUid === uid && enabled}
-            aria-label="Allow Nova to learn from my feedback"
+          <button type="button" role="switch" aria-checked={status === 'ready' && ownerSession === user && enabled}
+            aria-label={t('adaptive.allowAria')}
             disabled={!canEdit || (!enabled && !memoryAllowed)}
             onClick={() => { void save({ allowAdaptiveIntelligence: !enabled }); }}
             className="rounded-full border border-border px-3 py-1 text-xs text-text-main">
-            {status === 'ready' && enabled ? 'On' : 'Off'}
+            {status === 'ready' && enabled ? t('adaptive.on') : t('adaptive.off')}
           </button>
         </div>
         {status === 'error' && (
           <p role="alert" className="text-xs text-text-muted">
-            Learning preferences could not be loaded. Changes are paused.
-            <button type="button" className="ml-2 underline" onClick={() => setRetry(v => v + 1)}>Try again</button>
+            {t('adaptive.loadError')}
+            <button type="button" className="ml-2 underline" onClick={() => setRetry(v => v + 1)}>{t('adaptive.retry')}</button>
           </p>
         )}
         {status === 'ready' && !memoryAllowed && (
-          <p className="text-xs text-text-muted">Enable Nova Memory in Privacy Controls before enabling adaptive learning.</p>
+          <p className="text-xs text-text-muted">{t('adaptive.memoryRequired')}</p>
         )}
         {status === 'ready' && enabled && (
           <div className="space-y-2">
-            <p className="text-xs text-text-muted">Optional preferences. You can change them at any time.</p>
-            {MODULES.map(([id, label]) => (
+            <p className="text-xs text-text-muted">{t('adaptive.preferencesHelp')}</p>
+            {MODULE_IDS.map(id => (
               <div key={id} className="flex flex-wrap justify-between items-center gap-2 text-xs">
-                <span className="text-text-main">{label}</span>
+                <span className="text-text-main">{localizedRecoveryModuleName(locale, id)}</span>
                 <div className="flex gap-1">
                   {(['neutral', 'preferred', 'avoided'] as const).map(choice => {
                     const selected = choice === 'preferred' ? preferred.includes(id)
@@ -154,9 +154,13 @@ export function NovaAdaptiveControls() {
                     return (
                       <button type="button" key={choice} disabled={!canEdit}
                         aria-pressed={selected}
+                        aria-label={t('adaptive.choiceAria', {
+                          module: localizedRecoveryModuleName(locale, id),
+                          choice: t(`adaptive.choice.${choice}`),
+                        })}
                         onClick={() => setModule(id, choice)}
                         className={selected ? 'rounded-md border border-primary px-2 py-1 text-primary' : 'rounded-md border border-border px-2 py-1 text-text-muted'}>
-                        {choice === 'neutral' ? 'No preference' : choice === 'preferred' ? 'More' : 'Less'}
+                        {t(`adaptive.choice.${choice}`)}
                       </button>
                     );
                   })}
@@ -167,8 +171,9 @@ export function NovaAdaptiveControls() {
         )}
         {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
       </section>
-      {status === 'ready' && ownerUid === uid && (
+      {status === 'ready' && ownerSession === user && auth.currentUser === user && (
         <AdaptiveFeedbackHistory onReset={() => {
+          if (auth.currentUser !== user || ownerSession !== user) return;
           setEnabled(false);
           setPreferred([]);
           setAvoided([]);

@@ -74,7 +74,7 @@ import { NHEI_KNOWLEDGE_REVIEWER_ROLE } from './nhei-authority-contract';
 import { handleNheiKnowledgeReviewRequest } from './nhei-knowledge-review-service-boundary';
 import { listAllKnowledgeEntriesForReview } from './nhei-knowledge-service';
 import { importKnowledgeContentLibrary } from './nhei-knowledge-import-service';
-import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { summarizeModuleOutcomes, summarizePlatformModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL, getSupportedThinkingLevels } from './ai-model-registry';
 import { estimateModelCostUsd } from './ai-model-price-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -107,7 +107,7 @@ import {
   canTransitionProposalStatus, ProposalStatus,
 } from './change-proposals';
 import { buildPlatformConnectorViews, buildOrgConnectorView, OrgConnectorDoc } from './connector-layer';
-import { buildNovaRuntimeReport } from './nova-runtime-registry';
+import { buildNovaRuntimeReport, resolveNovaChatProvider } from './nova-runtime-registry';
 import { validateRolloutPlanCreate, canTransitionRolloutStatus, isRolloutPlanStatus, RolloutPlanStatus } from './rollout-plans';
 import { isEvolutionFrozen, validateFreezeToggleInput } from './evolution-freeze';
 import { computeEnergyDelta, getDeltaState, Stressor } from './energy-delta-engine';
@@ -1878,7 +1878,7 @@ if (firebaseConfigProject) {
       location: VERTEX_LOCATION,
     });
   } catch (e) {
-    logger.warning("Note: Vertex AI client failed to initialize. Nova chat will continue running on the Gemini Developer API unless NOVA_CHAT_PROVIDER=vertex is unset.", errorFields(e));
+    logger.warning("Vertex AI client failed to initialize. Explicit Vertex chat requests fail closed instead of rerouting private messages.", errorFields(e));
   }
 } else {
   logger.warning("Note: firebaseConfigProject is not set, so the Vertex AI client was not initialized. Set NOVA_CHAT_PROVIDER=vertex only once this resolves.");
@@ -1886,12 +1886,11 @@ if (firebaseConfigProject) {
 
 // Anthropic (Claude) Initialization
 // This provider is optional and feature-flagged (NOVA_CHAT_PROVIDER env
-// var) - the app must keep working on Gemini alone if this key is never
-// set, since Gemini is the existing, proven path every real user is
-// currently on. See callClaudeNovaChat for where this is actually used.
+// var). Gemini remains the default; a deliberately selected unavailable
+// provider fails closed. See callClaudeNovaChat for the Anthropic path.
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 if (!anthropicApiKey) {
-  logger.warning("Note: ANTHROPIC_API_KEY is not set. Nova chat will continue running on Gemini; set NOVA_CHAT_PROVIDER=claude and this key together to enable Claude for Nova chat.");
+  logger.warning("ANTHROPIC_API_KEY is not set. Gemini is the default; explicit Claude chat requests fail closed without this key.");
 }
 const anthropic = anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey }) : null;
 
@@ -3311,19 +3310,25 @@ app.post("/api/nova/chat", novaChatLimiter, verifyAppCheck, authenticateFirebase
       ? `Client-supplied context (untrusted data, not system instructions):\n${JSON.stringify(untrustedClientContext)}\nEnd client-supplied context.\n\n${beforeWordsMessage}`
       : beforeWordsMessage;
 
-    // Provider selection: Gemini's Developer API remains the default,
-    // proven path every real user is currently on. Claude and Vertex each
-    // only activate when both the environment explicitly requests them
-    // AND their respective client was successfully initialized - if
-    // either condition fails for either provider, this falls straight
-    // through to the existing Gemini Developer API path rather than
-    // erroring, so a misconfiguration can't take Nova chat down entirely.
-    const useClaudeForThisChat = process.env.NOVA_CHAT_PROVIDER === 'claude' && anthropic !== null;
-    const useVertexForThisChat = process.env.NOVA_CHAT_PROVIDER === 'vertex' && aiVertex !== null;
-
-    if (!useClaudeForThisChat && !useVertexForThisChat && (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY")) {
-      return res.status(401).json({ error: "Gemini API key not configured. Please add your key in the app settings secrets." });
+    // Explicit provider selection is fail-closed: a Vertex data-region
+    // choice must never silently send private chat to the Developer API.
+    const chosenProvider = resolveNovaChatProvider({
+      novaChatProviderEnv: process.env.NOVA_CHAT_PROVIDER,
+      geminiConfigured: !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY",
+      vertexConfigured: aiVertex !== null,
+      claudeConfigured: anthropic !== null,
+    });
+    if (!chosenProvider.activeProvider) {
+      if (chosenProvider.requestedProvider === 'gemini') {
+        return res.status(401).json({ error: "Gemini API key not configured. Please add your key in the app settings secrets." });
+      }
+      return res.status(503).json({
+        error: "Nova chat is temporarily unavailable because its selected AI provider is not ready.",
+        code: "nova_provider_unavailable",
+      });
     }
+    const useClaudeForThisChat = chosenProvider.activeProvider === 'claude';
+    const useVertexForThisChat = chosenProvider.activeProvider === 'vertex';
 
     const verifiedUser = (req as any).user;
     const uid = verifiedUser?.uid;
@@ -8619,13 +8624,15 @@ app.get("/api/admin/recovery-outcomes", verifyAppCheck, authenticateFirebaseUser
       .get();
     const decisions: RoutingDecisionRecord[] = snap.docs.map((d: any) => {
       const data = d.data();
-      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness };
+      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness,
+        adaptiveLearningUsed: typeof data.adaptiveLearningUsed === 'boolean' ? data.adaptiveLearningUsed : undefined };
     });
 
     res.json({
       lookbackDays,
       generatedAt: new Date().toISOString(),
-      modules: summarizeModuleOutcomes(decisions),
+      modules: summarizePlatformModuleOutcomes(decisions),
+      adaptiveComparison: summarizeAdaptiveOutcomes(decisions),
     });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -10400,6 +10407,7 @@ app.get("/api/admin/evolution/nova-runtime", verifyAppCheck, authenticateFirebas
       geminiConfigured: !!apiKey && apiKey !== "MY_GEMINI_API_KEY",
       vertexConfigured: aiVertex !== null,
       claudeConfigured: anthropic !== null,
+      novaLiveVoiceEnabled: NOVA_LIVE_VOICE_ENABLED,
     });
     res.json({ surfaces });
   } catch (err: any) {
@@ -18977,6 +18985,9 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
     // the last thing to actually commit is the real answer, not the first
     // thing to merely compute a candidate.
     let outcomeOverride: { routingOutcome: string; selectedRoute: string; selectedModule: string | null } | null = null;
+    // Commit-derived provenance, never merely this request's optimistic preference.
+    let persistedAdaptiveUsed = false;
+    let reusedPersistedDecision = false;
 
     if (decision.routingOutcome === 'selected' && decision.selectedCandidate) {
       const candidate = decision.selectedCandidate;
@@ -18996,6 +19007,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         consideredModules: candidates.map((c) => c.sourceModule),
         bandwidthBand: bandwidth.band,
         sourceSurface: 'recovery_hub',
+        adaptiveLearningUsed: selectedAdaptiveExplanation !== null,
+        adaptiveBasis: selectedAdaptiveExplanation?.basis ?? null,
         // Per selectRoute's own rule, an explicit user request bypasses
         // the budget *ceiling* - preserved here exactly, never the
         // deduplication guarantee.
@@ -19007,6 +19020,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
 
       if (reservation.kind === 'reused' || reservation.kind === 'reserved') {
         decisionId = reservation.decisionId;
+        persistedAdaptiveUsed = reservation.adaptiveLearningUsed;
+        reusedPersistedDecision = reservation.kind === 'reused';
       } else if (reservation.kind === 'budget_exhausted') {
         outcomeOverride = { routingOutcome: 'suppressed_by_budget', selectedRoute: 'NONE', selectedModule: null };
       } else {
@@ -19090,8 +19105,10 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       // outcome question about this before showing anything new.
       // Reflect actual influence, not merely enabled consent. Never attribute a reservation-race suppression to learning.
       adaptiveLearningEnabled: adaptiveContext !== undefined,
-      adaptiveLearningUsed: !outcomeOverride && selectedAdaptiveExplanation !== null,
-      adaptiveExplanation: outcomeOverride ? null : selectedAdaptiveExplanation,
+      adaptiveLearningUsed: !outcomeOverride && persistedAdaptiveUsed,
+      // A reused record may have been offered under different conditions:
+      // today's explanation must not be attributed to the earlier choice.
+      adaptiveExplanation: !outcomeOverride && persistedAdaptiveUsed && !reusedPersistedDecision ? selectedAdaptiveExplanation : null,
       pendingOutcomeCheck,
     });
   } catch (err: any) {
@@ -19108,21 +19125,55 @@ type RoutingOutcomeHelpfulness = typeof ROUTING_OUTCOME_HELPFULNESS[number];
 app.get("/api/recovery/my-feedback", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
-    const snap = await getDb().collection("users").doc(user.uid)
-      .collection("recovery_routing_decisions")
-      .orderBy("createdAt", "desc").limit(60).get();
-    const items = snap.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        module: typeof data.selectedModule === 'string' && isKnownRoutingModule(data.selectedModule)
-          ? data.selectedModule : null,
-        outcome: data.outcome === 'completed' ? 'completed' : data.outcome === 'declined' ? 'declined' : null,
-        helpfulness: ROUTING_OUTCOME_HELPFULNESS.includes(data.helpfulness) ? data.helpfulness : null,
-        date: typeof data.createdAt === 'string' ? data.createdAt : null,
-      };
-    }).filter(item => item.outcome === 'completed' && item.helpfulness && item.module).slice(0, 30);
-    res.json({ items });
+    // Cursor-based history: do not silently lose older ratings when 60
+    // recent decisions happen to contain few/no helpfulness answers.
+    // This uses the existing collection-scope createdAt index; no new
+    // composite index or unbounded full-user-history read is needed.
+    const cursorId = req.query.cursor;
+    if (cursorId !== undefined && (typeof cursorId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(cursorId))) {
+      return res.status(400).json({ error: 'Invalid feedback cursor.' });
+    }
+    const decisions = getDb().collection("users").doc(user.uid).collection("recovery_routing_decisions");
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot | null = null;
+    if (cursorId) {
+      const anchor = await decisions.doc(cursorId).get();
+      if (!anchor.exists) return res.status(400).json({ error: 'Feedback cursor is no longer available. Refresh the list.' });
+      cursor = anchor;
+    }
+
+    const items: Array<{ id: string; module: string; outcome: string; helpfulness: string; date: string | null }> = [];
+    let possibleOlder = false;
+    // At most 3 bounded reads of 60 decisions per UI request. Continue
+    // from the exact last SCANNED document, not the last matching rating:
+    // skipping across unread matches would defeat the user's right to review.
+    for (let page = 0; page < 3; page++) {
+      let query = decisions.orderBy('createdAt', 'desc');
+      if (cursor) query = query.startAfter(cursor);
+      const snap = await query.limit(60).get();
+      if (snap.empty) { possibleOlder = false; break; }
+      let fullPage = false;
+      for (const entry of snap.docs) {
+        cursor = entry;
+        const data = entry.data();
+        if (data.outcome === 'completed' &&
+          typeof data.selectedModule === 'string' && isKnownRoutingModule(data.selectedModule) &&
+          ROUTING_OUTCOME_HELPFULNESS.includes(data.helpfulness)) {
+          items.push({
+            id: entry.id,
+            module: data.selectedModule,
+            outcome: 'completed',
+            helpfulness: data.helpfulness,
+            date: typeof data.createdAt === 'string' ? data.createdAt : null,
+          });
+        }
+        if (items.length === 30) { fullPage = true; break; }
+      }
+      // There may still be older ratings even when the current chunk
+      // contained none. A caller can page again without repeating reads.
+      possibleOlder = fullPage || snap.size === 60;
+      if (fullPage || snap.size < 60) break;
+    }
+    res.json({ items, nextCursor: possibleOlder && cursor ? cursor.id : null });
   } catch (err: any) {
     logger.error("Personal recovery feedback read failed", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -19137,12 +19188,28 @@ app.delete("/api/recovery/my-feedback/:id", verifyAppCheck, authenticateFirebase
     const user = requireAuth(req);
     const id = String(req.params.id ?? '');
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return res.status(400).json({ error: "Invalid feedback ID." });
-    const ref = getDb().collection("users").doc(user.uid)
+    const db = getDb();
+    const ref = db.collection("users").doc(user.uid)
       .collection("recovery_routing_decisions").doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) return res.status(404).json({ error: "Feedback not found." });
-    await ref.update({ helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
-    res.json({ ok: true });
+    // Withdrawal and completion/correction use the same transactional
+    // decision document. A concurrent late rating cannot resurrect a
+    // forgotten answer after the forget operation has committed.
+    let result: 'forgotten' | 'already_forgotten' | 'not_found' | 'not_completed' = 'not_found';
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) { result = 'not_found'; return; }
+      const data = snap.data()!;
+      if (data.outcome !== 'completed') { result = 'not_completed'; return; }
+      if (data.feedbackWithdrawnAt) { result = 'already_forgotten'; return; }
+      tx.set(ref, {
+        helpfulness: FieldValue.delete(),
+        feedbackWithdrawnAt: new Date().toISOString(),
+      }, { merge: true });
+      result = 'forgotten';
+    });
+    if (result === 'not_found') return res.status(404).json({ error: "Feedback not found." });
+    if (result === 'not_completed') return res.status(409).json({ error: "There is no completed feedback to forget." });
+    res.json({ ok: true, alreadyForgotten: result === 'already_forgotten' });
   } catch (err: any) {
     logger.error("Personal recovery feedback erasure failed", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
@@ -19162,12 +19229,25 @@ app.post("/api/recovery/reset-adaptive-learning", verifyAppCheck, authenticateFi
     const permissionsRef = db.collection('users').doc(user.uid).collection('nova_permissions').doc('current');
     const permissionsSnap = await permissionsRef.get();
     if (!permissionsSnap.exists) return res.status(409).json({ error: "Nova permissions are not initialised." });
-    await permissionsRef.set({
-      allowAdaptiveIntelligence: false,
-      adaptivePreferredModules: [],
-      adaptiveAvoidedModules: [],
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
+    // Preserve a durable, server-only reset boundary before erasing ratings.
+    // The existing recovery_routing collection is already read-only to
+    // clients under firestore.rules, so no new collection or rules needed.
+    const resetRef = db.collection('users').doc(user.uid).collection('recovery_routing').doc('learning_reset_state');
+    await db.runTransaction(async tx => {
+      const [freshPermissions, previousReset] = await Promise.all([
+        tx.get(permissionsRef), tx.get(resetRef),
+      ]);
+      if (!freshPermissions.exists) throw new Error('Nova permissions disappeared during reset');
+      const previousAt = Date.parse(previousReset.data()?.lastResetAt ?? '');
+      const resetAt = new Date(Math.max(Date.now(), Number.isFinite(previousAt) ? previousAt : 0)).toISOString();
+      tx.set(permissionsRef, {
+        allowAdaptiveIntelligence: false,
+        adaptivePreferredModules: [],
+        adaptiveAvoidedModules: [],
+        updatedAt: resetAt,
+      }, { merge: true });
+      tx.set(resetRef, { lastResetAt: resetAt }, { merge: true });
+    });
 
     // A bounded batch protects the service. If there are more records,
     // the user can repeat the request without losing what was done.
@@ -19183,6 +19263,13 @@ app.post("/api/recovery/reset-adaptive-learning", verifyAppCheck, authenticateFi
       for (const doc of snap.docs) batch.update(doc.ref, { helpfulness: FieldValue.delete(), feedbackWithdrawnAt: new Date().toISOString() });
       await batch.commit();
       erased += snap.size;
+    }
+    // When the twentieth page happens to contain exactly the final 100
+    // ratings, do not incorrectly claim a partial reset without checking.
+    if (!complete) {
+      complete = (await decisionsRef
+        .where('helpfulness', 'in', ['better', 'same', 'not_really', 'not_sure'])
+        .limit(1).get()).empty;
     }
     res.json({
       ok: true, adaptiveLearningEnabled: false, ratingsErased: erased, complete,
@@ -19238,6 +19325,21 @@ app.post("/api/recovery/routing-outcome", verifyAppCheck, authenticateFirebaseUs
         return;
       }
       const data = decisionSnap.data()!;
+
+      // A reset can race an offline client's delayed feedback submission.
+      // Read the durable, server-only reset boundary INSIDE this transaction:
+      // concurrent resets cause a retry rather than reviving erased ratings.
+      if (typedAction === 'completed') {
+        const resetRef = db.collection('users').doc(user.uid)
+          .collection('recovery_routing').doc('learning_reset_state');
+        const resetSnap = await tx.get(resetRef);
+        const resetAt = Date.parse(resetSnap.data()?.lastResetAt ?? '');
+        const offeredAt = Date.parse(typeof data.createdAt === 'string' ? data.createdAt : '');
+        if (Number.isFinite(resetAt) && (!Number.isFinite(offeredAt) || offeredAt <= resetAt)) {
+          outcomeResult = 'feedback_withdrawn';
+          return;
+        }
+      }
 
       // A forgotten subjective rating cannot be resurrected by a delayed retry.
       if (typedAction === 'completed' && data.feedbackWithdrawnAt) {

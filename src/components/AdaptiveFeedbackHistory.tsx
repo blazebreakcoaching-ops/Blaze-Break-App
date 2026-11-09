@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
-import { moduleDisplayName } from '../../recovery-decision-copy';
+import { localizedRecoveryModuleName } from '../../i18n/recovery-module-labels';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n-react';
+import { intlLocale } from '../../i18n';
 
 interface FeedbackItem {
   id: string;
@@ -10,17 +12,23 @@ interface FeedbackItem {
   helpfulness: 'better' | 'same' | 'not_really' | 'not_sure';
   date: string | null;
 }
-const LABELS: Record<FeedbackItem['helpfulness'], string> = {
-  better: 'Helped',
-  same: 'About the same',
-  not_really: 'Did not help',
-  not_sure: 'Not sure',
-};
-
 export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   const { user } = useAuth();
+  const { t, locale } = useI18n();
+  const LABELS: Record<FeedbackItem['helpfulness'], string> = {
+    better: t('feedback.better'),
+    same: t('feedback.same'),
+    not_really: t('feedback.notReally'),
+    not_sure: t('feedback.unsure'),
+  };
   const uid = user?.uid ?? null;
+  // The same UID in a new Firebase User object is still a new session.
+  // Never display a prior session's feedback after re-authentication.
   const generation = useRef(0);
+  // Session invalidation and list-request ordering serve different purposes.
+  // A stale pagination response must not resurrect a rating just corrected
+  // or forgotten while that page was loading.
+  const historyRequest = useRef(0);
   const [items, setItems] = useState<FeedbackItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -28,30 +36,51 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   const [editValue, setEditValue] = useState<FeedbackItem['helpfulness']>('not_sure');
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const load = useCallback(async () => {
-    if (!uid || auth.currentUser?.uid !== uid) return;
+  const load = useCallback(async (cursor?: string) => {
+    if (!uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
+    const listRequest = ++historyRequest.current;
     setError('');
+    if (cursor) setLoadingMore(true);
     try {
-      const res = await secureApiFetch('/api/recovery/my-feedback');
-      const data = await res.json() as { items?: FeedbackItem[] };
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
-      setItems(data.items ?? []);
+      const path = '/api/recovery/my-feedback' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : '');
+      const res = await secureApiFetch(path);
+      const data = await res.json() as { items?: FeedbackItem[]; nextCursor?: string | null };
+      if (auth.currentUser !== user || generation.current !== requestGeneration
+        || historyRequest.current !== listRequest) return;
+      if (cursor) {
+        // Defensive dedup in case data changed between page requests.
+        setItems(previous => {
+          const seen = new Set(previous.map(item => item.id));
+          return [...previous, ...(data.items ?? []).filter(item => !seen.has(item.id))];
+        });
+      } else {
+        setItems(data.items ?? []);
+      }
+      setNextCursor(data.nextCursor ?? null);
       setLoaded(true);
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError('Feedback history is unavailable. Please try again.');
+      if (auth.currentUser === user && generation.current === requestGeneration
+        && historyRequest.current === listRequest) setError(t('feedback.error.history'));
+    } finally {
+      if (auth.currentUser === user && generation.current === requestGeneration
+        && historyRequest.current === listRequest) setLoadingMore(false);
     }
-  }, [uid]);
+  }, [uid, user, t]);
   useEffect(() => {
     generation.current += 1;
-    setItems([]); setLoaded(false); setExpanded(false); setEditingId(null); setConfirmReset(false);
+    historyRequest.current += 1;
+    setItems([]); setLoaded(false); setNextCursor(null); setLoadingMore(false);
+    setExpanded(false); setEditingId(null); setConfirmReset(false);
     setBusyId(null); setError('');
     return () => { generation.current += 1; };
-  }, [uid]);
+  }, [user]);
   useEffect(() => { if (expanded && !loaded) void load(); }, [expanded, loaded, load]);
   const correct = async (id: string) => {
-    if (busyId || !uid || auth.currentUser?.uid !== uid) return;
+    if (busyId || !uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
     setBusyId(id);
     setError('');
@@ -59,18 +88,20 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       await secureApiFetch('/api/recovery/routing-outcome', {
         method: 'POST', data: { decisionId: id, action: 'completed', helpfulness: editValue },
       });
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
+      historyRequest.current += 1;
+      setLoadingMore(false);
       setItems(previous => previous.map(item => item.id === id
         ? { ...item, helpfulness: editValue } : item));
       setEditingId(null);
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError('Your correction could not be saved.');
+      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.correct'));
     } finally {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setBusyId(null);
+      if (auth.currentUser === user && generation.current === requestGeneration) setBusyId(null);
     }
   };
   const resetLearning = async () => {
-    if (busyId || !uid || auth.currentUser?.uid !== uid) return;
+    if (busyId || !uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
     setBusyId('reset');
     setError('');
@@ -79,103 +110,120 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
         method: 'POST', data: { confirm: 'RESET_MY_LEARNING' },
       });
       const result = await res.json() as { complete: boolean };
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
+      historyRequest.current += 1;
+      setLoadingMore(false);
       setConfirmReset(false);
       setItems([]);
+      setNextCursor(null);
       onReset?.();
-      if (!result.complete) setError('Learning is off, but some older ratings still need clearing. You can run reset again.');
+      if (!result.complete) setError(t('feedback.error.incomplete'));
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError('Reset could not finish. Please try again.');
+      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.reset'));
     } finally {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setBusyId(null);
+      if (auth.currentUser === user && generation.current === requestGeneration) setBusyId(null);
     }
   };
   const remove = async (id: string) => {
-    if (busyId || !uid || auth.currentUser?.uid !== uid) return;
+    if (busyId || !uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
     setBusyId(id);
     setError('');
     try {
       await secureApiFetch('/api/recovery/my-feedback/' + encodeURIComponent(id), { method: 'DELETE' });
-      if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
+      historyRequest.current += 1;
+      setLoadingMore(false);
       setItems(previous => previous.filter(item => item.id !== id));
     } catch {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError('Could not forget that rating. Please try again.');
+      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.forget'));
     } finally {
-      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setBusyId(null);
+      if (auth.currentUser === user && generation.current === requestGeneration) setBusyId(null);
     }
   };
   return (
-    <section className="rounded-xl border border-border p-4 space-y-3" aria-label="Your Nova feedback">
+    <section className="rounded-xl border border-border p-4 space-y-3" aria-label={t('feedback.title')}>
       <div>
-        <h4 className="text-sm font-semibold text-text-main">What Nova has learned from</h4>
+        <h4 className="text-sm font-semibold text-text-main">{t('feedback.title')}</h4>
         <p className="text-xs text-text-muted mt-1">
-          Review recent recovery ratings. Forgetting a rating stops it being used for future adaptive suggestions.
-          Your activity record remains, but the personal helpfulness answer is removed.
+          {t('feedback.description')}
         </p>
       </div>
       <div className="space-y-2">
         <button type="button" className="text-xs text-red-600 underline"
-          onClick={() => setConfirmReset(value => !value)}>Reset adaptive feedback</button>
+          onClick={() => setConfirmReset(value => !value)}>{t('feedback.reset')}</button>
         {confirmReset && (
           <div className="space-y-2 p-3 border border-border rounded-lg">
             <p className="text-xs text-text-muted">
-              This turns Adaptive Intelligence off, clears your saved module preferences,
-              and removes past helpfulness ratings. Your recovery activities stay recorded.
-              Nova's separate saved memories and Second Memory notes are not erased here; you can manage them in Memory Centre.
+              {t('feedback.resetDetails')}
             </p>
             <div className="flex flex-wrap gap-3">
               <button type="button" disabled={busyId !== null} onClick={() => void resetLearning()}
-                className="text-xs text-red-600 underline">Confirm reset</button>
+                className="text-xs text-red-600 underline">{t('feedback.confirmReset')}</button>
               <button type="button" onClick={() => setConfirmReset(false)}
-                className="text-xs text-text-muted underline">Cancel</button>
+                className="text-xs text-text-muted underline">{t('feedback.cancel')}</button>
             </div>
           </div>
         )}
       </div>
       <button type="button" aria-expanded={expanded}
         className="text-xs text-primary underline" onClick={() => setExpanded(v => !v)}>
-        {expanded ? 'Hide feedback' : 'Review my feedback'}
+        {expanded ? t('feedback.hide') : t('feedback.review')}
       </button>
       {expanded && (
         <div className="space-y-2">
-          {loaded && items.length === 0 && <p className="text-xs text-text-muted">No recent ratings to review.</p>}
+          {loaded && items.length === 0 && !nextCursor && <p className="text-xs text-text-muted">{t('feedback.none')}</p>}
+          {!loaded && !error && <p className="text-xs text-text-muted">{t('feedback.loading')}</p>}
           {items.map(item => (
             <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2">
               <div>
-                <p className="text-xs font-semibold text-text-main">{moduleDisplayName(item.module)}</p>
+                <p className="text-xs font-semibold text-text-main">{localizedRecoveryModuleName(locale, item.module)}</p>
                 <p className="text-xs text-text-muted">
                   {LABELS[item.helpfulness]}
-                  {item.date && !Number.isNaN(Date.parse(item.date)) ? ' · ' + new Date(item.date).toLocaleDateString() : ''}
+                  {item.date && !Number.isNaN(Date.parse(item.date)) ? ' · ' + new Date(item.date).toLocaleDateString(intlLocale(locale)) : ''}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" disabled={busyId !== null} className="text-xs text-primary underline"
-                  aria-label={`Correct feedback for ${moduleDisplayName(item.module)}`}
-                  onClick={() => { setEditingId(item.id); setEditValue(item.helpfulness); }}>Correct</button>
+                  aria-label={t('feedback.correctAria', { module: localizedRecoveryModuleName(locale, item.module) })}
+                  onClick={() => { setEditingId(item.id); setEditValue(item.helpfulness); }}>{t('feedback.correct')}</button>
                 <button type="button" disabled={busyId !== null} className="text-xs text-primary underline"
-                  aria-label={`Forget feedback for ${moduleDisplayName(item.module)}`}
-                  onClick={() => void remove(item.id)}>Forget rating</button>
+                  aria-label={t('feedback.forgetAria', { module: localizedRecoveryModuleName(locale, item.module) })}
+                  onClick={() => void remove(item.id)}>{t('feedback.forget')}</button>
               </div>
               {editingId === item.id && (
                 <div className="w-full flex flex-wrap items-center gap-2">
-                  <label htmlFor={`feedback-${item.id}`} className="text-xs text-text-muted">What was the outcome?</label>
+                  <label htmlFor={`feedback-${item.id}`} className="text-xs text-text-muted">{t('feedback.outcome')}</label>
                   <select id={`feedback-${item.id}`} value={editValue}
                     onChange={event => setEditValue(event.target.value as FeedbackItem['helpfulness'])}
                     className="text-xs rounded border border-border bg-card text-text-main p-2">
                     {Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                   <button type="button" disabled={busyId !== null} onClick={() => void correct(item.id)}
-                    className="text-xs text-primary underline">Save</button>
+                    className="text-xs text-primary underline">{t('common.save')}</button>
                   <button type="button" onClick={() => setEditingId(null)}
-                    className="text-xs text-text-muted underline">Cancel</button>
+                    className="text-xs text-text-muted underline">{t('feedback.cancel')}</button>
                 </div>
               )}
             </div>
           ))}
+          {nextCursor && (
+            <button type="button" className="text-xs text-primary underline"
+              disabled={busyId !== null || loadingMore}
+              onClick={() => void load(nextCursor)}>
+              {loadingMore ? t('feedback.loadingOlder') : t('feedback.older')}
+            </button>
+          )}
         </div>
       )}
-      {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
+      {error && (
+        <div role="alert" className="text-xs text-red-600">
+          {error}{expanded && <button type="button" className="ml-2 underline"
+            disabled={loadingMore || busyId !== null} onClick={() => void load()}>
+            {t('feedback.reload')}
+          </button>}
+        </div>
+      )}
     </section>
   );
 }

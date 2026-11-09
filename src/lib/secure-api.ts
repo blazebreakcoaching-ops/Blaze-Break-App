@@ -16,13 +16,21 @@ export class SecureApiError extends Error {
 
 interface SecureApiOptions extends RequestInit {
   data?: any;
-  /** Never auto-retry a 401/403. A wrong 2FA code must be submitted once,
-   * not twice (each submission counts toward the lockout, and a recovery
-   * code is single-use). */
+  /** Explicit opt-out for reads that must never repeat; all state-changing
+   * methods are non-retryable automatically. */
   noAuthRetry?: boolean;
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
+  // Capture the initiating session once, not once per 401 retry. A stale
+  // account-A request must never be replayed as account B's request.
+  return secureApiFetchForSession(path, options, retryCount, auth.currentUser);
+}
+
+async function secureApiFetchForSession(
+  path: string, options: SecureApiOptions, retryCount: number,
+  originalSession: typeof auth.currentUser,
+): Promise<Response> {
   // Fail closed before reading credentials; callers may only target our /api/.
   assertWebApiRoute(path, window.location.origin);
   // Phase 5E (directive §8) browser-level test escape hatch ONLY: a real
@@ -34,11 +42,21 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   // only that dev-only entry ever sets, so this can never fire for a real
   // user or in a production bundle.
   const e2eMockAuth = (import.meta as any).env.DEV && (window as any).__E2E_MOCK_AUTH__ === true;
-  const user = e2eMockAuth ? null : auth.currentUser;
+  const user = e2eMockAuth ? null : originalSession;
 
   if (!e2eMockAuth && !user) {
     throw new SecureApiError("Unauthorized: User not signed in.", 401);
   }
+
+  // Capture the original Firebase session object, not just its UID. A user
+  // may sign out and back into the same UID while a request is pending.
+  // In that case, responses from the old session are no longer authorised
+  // to update the current screen. The E2E fake-auth preview is isolated.
+  const ensureOriginalSession = () => {
+    if (!e2eMockAuth && auth.currentUser !== user) {
+      throw new SecureApiError('Your account changed while this request was in progress. Please retry.', 409);
+    }
+  };
 
   // Force refresh ID token if retrying
   const forceRefresh = retryCount > 0;
@@ -86,6 +104,9 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     redirect: 'error', // Auth headers cannot follow an HTTP redirect.
   };
 
+  // Prevent an asynchronous ID-token/App-Check lookup from submitting an
+  // account-A request after account B has become the active identity.
+  ensureOriginalSession();
   let response: Response;
   try {
     response = await fetch(path, fetchOptions);
@@ -93,18 +114,17 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     throw new SecureApiError('Network error. Check your connection and try again.', 0);
   }
 
+  // A request sent before an account switch might still finish on the
+  // server. Never deliver its body to the newly active account's UI.
+  ensureOriginalSession();
   if (response.ok) {
     return response;
   }
 
-  // Handle specific status codes
+  // Parse the error before considering a retry. In particular, an MFA
+  // challenge must never be replayed: even a read can return a special
+  // MFA_SESSION_REQUIRED status that needs immediate challenge handling.
   const status = response.status;
-  
-  if ((status === 401 || status === 403) && retryCount < 1 && !noAuthRetry) {
-    // Retry once with a forced token refresh
-    return secureApiFetch(path, options, retryCount + 1);
-  }
-
   let errorMessage = `API Error ${status}`;
   let errorDetails: any = null;
   let errorCode: string | undefined;
@@ -119,6 +139,21 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     // Do not leak HTML, provider text or stack traces in 5xx responses.
   }
 
+  // Retrying a POST/PATCH/PUT/DELETE can duplicate a paid provider call,
+  // consume a one-time MFA code, or perform an action twice if a proxy
+  // returned 401 after forwarding it. Only idempotent READS retry once,
+  // and only for a 401 plausibly caused by an expired Firebase ID token.
+  // A 403 means forbidden/App Check/MFA, not an automatic refresh signal.
+  const requestMethod = (requestInit.method ?? 'GET').toUpperCase();
+  const canRetryRead = requestMethod === 'GET' || requestMethod === 'HEAD';
+  if (status === 401 && canRetryRead && retryCount === 0 && !noAuthRetry
+    && errorCode !== 'MFA_SESSION_REQUIRED') {
+    // The caller must still own the FIRST Firebase session after the error
+    // body was consumed. The retry reuses it, and checks again before fetch.
+    ensureOriginalSession();
+    return secureApiFetchForSession(path, options, 1, originalSession);
+  }
+
   if (status === 401 || status === 403) {
     if (errorCode === 'MFA_SESSION_REQUIRED') {
       // The signed session token is missing/expired (its 12-hour TTL ran
@@ -128,6 +163,9 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
       // the server will accept.
       if (auth.currentUser) expireMfaSession(auth.currentUser.uid);
       throw new SecureApiError('Two-factor verification is required again for this session.', status, errorDetails);
+    }
+    if (status === 403) {
+      throw new SecureApiError(`Access denied: ${errorMessage}`, status, errorDetails);
     }
     throw new SecureApiError(`Unauthorized: ${errorMessage}. Please sign in again.`, status, errorDetails);
   } else if (status === 429) {

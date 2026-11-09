@@ -24,30 +24,32 @@ export function PastNovaMemoriesReview() {
     requestGeneration.current += 1;
     setBusy(false);
     setOpened(false); setEntries([]); setEditing(null); setDraft(''); setError('');
-  }, [accountUid]);
+  }, [user]);
   const load = async () => {
-    const uid = auth.currentUser?.uid;
+    const uid = accountUid;
+    if (auth.currentUser !== user) return;
     if (!uid) return;
     const generation = requestGeneration.current;
     setBusy(true); setError('');
     try {
       const snap = await getDocs(collection(db, 'users', uid, 'nova_memories'));
-      if (auth.currentUser?.uid !== uid || requestGeneration.current !== generation) return;
+      if (auth.currentUser !== user || requestGeneration.current !== generation) return;
       setEntries(snap.docs.map(d => ({
         id: d.id, type: String(d.data().type ?? 'memory'),
         content: String(d.data().content ?? ''), canEdit: d.data().canEdit === true,
       })));
       setOpened(true);
     } catch {
-      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) {
+      if (auth.currentUser === user && requestGeneration.current === generation) {
         setError('Saved memories could not be loaded.');
       }
     } finally {
-      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) setBusy(false);
+      if (auth.currentUser === user && requestGeneration.current === generation) setBusy(false);
     }
   };
   const change = async (id: string, action: 'delete' | 'edit') => {
-    const uid = auth.currentUser?.uid;
+    const uid = accountUid;
+    if (auth.currentUser !== user) return;
     const target = entries.find(e => e.id === id);
     if (!uid || !target?.canEdit || busy) return;
     if (action === 'edit' && (!draft.trim() || draft.length > 1000)) return;
@@ -57,17 +59,17 @@ export function PastNovaMemoriesReview() {
       const ref = doc(db, 'users', uid, 'nova_memories', id);
       if (action === 'delete') await deleteDoc(ref);
       else await updateDoc(ref, { content: draft.trim(), updatedAt: new Date().toISOString() });
-      if (auth.currentUser?.uid !== uid || requestGeneration.current !== generation) return;
+      if (auth.currentUser !== user || requestGeneration.current !== generation) return;
       setEntries(previous => action === 'delete'
         ? previous.filter(e => e.id !== id)
         : previous.map(e => e.id === id ? { ...e, content: draft.trim() } : e));
       setEditing(null);
     } catch {
-      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) {
+      if (auth.currentUser === user && requestGeneration.current === generation) {
         setError('This memory could not be changed. Please try again.');
       }
     } finally {
-      if (auth.currentUser?.uid === uid && requestGeneration.current === generation) setBusy(false);
+      if (auth.currentUser === user && requestGeneration.current === generation) setBusy(false);
     }
   };
   return (

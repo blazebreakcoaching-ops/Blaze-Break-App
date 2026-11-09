@@ -49,11 +49,35 @@ describe('GET /api/admin/evolution/nova-runtime', () => {
     for (const s of res.body.surfaces) {
       expect(s.promptVersioning).toBe('none');
     }
+    const live = res.body.surfaces.find((s: any) => s.surface === 'nova_live_voice');
+    const tts = res.body.surfaces.find((s: any) => s.surface === 'nova_voice_tts');
+    expect(live.readiness).toBe(live.providerOptions[0].configured ? 'ready' : 'unavailable');
+    expect(tts.readiness).toBe(tts.providerOptions[0].configured ? 'ready' : 'unavailable');
   });
 
-  it('nova_text_chat defaults to gemini in this test environment (no real provider keys configured)', async () => {
+  it('reports the actual default provider readiness instead of an invented Gemini fallback', async () => {
     const res = await request(app).get('/api/admin/evolution/nova-runtime').set(auth(OWNER));
     const textChat = res.body.surfaces.find((s: any) => s.surface === 'nova_text_chat');
-    expect(textChat.activeProvider).toBe('gemini');
+    const gemini = textChat.providerOptions.find((p: any) => p.provider === 'gemini');
+    expect(textChat.requestedProvider).toBe('gemini');
+    expect(textChat.activeProvider).toBe(gemini.configured ? 'gemini' : 'unavailable');
+    expect(textChat.readiness).toBe(gemini.configured ? 'ready' : 'unavailable');
+  });
+
+  it('does not label an unsupported provider as an active Gemini service', async () => {
+    const previous = process.env.NOVA_CHAT_PROVIDER;
+    process.env.NOVA_CHAT_PROVIDER = 'unsupported-provider';
+    try {
+      const res = await request(app).get('/api/admin/evolution/nova-runtime').set(auth(OWNER));
+      expect(res.status).toBe(200);
+      expect(res.body.surfaces.find((s: any) => s.surface === 'nova_text_chat')).toMatchObject({
+        requestedProvider: 'unsupported-provider',
+        readiness: 'unavailable',
+        activeProvider: 'unavailable',
+      });
+    } finally {
+      if (previous === undefined) delete process.env.NOVA_CHAT_PROVIDER;
+      else process.env.NOVA_CHAT_PROVIDER = previous;
+    }
   });
 });

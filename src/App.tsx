@@ -1111,6 +1111,23 @@ const Header = ({
   );
 };
 
+// A Firebase UID is an account identifier, not a login-session identifier.
+// Large read-only admin and personal views must remount on reauthentication
+// to avoid showing stale role-specific or private state from a prior login.
+// WeakMap ensures a stable React key per Firebase User object while allowing
+// old sessions to be garbage-collected. No data is stored or persisted here.
+const SESSION_VIEW_KEYS = new WeakMap<object, string>();
+let nextSessionViewKey = 0;
+const sessionViewKey = (user: { uid: string } | null | undefined): string => {
+  if (!user) return 'signed-out';
+  let key = SESSION_VIEW_KEYS.get(user);
+  if (!key) {
+    key = `session-${++nextSessionViewKey}`;
+    SESSION_VIEW_KEYS.set(user, key);
+  }
+  return key;
+};
+
 export default function App() {
   const { t, setLocale: setUiLocale } = useI18n();
   const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
@@ -1189,14 +1206,23 @@ export default function App() {
   // one GET /api/org/:orgId/executive-work-design checks server-side.
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   useEffect(() => {
-    if (!user) return;
-    secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
-      setManagedTeams(data.managedTeams || []);
+    // The organisation API, not onboarding role preferences, determines
+    // these navigation privileges. Clear them immediately on every login
+    // change and never consume the previous session's delayed response.
+    let active = true;
+    setManagedTeams([]); setIsHrViewer(false); setIsOrgAdmin(false);
+    const session = user;
+    if (!session || auth.currentUser !== session) return () => { active = false; };
+    void secureApiFetch('/api/org/me').then(res => res.json()).then(data => {
+      if (!active || auth.currentUser !== session) return;
+      setManagedTeams(Array.isArray(data.managedTeams)
+        ? data.managedTeams.filter((team: unknown): team is string => typeof team === 'string') : []);
       setIsHrViewer(data.isHrViewer === true);
       setIsOrgAdmin(data.isOrgAdmin === true);
     }).catch(() => {
-      // Non-critical - the "My Team"/"HR"/"Executive Work Design" nav entries just stay hidden if this fails.
+      // Missing data or a revoked role must never retain the old navigation.
     });
+    return () => { active = false; };
   }, [user]);
 
   const [flow, setFlow] = useState<AppFlow>("landing");
@@ -2849,7 +2875,7 @@ export default function App() {
             )}
 
             {activeTab === "recovery_intelligence" && (
-              <RecoveryIntelligenceHub />
+              <RecoveryIntelligenceHub key={sessionViewKey(user)} />
             )}
 
             {activeTab === "diagnose" &&
@@ -3226,7 +3252,7 @@ export default function App() {
 
             {activeTab === "privacy" && (
               <div className="space-y-32">
-                <PrivacyVault
+                <PrivacyVault key={sessionViewKey(user)}
                   profile={
                     stats.profile || {
                       fullName: "",
@@ -3247,37 +3273,37 @@ export default function App() {
 
             {activeTab === "org" && (
               <div className="space-y-32">
-                <OrgDashboard onNavigate={safeSetActiveTab as any} />
+                <OrgDashboard key={sessionViewKey(user)} onNavigate={safeSetActiveTab as any} />
               </div>
             )}
 
             {activeTab === "myteam" && (
               <div className="space-y-32">
-                <TeamDashboard />
+                <TeamDashboard key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "hr_escalation" && (
               <div className="space-y-32">
-                <HrEscalationDashboard />
+                <HrEscalationDashboard key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "executive_work_design" && (
               <div className="space-y-32 max-w-7xl mx-auto">
-                <ExecutiveWorkDesignReport />
+                <ExecutiveWorkDesignReport key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "evolution" && (
               <div className="space-y-32">
-                <EvolutionEngine />
+                <EvolutionEngine key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "executive" && (
               <div className="space-y-32 max-w-7xl mx-auto">
-                <ExecutiveBoardReport
+                <ExecutiveBoardReport key={sessionViewKey(user)}
                   stats={stats}
                   onAwardPoints={awardPoints}
                 />
@@ -3288,7 +3314,7 @@ export default function App() {
 
             {activeTab === "intelligence" && (
               <div className="space-y-32">
-                <RecoveryIntelligenceLayer
+                <RecoveryIntelligenceLayer key={sessionViewKey(user)}
                   fingerprint={fingerprint}
                   isDemoSession={isDemoSession}
                 />
@@ -3307,7 +3333,7 @@ export default function App() {
 
             {activeTab === "admin" && (
               <div className="space-y-32">
-                <AdminDashboard />
+                <AdminDashboard key={sessionViewKey(user)} />
               </div>
             )}
             </>
