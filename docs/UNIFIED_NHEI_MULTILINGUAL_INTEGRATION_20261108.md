@@ -329,3 +329,10 @@ staging identity and real cross-account journeys remain release gates.
 - Calendar aggregation consent reads and writes retain the initiating Firebase User identity across asynchronous database work, blocking stale responses and grants. The asynchronous Nova Memory consent update also checks session ownership before writing.
 - Existing default-off and server-side permissions are unchanged; no new data collection is enabled.
 - Added race regression tests for same-UID reauthentication and foreign UID initialization. Runtime tests, Firebase emulator and live staging remain unexecuted release gates. No production changes.
+
+## Phase 1T — Privacy Dashboard truth-in-copy, account ownership and locale coverage (9 November 2026)
+
+- The parent Data Privacy Dashboard now protects Calendar consent against a same-UID new Firebase session, using original User-object ownership across asynchronous reads, writes and state updates, consistent with the child Adaptive Controls.
+- Replaced inaccurate references to "Core Biological" monitoring and legacy "Burnout Velocity" with accurate user-submitted check-ins and aggregate meeting metadata. The screen no longer calls that user-initiated data stream a required biological signal; no change to what the app actually stores or checks.
+- Added 18 customer-facing privacy-dashboard translation keys in the existing 12 bundled locales, with translated switch accessibility labels and error states. The developer-only internal route IDs and Firestore permissions remain unchanged.
+- Added translation-key, placeholder, source ownership and truthful-copy tests. Machine-draft translations require native-speaker and privacy/legal review. Offline TypeScript/build/emulator/real-browser verification is still outstanding.

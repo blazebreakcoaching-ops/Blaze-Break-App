@@ -418,6 +418,25 @@ export const en = {
   "adaptive.choice.less": "Less",
   "adaptive.choiceAria": "Set {module} preference to {choice}",
   "adaptive.saveError": "Your preference could not be saved. Please check Nova Memory and try again.",
+  // Data Privacy Dashboard (non-English drafts require human review).
+  "privacy.title": "Data Privacy Dashboard",
+  "privacy.subtitle": "Control which information Nova can use.",
+  "privacy.loadError": "Calendar privacy settings could not be loaded. Changes are paused until we can check your choice.",
+  "privacy.retry": "Try again",
+  "privacy.saveError": "Calendar sharing could not be saved. Your previous choice is unchanged.",
+  "privacy.checkinLabel": "Energy and mood check-ins",
+  "privacy.checkinCategory": "Information you provide",
+  "privacy.checkinDescription": "Saves check-ins you choose to submit. This is not automatic device or biological monitoring.",
+  "privacy.checkinUsage": "Nova can use submitted check-ins for recovery guidance under your privacy permissions. This is not a medical assessment.",
+  "privacy.calendarLabel": "Calendar activity (metadata)",
+  "privacy.calendarCategory": "Workload information",
+  "privacy.calendarDescription": "Uses meeting counts, durations and spacing; meeting titles and contents are not included in this summary.",
+  "privacy.calendarUsage": "Nova can highlight busy days and closely spaced meetings. It does not change your calendar without separate approval.",
+  "privacy.coreLabel": "Part of the app; you choose what to enter",
+  "privacy.collectTitle": "What we collect",
+  "privacy.usageTitle": "How Nova uses it",
+  "privacy.enable": "Enable {item}",
+  "privacy.disable": "Disable {item}",
 } as const;
 
 export type TranslationKey = keyof typeof en;

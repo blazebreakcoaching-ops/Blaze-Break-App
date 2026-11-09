@@ -12,6 +12,7 @@ import { useAuth } from '../lib/auth';
 import { saveCalendarSignalConsent } from '../lib/nova-brain';
 import { hasExplicitCalendarSignalConsent } from '../lib/calendar-signal-consent';
 import { NovaAdaptiveControls } from './NovaAdaptiveControls';
+import { useI18n } from '../lib/i18n-react';
 
 // Two toggle mechanisms exist side by side here, deliberately:
 // - flagId (localStorage, src/lib/feature-flags.ts) for UI-only display
@@ -42,10 +43,11 @@ export const DataPrivacyDashboard = ({
 }) => {
   const flags = useFeatureFlags();
   const { user } = useAuth();
+  const { t } = useI18n();
   const uid = user?.uid ?? null;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [allowCalendarSignals, setAllowCalendarSignals] = useState(false);
-  const [calendarOwnerUid, setCalendarOwnerUid] = useState<string | null>(null);
+  const [calendarOwnerSession, setCalendarOwnerSession] = useState<typeof user>(null);
   const [calendarStatus, setCalendarStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [calendarSaving, setCalendarSaving] = useState(false);
   const [calendarSaveError, setCalendarSaveError] = useState(false);
@@ -54,44 +56,43 @@ export const DataPrivacyDashboard = ({
   useEffect(() => {
     let cancelled = false;
     setAllowCalendarSignals(false);
-    setCalendarOwnerUid(null);
+    setCalendarOwnerSession(null);
     setCalendarStatus('loading');
     setCalendarSaveError(false);
     setCalendarSaving(false);
-    if (!uid) {
+    if (!user || !uid || auth.currentUser !== user) {
       setCalendarStatus('error');
       return () => { cancelled = true; };
     }
     getDoc(doc(db, 'users', uid, 'nova_permissions', 'current')).then((snap) => {
-      if (cancelled || auth.currentUser?.uid !== uid) return;
+      if (cancelled || auth.currentUser !== user) return;
       setAllowCalendarSignals(snap.exists() && hasExplicitCalendarSignalConsent(snap.data()));
-      setCalendarOwnerUid(uid);
+      setCalendarOwnerSession(user);
       setCalendarStatus('ready');
     }).catch(() => {
-      if (cancelled || auth.currentUser?.uid !== uid) return;
+      if (cancelled || auth.currentUser !== user) return;
       // A failed consent read must never look like consent or permit writes.
       setCalendarStatus('error');
     });
     return () => { cancelled = true; };
-  }, [uid, calendarRetry]);
+  }, [user, calendarRetry]);
 
   const dataPoints: DataPoint[] = [
     {
       id: 'mood',
-      label: 'Mood & Somatic Metrics',
-      category: 'Core Biological',
-      description: 'Records daily energy, mood tags, and somatic (nervous system) flags.',
-      novaUsage: 'Nova correlates these drops with your meeting density to detect "Burnout Velocity".',
+      label: t('privacy.checkinLabel'),
+      category: t('privacy.checkinCategory'),
+      description: t('privacy.checkinDescription'),
+      novaUsage: t('privacy.checkinUsage'),
       icon: Activity,
-      required: true,
-      flagId: 'enable_mood_pulse' as FeatureFlag
+      required: true
     },
     {
       id: 'calendar',
-      label: 'Calendar Sync (Metadata)',
-      category: 'Workload Tracking',
-      description: 'Accesses meeting counts, durations, and back-to-back blocks (no meeting contents).',
-      novaUsage: 'Nova surfaces heavy meeting days and back-to-back stretches so you can spot overload and plan a break around it. It does not predict the future or act on your calendar for you.',
+      label: t('privacy.calendarLabel'),
+      category: t('privacy.calendarCategory'),
+      description: t('privacy.calendarDescription'),
+      novaUsage: t('privacy.calendarUsage'),
       icon: Calendar,
       required: false,
       permissionKey: 'allowCalendarSignals'
@@ -108,15 +109,16 @@ export const DataPrivacyDashboard = ({
     if (point.required) return;
 
     if (point.permissionKey) {
+      const requestUser = user;
       const requestUid = uid;
-      if (!requestUid || auth.currentUser?.uid !== requestUid ||
-          calendarOwnerUid !== requestUid || calendarStatus !== 'ready' || calendarSaving) return;
+      if (!requestUser || !requestUid || auth.currentUser !== requestUser ||
+          calendarOwnerSession !== requestUser || calendarStatus !== 'ready' || calendarSaving) return;
       const newState = !allowCalendarSignals;
       setCalendarSaving(true);
       setCalendarSaveError(false);
       try {
         await saveCalendarSignalConsent(requestUid, newState);
-        if (auth.currentUser?.uid !== requestUid) return;
+        if (auth.currentUser !== requestUser) return;
         setAllowCalendarSignals(newState);
         // Only log consent after Firestore has confirmed the actual change.
         // Audit unavailability must never turn a saved setting into an error.
@@ -128,9 +130,9 @@ export const DataPrivacyDashboard = ({
           details: 'Explicit Calendar signal aggregation preference saved.',
         }).catch(() => {});
       } catch {
-        if (auth.currentUser?.uid === requestUid) setCalendarSaveError(true);
+        if (auth.currentUser === requestUser) setCalendarSaveError(true);
       } finally {
-        if (auth.currentUser?.uid === requestUid) setCalendarSaving(false);
+        if (auth.currentUser === requestUser) setCalendarSaving(false);
       }
       return;
     }
@@ -157,26 +159,26 @@ export const DataPrivacyDashboard = ({
           <Settings className="w-6 h-6" />
         </div>
         <div>
-          <h3 className="font-bold text-text-main text-lg tracking-tight">Data Privacy Dashboard</h3>
-          <p className="text-xs text-text-muted mt-1">Granular controls over how Nova uses your signals.</p>
+          <h3 className="font-bold text-text-main text-lg tracking-tight">{t('privacy.title')}</h3>
+          <p className="text-xs text-text-muted mt-1">{t('privacy.subtitle')}</p>
         </div>
       </div>
 
       {calendarStatus === 'error' && (
         <div role="alert" className="rounded-xl border border-border p-3 text-sm text-text-main">
-          Calendar privacy settings could not be loaded, so the current setting is unknown. Changes are paused until we reconnect.
+          {t('privacy.loadError')}
           <button type="button" className="ml-2 underline font-semibold"
-            onClick={() => setCalendarRetry(n => n + 1)}>Try again</button>
+            onClick={() => setCalendarRetry(n => n + 1)}>{t('privacy.retry')}</button>
         </div>
       )}
       {calendarSaveError && (
-        <p role="alert" className="text-sm text-destructive">Calendar sharing could not be saved. Your previous choice remains in place.</p>
+        <p role="alert" className="text-sm text-destructive">{t('privacy.saveError')}</p>
       )}
       <NovaAdaptiveControls />
       <div className="space-y-3">
         {dataPoints.map((point) => {
           const calendarReady = calendarStatus === 'ready' &&
-            !!uid && calendarOwnerUid === uid && auth.currentUser?.uid === uid;
+            !!user && calendarOwnerSession === user && auth.currentUser === user;
           const isEnabled = point.required
             || (point.permissionKey ? calendarReady && allowCalendarSignals : (point.flagId ? flags[point.flagId] !== false : true));
           const isExpanded = expandedId === point.id;
@@ -225,7 +227,7 @@ export const DataPrivacyDashboard = ({
 
                 <div className="flex items-center gap-4">
                   {point.required && (
-                    <span className="px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-widest bg-card text-text-muted border border-border">Required</span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-widest bg-card text-text-muted border border-border">{t('privacy.coreLabel')}</span>
                   )}
                   {!point.required && (
                     <button 
@@ -233,7 +235,7 @@ export const DataPrivacyDashboard = ({
                       role="switch"
                       aria-checked={isEnabled}
                       disabled={!!point.permissionKey && (!calendarReady || calendarSaving)}
-                      aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${point.label}`}
+                      aria-label={isEnabled ? t('privacy.disable', { item: point.label }) : t('privacy.enable', { item: point.label })}
                       className={cn(
                         "w-12 h-6 rounded-full flex items-center p-1 transition-colors relative",
                         isEnabled ? "bg-success" : "bg-surface"
@@ -262,11 +264,11 @@ export const DataPrivacyDashboard = ({
                   >
                     <div className="px-4 pb-4 pt-2 border-t border-white/[0.04] grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <p className="text-xs uppercase font-black tracking-widest text-text-muted">What we collect</p>
+                        <p className="text-xs uppercase font-black tracking-widest text-text-muted">{t('privacy.collectTitle')}</p>
                         <p className="text-xs text-text-muted leading-relaxed">{point.description}</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs uppercase font-black tracking-widest text-ember-accent">How Nova uses it</p>
+                        <p className="text-xs uppercase font-black tracking-widest text-ember-accent">{t('privacy.usageTitle')}</p>
                         <p className="text-xs text-[#9a3412] dark:text-primary-light/70 leading-relaxed font-mono">{point.novaUsage}</p>
                       </div>
                     </div>
