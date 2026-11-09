@@ -1,7 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ secureApiFetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  secureApiFetch: vi.fn(),
+  currentUser: { uid: 'member-one' } as { uid: string } | null,
+}));
+vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: mocks.currentUser }) }));
+vi.mock('../lib/firebase', () => ({
+  auth: { get currentUser() { return mocks.currentUser; } },
+}));
 vi.mock('../lib/secure-api', async () => {
   const actual = await vi.importActual<any>('../lib/secure-api');
   return { ...actual, secureApiFetch: mocks.secureApiFetch };
@@ -17,6 +24,7 @@ const insight = (over: Record<string, unknown>) => ({
 });
 
 beforeEach(() => {
+  mocks.currentUser = { uid: 'member-one' };
   mocks.secureApiFetch.mockReset();
 });
 
@@ -31,6 +39,23 @@ describe('Your insights panel', () => {
     expect(screen.getByRole('img', { name: 'Energy: 40 out of 100, worth some attention' })).toBeTruthy();
     expect(screen.getByText('Not enough data yet.')).toBeTruthy();
     expect(screen.queryByRole('img', { name: /^Mood:/ })).toBeNull();
+  });
+
+  it('removes old results and ignores an old pending response after same-UID reauthentication', async () => {
+    let resolveOld!: (value: ReturnType<typeof ok>) => void;
+    const oldResponse = new Promise<ReturnType<typeof ok>>(resolve => { resolveOld = resolve; });
+    mocks.secureApiFetch.mockImplementationOnce(() => oldResponse);
+    mocks.secureApiFetch.mockResolvedValueOnce(ok({ insights: [
+      insight({ explanation: 'Only the new session may see this result.' }),
+    ] }));
+    const { rerender } = render(<RecoveryInsightsPanel />);
+    await waitFor(() => expect(mocks.secureApiFetch).toHaveBeenCalledTimes(1));
+    mocks.currentUser = { uid: 'member-one' };
+    rerender(<RecoveryInsightsPanel />);
+    expect(await screen.findByText(/Only the new session/)).toBeTruthy();
+    resolveOld(ok({ insights: [insight({ explanation: 'Old session private insight.' })] }));
+    await waitFor(() => expect(screen.queryByText('Old session private insight.')).toBeNull());
+    expect(screen.getByText(/Only the new session/)).toBeTruthy();
   });
 
   it('shows the real reason when insights cannot load', async () => {

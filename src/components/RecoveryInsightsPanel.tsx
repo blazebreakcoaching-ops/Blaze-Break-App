@@ -1,6 +1,8 @@
 import { useI18n } from '../lib/i18n-react';
 import type { TranslationKey } from '../../i18n';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { auth } from '../lib/firebase';
+import { useAuth } from '../lib/auth';
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { secureApiFetch, SecureApiError } from '../lib/secure-api';
 
@@ -36,7 +38,10 @@ const LABEL_KEYS: Record<string, TranslationKey> = {
 const reasonOf = (e: unknown, fallback: string) => (e instanceof SecureApiError ? e.message : fallback);
 
 export const RecoveryInsightsPanel = () => {
+  const { user } = useAuth();
   const { t, number } = useI18n();
+  const requestGeneration = useRef(0);
+  const newestLoad = useRef(0);
   const toneText = (tone: Tone) => t(TONE_KEY[tone]);
   const labelOf = (i: { type: string; label: string }) => (LABEL_KEYS[i.type] ? t(LABEL_KEYS[i.type]) : i.label);
   const [insights, setInsights] = useState<Insight[] | null>(null);
@@ -48,48 +53,80 @@ export const RecoveryInsightsPanel = () => {
   const [explainNote, setExplainNote] = useState('');
 
   const load = useCallback(async () => {
+    const session = user;
+    if (!session || auth.currentUser !== session) return;
+    const generation = requestGeneration.current;
+    const loadId = ++newestLoad.current;
     setLoading(true);
     setError('');
     try {
       const res = await secureApiFetch('/api/recovery/insights');
       const data = await res.json();
+      if (auth.currentUser !== session || requestGeneration.current !== generation
+        || newestLoad.current !== loadId) return;
       setInsights(Array.isArray(data.insights) ? data.insights : []);
     } catch (e) {
-      setError(reasonOf(e, t('insights.loadError')));
+      if (auth.currentUser === session && requestGeneration.current === generation
+        && newestLoad.current === loadId) setError(reasonOf(e, t('insights.loadError')));
+    } finally {
+      if (auth.currentUser === session && requestGeneration.current === generation
+        && newestLoad.current === loadId) setLoading(false);
     }
-    setLoading(false);
-  }, []);
+  }, [user, t]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    requestGeneration.current += 1;
+    newestLoad.current += 1;
+    setInsights(null); setExplanation(null); setExplainNote('');
+    setError(''); setUpdating(false); setExplaining(false);
+    setLoading(!!user && auth.currentUser === user);
+    if (user && auth.currentUser === user) void load();
+    return () => {
+      requestGeneration.current += 1;
+      newestLoad.current += 1;
+    };
+  }, [user, load]);
 
   const update = async () => {
+    const session = user;
+    if (!session || auth.currentUser !== session || updating) return;
+    const generation = requestGeneration.current;
     setUpdating(true);
     setError('');
     setExplanation(null);
     setExplainNote('');
     try {
       await secureApiFetch('/api/recovery/recalculate', { method: 'POST', data: {} });
+      if (auth.currentUser !== session || requestGeneration.current !== generation) return;
       await load();
     } catch (e) {
-      setError(reasonOf(e, t('insights.updateError')));
+      if (auth.currentUser === session && requestGeneration.current === generation)
+        setError(reasonOf(e, t('insights.updateError')));
+    } finally {
+      if (auth.currentUser === session && requestGeneration.current === generation) setUpdating(false);
     }
-    setUpdating(false);
   };
 
   const explain = async () => {
+    const session = user;
+    if (!session || auth.currentUser !== session || explaining) return;
+    const generation = requestGeneration.current;
     setExplaining(true);
     setExplanation(null);
     setExplainNote('');
     try {
       const res = await secureApiFetch('/api/recovery/insights/explain', { method: 'POST', data: {} });
       const data = await res.json();
+      if (auth.currentUser !== session || requestGeneration.current !== generation) return;
       if (data.explanation) setExplanation(data.explanation);
       else if (data.reason === 'no_consent') setExplainNote(t('insights.noConsent'));
       else setExplainNote(t('insights.notEnough'));
     } catch (e) {
-      setExplainNote(reasonOf(e, t('insights.explainError')));
+      if (auth.currentUser === session && requestGeneration.current === generation)
+        setExplainNote(reasonOf(e, t('insights.explainError')));
+    } finally {
+      if (auth.currentUser === session && requestGeneration.current === generation) setExplaining(false);
     }
-    setExplaining(false);
   };
 
   const anyAvailable = (insights || []).some((i) => i.state === 'available');
@@ -104,7 +141,7 @@ export const RecoveryInsightsPanel = () => {
         <button
           type="button"
           onClick={update}
-          disabled={updating || loading}
+          disabled={!user || auth.currentUser !== user || updating || loading}
           className="shrink-0 py-2 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
         >
           {updating ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
@@ -145,7 +182,7 @@ export const RecoveryInsightsPanel = () => {
           <button
             type="button"
             onClick={explain}
-            disabled={explaining || !anyAvailable}
+            disabled={!user || auth.currentUser !== user || explaining || !anyAvailable}
             className="py-2 px-3 rounded-lg border border-border text-xs font-bold text-text-main hover:border-primary/50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
             {explaining ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />}

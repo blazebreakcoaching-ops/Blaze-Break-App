@@ -115,3 +115,16 @@ Runtime testing and staging privacy verification are still mandatory.
 - Added an actual rendered-component test with an older page deliberately
   resolving **after** a member's erasure. This test is authored but not
   run; staging and Firestore emulator checks remain mandatory.
+
+## Phase 2 — Recovery Insights account isolation
+
+- `RecoveryInsightsPanel` is the member-facing Intelligence Layer on the
+  existing authenticated `/api/recovery/insights`, `/api/recovery/recalculate`
+  and `/api/recovery/insights/explain` routes, **not** a parallel analytics engine.
+- Added Firebase User session ownership and request ordering to all three
+  operations. A login/account switch clears the previous panel's insights,
+  AI explanation, loading and errors. A delayed same-UID old-session response
+  is rejected. Only the current session can trigger recalculation/explanation.
+- Extended the existing rendered component suite with a same-UID
+  reauthentication and late-response test. The test is authored but not
+  executed in this environment. Do not treat this as staging validation.
