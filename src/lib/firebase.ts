@@ -98,12 +98,16 @@ export async function getDb(): Promise<Firestore> {
   if (!_dbPromise) {
     _dbPromise = import('firebase/firestore').then(async ({ getFirestore }) => {
       const firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-      // Never expose the database until the intended target is connected.
-      // In particular, a failed emulator connection must not leave a
-      // cached production-targeted database object available on retry.
+      // Do not return a database object before its emulator destination is set.
       await connectFirestoreEmulatorIfNeeded(firestoreDb);
       _db = firestoreDb;
       return firestoreDb;
+    }).catch(error => {
+      // A failed initialization is NOT permanent. All concurrent callers
+      // observe this rejection, but a subsequent explicit attempt can retry.
+      // Never cache an unconnected database object after an error.
+      _dbPromise = null;
+      throw error;
     });
   }
   return _dbPromise;

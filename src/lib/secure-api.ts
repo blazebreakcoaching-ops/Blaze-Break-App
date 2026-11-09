@@ -16,9 +16,8 @@ export class SecureApiError extends Error {
 
 interface SecureApiOptions extends RequestInit {
   data?: any;
-  /** Never auto-retry a 401/403. A wrong 2FA code must be submitted once,
-   * not twice (each submission counts toward the lockout, and a recovery
-   * code is single-use). */
+  /** Explicit opt-out for reads that must never repeat; all state-changing
+   * methods are non-retryable automatically. */
   noAuthRetry?: boolean;
 }
 
@@ -97,14 +96,10 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     return response;
   }
 
-  // Handle specific status codes
+  // Parse the error before considering a retry. In particular, an MFA
+  // challenge must never be replayed: even a read can return a special
+  // MFA_SESSION_REQUIRED status that needs immediate challenge handling.
   const status = response.status;
-  
-  if ((status === 401 || status === 403) && retryCount < 1 && !noAuthRetry) {
-    // Retry once with a forced token refresh
-    return secureApiFetch(path, options, retryCount + 1);
-  }
-
   let errorMessage = `API Error ${status}`;
   let errorDetails: any = null;
   let errorCode: string | undefined;
@@ -119,6 +114,18 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     // Do not leak HTML, provider text or stack traces in 5xx responses.
   }
 
+  // Retrying a POST/PATCH/PUT/DELETE can duplicate a paid provider call,
+  // consume a one-time MFA code, or perform an action twice if a proxy
+  // returned 401 after forwarding it. Only idempotent READS retry once,
+  // and only for a 401 plausibly caused by an expired Firebase ID token.
+  // A 403 means forbidden/App Check/MFA, not an automatic refresh signal.
+  const requestMethod = (requestInit.method ?? 'GET').toUpperCase();
+  const canRetryRead = requestMethod === 'GET' || requestMethod === 'HEAD';
+  if (status === 401 && canRetryRead && retryCount === 0 && !noAuthRetry
+    && errorCode !== 'MFA_SESSION_REQUIRED') {
+    return secureApiFetch(path, options, 1);
+  }
+
   if (status === 401 || status === 403) {
     if (errorCode === 'MFA_SESSION_REQUIRED') {
       // The signed session token is missing/expired (its 12-hour TTL ran
@@ -128,6 +135,9 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
       // the server will accept.
       if (auth.currentUser) expireMfaSession(auth.currentUser.uid);
       throw new SecureApiError('Two-factor verification is required again for this session.', status, errorDetails);
+    }
+    if (status === 403) {
+      throw new SecureApiError(`Access denied: ${errorMessage}`, status, errorDetails);
     }
     throw new SecureApiError(`Unauthorized: ${errorMessage}. Please sign in again.`, status, errorDetails);
   } else if (status === 429) {

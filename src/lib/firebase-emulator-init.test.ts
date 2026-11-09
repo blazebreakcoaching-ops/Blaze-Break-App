@@ -48,9 +48,13 @@ describe('Firebase emulator connection isolation', () => {
   it('does not return a live-targeted database after emulator hookup fails', async () => {
     setup.shouldThrow = true;
     const { getDb } = await import('./firebase');
-    await expect(getDb()).rejects.toThrow('emulator connection failed');
-    await expect(getDb()).rejects.toThrow('emulator connection failed');
-    expect(setup.calls).toBe(1);
+    const [first, second] = await Promise.allSettled([getDb(), getDb()]);
+    expect(first.status).toBe('rejected');
+    expect(second.status).toBe('rejected');
+    expect(setup.calls).toBe(1); // shared failing attempt
+    setup.shouldThrow = false;
+    await expect(getDb()).resolves.toBe(setup.db);
+    expect(setup.calls).toBe(2); // a later retry is possible
   });
 
   it('permits a direct reconnect after failure instead of caching false success', async () => {

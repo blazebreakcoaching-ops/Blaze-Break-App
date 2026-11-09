@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// A wrong two-factor code returns 401. secureApiFetch retries any 401 once
-// with a refreshed token, which submitted every wrong code TWICE - each
-// counting toward the lockout, and spending a single-use recovery code.
-// The two-factor calls now opt out with noAuthRetry.
+// Regression: only safe GET/HEAD requests may retry a token-expiry 401.
+// Mutation attempts, MFA-required replies and permission 403s must never
+// replay, even when a caller forgets to set noAuthRetry.
 vi.mock('./firebase', () => ({
   auth: { currentUser: { uid: 'u1', getIdToken: async () => 'id-token' } },
   getAppCheckToken: async () => 'app-check',
@@ -26,8 +25,37 @@ describe('secureApiFetch retry behaviour for two-factor codes', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('other requests still retry once on 401', async () => {
+  it('GET retries a 401 once with a fresh token', async () => {
     await expect(secureApiFetch('/api/org/me')).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('POST mutations never auto-retry a 401, even without noAuthRetry', async () => {
+    await expect(secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId: 'one', action: 'completed' } }))
+      .rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry 403 for GET or POST', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 }));
+    await expect(secureApiFetch('/api/org/me')).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(secureApiFetch('/api/recovery/routing-outcome', { method: 'POST' })).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a GET when the response requires a fresh MFA challenge', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: 'Verify MFA', code: 'MFA_SESSION_REQUIRED' }), { status: 401 }));
+    await expect(secureApiFetch('/api/org/me')).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry successful POST requests or network exceptions', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    await secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { action: 'completed' } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(secureApiFetch('/api/org/me')).rejects.toMatchObject({ status: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

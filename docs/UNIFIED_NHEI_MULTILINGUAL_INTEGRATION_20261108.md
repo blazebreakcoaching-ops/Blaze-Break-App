@@ -285,3 +285,11 @@ staging identity and real cross-account journeys remain release gates.
   guarded account/session behavior at source level. Full TypeScript,
   Vitest, RTL, native-language, screen-reader and staging verification
   have not yet been executed.
+
+## Phase 1N — Authenticated API retry and Firebase initialization reliability (9 November 2026)
+
+- Restricted the protected API client's automatic expired-token retry to GET/HEAD on HTTP 401 only, at most once. Non-idempotent methods never silently replay, even if a caller forgets `noAuthRetry`. HTTP 403 and MFA challenges never auto-retry.
+- Parse authentication error codes once **before** deciding to retry, preserving immediate MFA-session expiry detection. A permission denial is no longer misleadingly described as proof that the member signed out.
+- Fixed `getDb()` failure caching: concurrent initialization requests still share one attempt; a failed attempt no longer permanently poisons later explicit attempts. The cached database is published only after emulator connection succeeds.
+- Expanded the already-existing targeted tests to cover GET retry, 401/403 POST refusal, MFA challenge refusal, network failure, concurrent Firestore initialization failure and later recovery.
+- Source and regression tests are committed for offline verification. Not yet executed with the complete repository/dependencies. No production, Firebase configuration, GitHub Actions, `main`, or deployment changed.
