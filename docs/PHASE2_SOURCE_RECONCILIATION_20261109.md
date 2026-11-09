@@ -128,3 +128,17 @@ Runtime testing and staging privacy verification are still mandatory.
 - Extended the existing rendered component suite with a same-UID
   reauthentication and late-response test. The test is authored but not
   executed in this environment. Do not treat this as staging validation.
+
+## Phase 2 — personal recovery report and print safety
+
+- `ExecutiveBoardReport` reads the existing authenticated
+  `/api/signals/executive-report` endpoint; the new guard binds rendered
+  insights and metrics to the current Firebase User session, including
+  when a fresh login returns the same UID.
+- Old-session API completion, error messages and the browser print-frame
+  load event can no longer attach/print a report for the new account.
+  The report print frame is removed on account change; a failed/no-data
+  load cannot create an empty misleading report.
+- Added a rendered React regression for old-request completion after
+  same-UID reauthentication. This work does not add employer disclosure,
+  AI analysis or new data stores. Tests remain unexecuted here.

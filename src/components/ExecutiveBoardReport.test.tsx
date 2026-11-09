@@ -3,12 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   secureApiFetch: vi.fn(),
+  user: { uid: 'member-one', displayName: 'Fallback Name', email: 'x@example.com' } as
+    { uid: string; displayName: string; email: string } | null,
+}));
+vi.mock('../lib/firebase', () => ({
+  auth: { get currentUser() { return mocks.user; } },
 }));
 vi.mock('../lib/secure-api', async () => {
   const actual = await vi.importActual<any>('../lib/secure-api');
   return { ...actual, secureApiFetch: mocks.secureApiFetch };
 });
-vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { displayName: 'Fallback Name', email: 'x@example.com' } }) }));
+vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: mocks.user }) }));
 
 import { ExecutiveBoardReport } from './ExecutiveBoardReport';
 import { SecureApiError } from '../lib/secure-api';
@@ -43,6 +48,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  mocks.user = { uid: 'member-one', displayName: 'Fallback Name', email: 'x@example.com' };
   mocks.secureApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => reportPayload });
 });
 
@@ -90,6 +96,26 @@ describe('Executive Board Report export', () => {
     expect(await screen.findByText(/blocked the print window/i)).toBeTruthy();
     expect(award).not.toHaveBeenCalled();
     restore();
+  });
+
+  it('does not display an old report after same-UID reauthentication', async () => {
+    let finishOld!: (value: { ok: boolean; json: () => Promise<typeof reportPayload> }) => void;
+    const oldResult = new Promise<{ ok: boolean; json: () => Promise<typeof reportPayload> }>(
+      resolve => { finishOld = resolve; },
+    );
+    mocks.secureApiFetch.mockReset().mockImplementationOnce(() => oldResult)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        ...reportPayload, aiAnalysis: 'Current session report only',
+      }) });
+    const { rerender } = render(<ExecutiveBoardReport />);
+    await waitFor(() => expect(mocks.secureApiFetch).toHaveBeenCalledTimes(1));
+    mocks.user = { uid: 'member-one', displayName: 'New Session', email: 'x@example.com' };
+    rerender(<ExecutiveBoardReport />);
+    expect(await screen.findByText('Current session report only')).toBeTruthy();
+    finishOld({ ok: true, json: async () => ({
+      ...reportPayload, aiAnalysis: 'Private previous session report',
+    }) });
+    await waitFor(() => expect(screen.queryByText('Private previous session report')).toBeNull());
   });
 
   it('shows a rate limit as a rate limit, never as "not enough activity"', async () => {

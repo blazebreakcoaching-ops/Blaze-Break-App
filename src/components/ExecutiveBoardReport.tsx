@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { auth } from '../lib/firebase';
 import { Download, TrendingUp, Clock, ShieldAlert, Activity, FileText, Layers, Sparkles } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { UserStats } from '../types';
@@ -14,6 +15,9 @@ export const ExecutiveBoardReport = ({
   onAwardPoints?: (amount: number, reason: string) => void;
 }) => {
   const { user } = useAuth();
+  const reportGeneration = useRef(0);
+  const printFrame = useRef<HTMLIFrameElement | null>(null);
+  const [reportOwnerSession, setReportOwnerSession] = useState<typeof user>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
@@ -33,7 +37,7 @@ export const ExecutiveBoardReport = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showConfigModal, isExporting]);
 
-  const [reportData, setReportData] = useState<{
+  const [storedReportData, setReportData] = useState<{
     deepWorkHours: number;
     boundariesProtected: number;
     burnRatePercent: number | null;
@@ -45,23 +49,47 @@ export const ExecutiveBoardReport = ({
   // A failed or rate-limited load is NOT "no activity": never let it be
   // shown (or printed) as an empty report.
   const [reportLoadError, setReportLoadError] = useState<string | null>(null);
+  // Never render or export an old session's report while Auth is changing.
+  const reportData = user && auth.currentUser === user && reportOwnerSession === user
+    ? storedReportData : null;
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await secureApiFetch('/api/signals/executive-report');
-        if (res.ok) {
-          setReportData(await res.json());
+    const generation = ++reportGeneration.current;
+    const session = user;
+    setReportOwnerSession(null);
+    setReportData(null);
+    setReportLoading(!!session && auth.currentUser === session);
+    setReportLoadError(null);
+    setExportNotice(null);
+    setShowConfigModal(false);
+    setIsExporting(false);
+    printFrame.current?.remove();
+    printFrame.current = null;
+    if (session && auth.currentUser === session) {
+      void (async () => {
+        try {
+          const res = await secureApiFetch('/api/signals/executive-report');
+          const data = await res.json();
+          if (auth.currentUser !== session || reportGeneration.current !== generation) return;
+          setReportData(data);
+          setReportOwnerSession(session);
+        } catch (e) {
+          if (auth.currentUser === session && reportGeneration.current === generation)
+            setReportLoadError(e instanceof SecureApiError ? e.message : 'Your report data could not be loaded right now.');
+        } finally {
+          if (auth.currentUser === session && reportGeneration.current === generation) setReportLoading(false);
         }
-      } catch (e) {
-        setReportLoadError(e instanceof SecureApiError ? e.message : 'Your report data could not be loaded right now.');
-      }
-      setReportLoading(false);
+      })();
+    }
+    return () => {
+      reportGeneration.current += 1;
+      printFrame.current?.remove();
+      printFrame.current = null;
     };
-    load();
-  }, []);
+  }, [user]);
 
   const handleOpenConfig = () => {
+    if (!user || auth.currentUser !== user) return;
     setExportNotice(null);
     setShowConfigModal(true);
   };
@@ -70,6 +98,9 @@ export const ExecutiveBoardReport = ({
   // hidden, script-less sandboxed frame and the browser's own print dialog
   // is opened on it, where "Save as PDF" writes a genuine PDF file.
   const printReport = async () => {
+    const session = user;
+    const generation = reportGeneration.current;
+    if (!session || auth.currentUser !== session) return;
     setIsExporting(true);
     setExportNotice(null);
     let liveData = reportData;
@@ -78,10 +109,13 @@ export const ExecutiveBoardReport = ({
         const res = await secureApiFetch('/api/signals/executive-report');
         if (res.ok) {
           liveData = await res.json();
+          if (auth.currentUser !== session || reportGeneration.current !== generation) return;
           setReportData(liveData);
+          setReportOwnerSession(session);
           setReportLoadError(null);
         }
       } catch (e) {
+        if (auth.currentUser !== session || reportGeneration.current !== generation) return;
         // Never print a report claiming "not enough activity" when the
         // data simply could not be fetched (outage or daily limit).
         const reason = e instanceof SecureApiError ? e.message : 'Your report data could not be loaded right now.';
@@ -90,6 +124,13 @@ export const ExecutiveBoardReport = ({
         setIsExporting(false);
         return;
       }
+    }
+    // Reject delayed old-session responses and an absent/failed data load.
+    if (auth.currentUser !== session || reportGeneration.current !== generation) return;
+    if (!liveData) {
+      setExportNotice('Your report could not be loaded. No PDF was created.');
+      setIsExporting(false);
+      return;
     }
     const html = buildExecutiveReportHtml({
       name: userStats?.profile?.fullName || user?.displayName || user?.email || 'Blaze Break member',
@@ -112,6 +153,13 @@ export const ExecutiveBoardReport = ({
     frame.onload = () => {
       if (handled) return;
       handled = true;
+      // Printing is a sensitive read. Never print the previous account's
+      // report even when a sign-in happens between iframe creation and load.
+      if (auth.currentUser !== session || reportGeneration.current !== generation) {
+        frame.remove();
+        if (printFrame.current === frame) printFrame.current = null;
+        return;
+      }
       try {
         frame.contentWindow?.focus();
         frame.contentWindow?.print();
@@ -122,9 +170,13 @@ export const ExecutiveBoardReport = ({
         setExportNotice('Your browser blocked the print window. Please allow printing for this site and try again.');
       } finally {
         setIsExporting(false);
-        setTimeout(() => frame.remove(), 60_000);
+        setTimeout(() => {
+          frame.remove();
+          if (printFrame.current === frame) printFrame.current = null;
+        }, 60_000);
       }
     };
+    printFrame.current = frame;
     document.body.appendChild(frame);
   };
 
@@ -138,7 +190,7 @@ export const ExecutiveBoardReport = ({
         <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
           <button 
             onClick={handleOpenConfig}
-            disabled={isExporting}
+            disabled={!user || auth.currentUser !== user || isExporting}
             className="btn-primary flex items-center gap-2 cursor-pointer"
           >
             <Download className="w-4 h-4" aria-hidden="true" />
