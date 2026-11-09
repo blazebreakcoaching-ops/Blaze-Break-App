@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { secureApiFetch } from '../lib/secure-api';
-import { moduleDisplayName } from '../../recovery-decision-copy';
+import { localizedRecoveryModuleName } from '../../i18n/recovery-module-labels';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n-react';
@@ -162,7 +162,7 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
           {items.map(item => (
             <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2">
               <div>
-                <p className="text-xs font-semibold text-text-main">{moduleDisplayName(item.module)}</p>
+                <p className="text-xs font-semibold text-text-main">{localizedRecoveryModuleName(locale, item.module)}</p>
                 <p className="text-xs text-text-muted">
                   {LABELS[item.helpfulness]}
                   {item.date && !Number.isNaN(Date.parse(item.date)) ? ' · ' + new Date(item.date).toLocaleDateString(intlLocale(locale)) : ''}
@@ -170,10 +170,10 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" disabled={busyId !== null} className="text-xs text-primary underline"
-                  aria-label={t('feedback.correctAria', { module: moduleDisplayName(item.module) })}
+                  aria-label={t('feedback.correctAria', { module: localizedRecoveryModuleName(locale, item.module) })}
                   onClick={() => { setEditingId(item.id); setEditValue(item.helpfulness); }}>{t('feedback.correct')}</button>
                 <button type="button" disabled={busyId !== null} className="text-xs text-primary underline"
-                  aria-label={t('feedback.forgetAria', { module: moduleDisplayName(item.module) })}
+                  aria-label={t('feedback.forgetAria', { module: localizedRecoveryModuleName(locale, item.module) })}
                   onClick={() => void remove(item.id)}>{t('feedback.forget')}</button>
               </div>
               {editingId === item.id && (

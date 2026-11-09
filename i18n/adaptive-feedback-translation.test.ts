@@ -20,6 +20,8 @@ describe('adaptive feedback localisation', () => {
     expect(src).toContain('useI18n()');
     expect(src).toContain("t('feedback.resetDetails')");
     expect(src).toContain("t('feedback.forgetAria'");
+    expect(src).toContain('localizedRecoveryModuleName(locale, item.module)');
+    expect(src).not.toContain('moduleDisplayName(item.module)');
     expect(src).toContain('intlLocale(locale)');
     expect(src).toContain("'?cursor=' + encodeURIComponent(cursor)");
     expect(src).toContain('auth.currentUser !== user');

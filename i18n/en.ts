@@ -386,6 +386,23 @@ export const en = {
   "feedback.error.incomplete": "Learning is off, but some older ratings remain. Run reset again.",
   "feedback.error.reset": "Reset could not finish. Try again.",
   "feedback.error.forget": "Could not forget that rating. Try again.",
+  // Recovery module names in feedback history (translation drafts; human review pending).
+  "module.guided_reset": "Guided Reset",
+  "module.reset_studio": "Reset Studio",
+  "module.anxiety_reset": "Anxiety Reset",
+  "module.one_less_thing": "One Less Thing",
+  "module.workload_reality_check": "Workload Reality Check",
+  "module.capacity_firewall": "Capacity Firewall",
+  "module.boundary_architect": "Boundary Architect",
+  "module.digital_boundary_shield": "Digital Boundary Shield",
+  "module.recovery_fuel": "Recovery Fuel",
+  "module.energy_delta": "Energy & Capacity",
+  "module.my_patterns": "My Patterns",
+  "module.weekly_review": "Weekly Review",
+  "module.action_engine": "Action Engine",
+  "module.recovery_ally": "Recovery Ally",
+  "module.support_circle": "My Support Circle",
+  "module.unknown": "Recovery tool",
 } as const;
 
 export type TranslationKey = keyof typeof en;

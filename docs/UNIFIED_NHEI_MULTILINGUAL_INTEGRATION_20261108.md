@@ -308,3 +308,10 @@ staging identity and real cross-account journeys remain release gates.
 - Feedback History now uses Firebase User object identity, **not only UID**, to reject stale loads and mutations from a previous session and reset pagination on same-UID re-authentication. The shared secure API's Phase 1O guard remains the central transport layer.
 - Reconciled the UI's legacy pagination test with translated strings from Phase 1M. Both tests now enforce translated loading/older controls and the current-session guard, instead of expecting stale literal English.
 - Source-level assertions checked before commit; the full Vitest, TypeScript, web build, authenticated browser E2E and staging checks remain **unexecuted** here. No Firebase rules/claims, admin grants, deployment, GitHub Actions or production changes.
+
+## Phase 1Q — recovery module names across all twelve locales (9 November 2026)
+
+- Closed the remaining English-only module-name gap in the Adaptive Feedback History. All **15 existing routing modules** plus a generic unknown-module fallback now have bundled text in English, German, Dutch, French, Arabic, Spanish, Portuguese, Hindi, Urdu, Chinese, Bengali and Polish.
+- The feedback title and accessible Correct/Forget labels reuse the **same** translated module name. Routing IDs, module destinations, Nova's core decision copy, persisted data and API payloads are unchanged.
+- Added a pure helper that rejects unrecognized IDs rather than displaying internal identifiers; coverage tests cross-check the actual routing map and navigation map against all bundled locale packs.
+- Non-English labels are **translation drafts, not human-reviewed or safeguarding-approved**. RTL, native-speaker, screen-reader, build and end-to-end testing remain release gates. No deployment or feature activation occurred.
