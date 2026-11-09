@@ -221,3 +221,10 @@ Runtime testing and staging privacy verification are still mandatory.
 - **Engineering source closure is not test acceptance:** project dependencies,
   end-to-end tests, named Firebase database indexes, translations and
   safeguarding review remain unverified in this connector-only session.
+
+## Phase 2 engineering source closeout
+
+See `docs/PHASE2_ENGINEERING_SOURCE_CLOSEOUT_20261109.md` for the user-facing module map, source-level integration
+results, exhaustive Git comparison inventory, explicit deferred features,
+and all mandatory runtime/staging/human release gates. Source work is
+assembled, **not** verified as a passing build or accepted for merge.
