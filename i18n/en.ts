@@ -403,6 +403,21 @@ export const en = {
   "module.recovery_ally": "Recovery Ally",
   "module.support_circle": "My Support Circle",
   "module.unknown": "Recovery tool",
+  // Adaptive Intelligence settings (non-English drafts require language review).
+  "adaptive.title": "Nova Adaptive Intelligence",
+  "adaptive.description": "Optional. With your permission, Nova can adapt suggestions using your previous feedback. Your direct request and safety boundaries always take priority.",
+  "adaptive.allowAria": "Allow Nova to learn from my feedback",
+  "adaptive.on": "On",
+  "adaptive.off": "Off",
+  "adaptive.loadError": "Learning preferences could not be loaded. Changes are paused.",
+  "adaptive.retry": "Try again",
+  "adaptive.memoryRequired": "Enable Nova Memory in Privacy Controls before enabling adaptive learning.",
+  "adaptive.preferencesHelp": "Optional preferences. You can change them at any time.",
+  "adaptive.choice.none": "No preference",
+  "adaptive.choice.more": "More",
+  "adaptive.choice.less": "Less",
+  "adaptive.choiceAria": "Set {module} preference to {choice}",
+  "adaptive.saveError": "Your preference could not be saved. Please check Nova Memory and try again.",
 } as const;
 
 export type TranslationKey = keyof typeof en;

@@ -315,3 +315,10 @@ staging identity and real cross-account journeys remain release gates.
 - The feedback title and accessible Correct/Forget labels reuse the **same** translated module name. Routing IDs, module destinations, Nova's core decision copy, persisted data and API payloads are unchanged.
 - Added a pure helper that rejects unrecognized IDs rather than displaying internal identifiers; coverage tests cross-check the actual routing map and navigation map against all bundled locale packs.
 - Non-English labels are **translation drafts, not human-reviewed or safeguarding-approved**. RTL, native-speaker, screen-reader, build and end-to-end testing remain release gates. No deployment or feature activation occurred.
+
+## Phase 1R — Adaptive Intelligence control integration (9 November 2026)
+
+- Reconciled the **parent Nova Adaptive Controls** screen, not just its feedback history child, with the selected locale. All 14 static settings/consent/save/accessibility labels now have matching keys in the existing twelve bundled language packs. Existing recovery module names are reused from Phase 1Q; stored IDs are unchanged.
+- The screen tracks **Firebase User session identity** as well as UID: resets settings when the Firebase session changes (even for the same UID), blocks stale Firestore reads/writes, and prevents an obsolete reset callback from changing the active account's settings. All other memory/permission semantics are unchanged.
+- Choices have explicit translated screen-reader labels with the module name and chosen preference. Added i18n coverage and source-contract regression tests.
+- Translation packs outside English remain unreviewed drafts; this code is committed but no TypeScript/Vitest/browser/RTL/staging verification was executable here. No rules, deployment or production mutation.
