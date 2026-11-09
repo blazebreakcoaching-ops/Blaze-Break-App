@@ -28,6 +28,8 @@ export interface RoutingDecisionRecord {
   selectedModule: string | null;
   outcome?: RoutingOutcome;
   helpfulness?: RoutingHelpfulness;
+  // Only exact recorded booleans count as provenance. Older records are unknown.
+  adaptiveLearningUsed?: boolean;
 }
 
 export interface ModuleOutcomeSummary {
@@ -96,4 +98,42 @@ export function summarizeModuleOutcomes(
   // Most-recommended module first - that's what a reader scanning the
   // list cares about seeing immediately, not alphabetical order.
   return summaries.sort((a, b) => b.recommended - a.recommended);
+}
+
+// Observational outcome comparison only; it cannot establish a causal effect.
+export interface AdaptiveFeedbackGroup {
+  rated: number;
+  positive: number;
+  positiveRate: number | null;
+  sufficientSample: boolean;
+}
+export interface AdaptiveOutcomeComparison {
+  adapted: AdaptiveFeedbackGroup;
+  standard: AdaptiveFeedbackGroup;
+  unknownProvenance: number;
+  caveat: string;
+}
+export function summarizeAdaptiveOutcomes(
+  decisions: RoutingDecisionRecord[],
+  minRatedSample = DEFAULT_OUTCOME_SAMPLE_THRESHOLD,
+): AdaptiveOutcomeComparison {
+  const rated = decisions.filter(d => d.selectedModule !== null &&
+    d.outcome === 'completed' &&
+    (d.helpfulness === 'better' || d.helpfulness === 'same' || d.helpfulness === 'not_really'));
+  const calc = (adapted: boolean): AdaptiveFeedbackGroup => {
+    const rows = rated.filter(d => d.adaptiveLearningUsed === adapted);
+    const positive = rows.filter(d => d.helpfulness === 'better').length;
+    return {
+      rated: rows.length,
+      positive,
+      positiveRate: rows.length >= minRatedSample && rows.length > 0 ? positive / rows.length : null,
+      sufficientSample: rows.length >= minRatedSample && rows.length > 0,
+    };
+  };
+  return {
+    adapted: calc(true),
+    standard: calc(false),
+    unknownProvenance: rated.filter(d => typeof d.adaptiveLearningUsed !== 'boolean').length,
+    caveat: 'Observational, not causal. Groups reflect who opted in; legacy records without provenance are excluded and small samples hide rates.',
+  };
 }

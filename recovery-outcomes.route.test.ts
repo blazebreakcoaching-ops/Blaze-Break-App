@@ -87,3 +87,26 @@ describe('GET /api/admin/recovery-outcomes', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('adaptive comparison admin route', () => {
+  it('excludes legacy unknowns from the standard group and still enforces content.manage', async () => {
+    for (let i = 0; i < 20; i++) {
+      seedDoc(`users/adapted_${i}/recovery_routing_decisions/d${i}`, {
+        createdAt: now(), selectedModule: 'guided_reset', outcome: 'completed', helpfulness: 'better', adaptiveLearningUsed: true,
+      });
+      seedDoc(`users/standard_${i}/recovery_routing_decisions/d${i}`, {
+        createdAt: now(), selectedModule: 'guided_reset', outcome: 'completed', helpfulness: 'not_really', adaptiveLearningUsed: false,
+      });
+    }
+    seedDoc('users/legacy_unknown/recovery_routing_decisions/d1', {
+      createdAt: now(), selectedModule: 'guided_reset', outcome: 'completed', helpfulness: 'better',
+    });
+    const res = await request(app).get('/api/admin/recovery-outcomes').set(auth('owner_1'));
+    expect(res.status).toBe(200);
+    expect(res.body.adaptiveComparison.adapted).toMatchObject({ rated: 20, positiveRate: 1, sufficientSample: true });
+    expect(res.body.adaptiveComparison.standard).toMatchObject({ rated: 20, positiveRate: 0, sufficientSample: true });
+    expect(res.body.adaptiveComparison.unknownProvenance).toBe(1);
+    expect(res.body.adaptiveComparison.caveat).toContain('not causal');
+    expect((await request(app).get('/api/admin/recovery-outcomes').set(auth('secadmin_1'))).status).toBe(403);
+  });
+});

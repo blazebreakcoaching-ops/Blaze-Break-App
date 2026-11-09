@@ -74,7 +74,7 @@ import { NHEI_KNOWLEDGE_REVIEWER_ROLE } from './nhei-authority-contract';
 import { handleNheiKnowledgeReviewRequest } from './nhei-knowledge-review-service-boundary';
 import { listAllKnowledgeEntriesForReview } from './nhei-knowledge-service';
 import { importKnowledgeContentLibrary } from './nhei-knowledge-import-service';
-import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { summarizeModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 import { GEMINI_TEXT_MODEL, GEMINI_TTS_MODEL, GEMINI_LIVE_MODEL, CLAUDE_CHAT_MODEL, getSupportedThinkingLevels } from './ai-model-registry';
 import { estimateModelCostUsd } from './ai-model-price-registry';
 import { summarizeFeatureUsage, countByDimension } from './product-intelligence';
@@ -8619,13 +8619,15 @@ app.get("/api/admin/recovery-outcomes", verifyAppCheck, authenticateFirebaseUser
       .get();
     const decisions: RoutingDecisionRecord[] = snap.docs.map((d: any) => {
       const data = d.data();
-      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness };
+      return { selectedModule: data.selectedModule ?? null, outcome: data.outcome, helpfulness: data.helpfulness,
+        adaptiveLearningUsed: typeof data.adaptiveLearningUsed === 'boolean' ? data.adaptiveLearningUsed : undefined };
     });
 
     res.json({
       lookbackDays,
       generatedAt: new Date().toISOString(),
       modules: summarizeModuleOutcomes(decisions),
+      adaptiveComparison: summarizeAdaptiveOutcomes(decisions),
     });
   } catch (err: any) {
     if (err.message?.includes("Forbidden")) {
@@ -18977,6 +18979,9 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
     // the last thing to actually commit is the real answer, not the first
     // thing to merely compute a candidate.
     let outcomeOverride: { routingOutcome: string; selectedRoute: string; selectedModule: string | null } | null = null;
+    // Commit-derived provenance, never merely this request's optimistic preference.
+    let persistedAdaptiveUsed = false;
+    let reusedPersistedDecision = false;
 
     if (decision.routingOutcome === 'selected' && decision.selectedCandidate) {
       const candidate = decision.selectedCandidate;
@@ -18996,6 +19001,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
         consideredModules: candidates.map((c) => c.sourceModule),
         bandwidthBand: bandwidth.band,
         sourceSurface: 'recovery_hub',
+        adaptiveLearningUsed: selectedAdaptiveExplanation !== null,
+        adaptiveBasis: selectedAdaptiveExplanation?.basis ?? null,
         // Per selectRoute's own rule, an explicit user request bypasses
         // the budget *ceiling* - preserved here exactly, never the
         // deduplication guarantee.
@@ -19007,6 +19014,8 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
 
       if (reservation.kind === 'reused' || reservation.kind === 'reserved') {
         decisionId = reservation.decisionId;
+        persistedAdaptiveUsed = reservation.adaptiveLearningUsed;
+        reusedPersistedDecision = reservation.kind === 'reused';
       } else if (reservation.kind === 'budget_exhausted') {
         outcomeOverride = { routingOutcome: 'suppressed_by_budget', selectedRoute: 'NONE', selectedModule: null };
       } else {
@@ -19090,8 +19099,10 @@ app.post("/api/recovery/routing-decision", verifyAppCheck, authenticateFirebaseU
       // outcome question about this before showing anything new.
       // Reflect actual influence, not merely enabled consent. Never attribute a reservation-race suppression to learning.
       adaptiveLearningEnabled: adaptiveContext !== undefined,
-      adaptiveLearningUsed: !outcomeOverride && selectedAdaptiveExplanation !== null,
-      adaptiveExplanation: outcomeOverride ? null : selectedAdaptiveExplanation,
+      adaptiveLearningUsed: !outcomeOverride && persistedAdaptiveUsed,
+      // A reused record may have been offered under different conditions:
+      // today's explanation must not be attributed to the earlier choice.
+      adaptiveExplanation: !outcomeOverride && persistedAdaptiveUsed && !reusedPersistedDecision ? selectedAdaptiveExplanation : null,
       pendingOutcomeCheck,
     });
   } catch (err: any) {

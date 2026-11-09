@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeModuleOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
+import { summarizeModuleOutcomes, summarizeAdaptiveOutcomes, RoutingDecisionRecord } from './recovery-outcomes-intelligence';
 
 const decision = (overrides: Partial<RoutingDecisionRecord>): RoutingDecisionRecord => ({
   selectedModule: 'breathing_reset',
@@ -83,5 +83,29 @@ describe('summarizeModuleOutcomes', () => {
     const [summary] = summarizeModuleOutcomes(decisions);
     expect(summary.sufficientSample).toBe(false);
     expect(summary.sampleThreshold).toBe(20);
+  });
+});
+
+describe('summarizeAdaptiveOutcomes (evidence not inference)', () => {
+  it('compares recorded adapted/standard outcomes, not legacy unknowns', () => {
+    const rows = [
+      decision({ outcome: 'completed', helpfulness: 'better', adaptiveLearningUsed: true }),
+      decision({ outcome: 'completed', helpfulness: 'same', adaptiveLearningUsed: true }),
+      decision({ outcome: 'completed', helpfulness: 'not_really', adaptiveLearningUsed: false }),
+      decision({ outcome: 'completed', helpfulness: 'not_really', adaptiveLearningUsed: false }),
+      decision({ outcome: 'completed', helpfulness: 'better' }),
+      decision({ outcome: 'completed', helpfulness: 'not_sure' }),
+      decision({ selectedModule: null, outcome: 'completed', helpfulness: 'better', adaptiveLearningUsed: true }),
+    ];
+    const c = summarizeAdaptiveOutcomes(rows, 2);
+    expect(c.adapted).toMatchObject({ rated: 2, positive: 1, positiveRate: 0.5, sufficientSample: true });
+    expect(c.standard).toMatchObject({ rated: 2, positive: 0, positiveRate: 0, sufficientSample: true });
+    expect(c.unknownProvenance).toBe(1);
+    expect(c.caveat).toContain('not causal');
+  });
+  it('does not show rates below the sample threshold', () => {
+    const c = summarizeAdaptiveOutcomes([decision({ outcome: 'completed', helpfulness: 'better', adaptiveLearningUsed: true })]);
+    expect(c.adapted).toMatchObject({ rated: 1, positiveRate: null, sufficientSample: false });
+    expect(c.standard).toMatchObject({ rated: 0, positiveRate: null, sufficientSample: false });
   });
 });
