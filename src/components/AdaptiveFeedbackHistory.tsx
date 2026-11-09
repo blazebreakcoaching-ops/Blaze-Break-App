@@ -25,6 +25,10 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   // The same UID in a new Firebase User object is still a new session.
   // Never display a prior session's feedback after re-authentication.
   const generation = useRef(0);
+  // Session invalidation and list-request ordering serve different purposes.
+  // A stale pagination response must not resurrect a rating just corrected
+  // or forgotten while that page was loading.
+  const historyRequest = useRef(0);
   const [items, setItems] = useState<FeedbackItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -38,13 +42,15 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   const load = useCallback(async (cursor?: string) => {
     if (!uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
+    const listRequest = ++historyRequest.current;
     setError('');
     if (cursor) setLoadingMore(true);
     try {
       const path = '/api/recovery/my-feedback' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : '');
       const res = await secureApiFetch(path);
       const data = await res.json() as { items?: FeedbackItem[]; nextCursor?: string | null };
-      if (auth.currentUser !== user || generation.current !== requestGeneration) return;
+      if (auth.currentUser !== user || generation.current !== requestGeneration
+        || historyRequest.current !== listRequest) return;
       if (cursor) {
         // Defensive dedup in case data changed between page requests.
         setItems(previous => {
@@ -57,13 +63,16 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       setNextCursor(data.nextCursor ?? null);
       setLoaded(true);
     } catch {
-      if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.history'));
+      if (auth.currentUser === user && generation.current === requestGeneration
+        && historyRequest.current === listRequest) setError(t('feedback.error.history'));
     } finally {
-      if (auth.currentUser === user && generation.current === requestGeneration) setLoadingMore(false);
+      if (auth.currentUser === user && generation.current === requestGeneration
+        && historyRequest.current === listRequest) setLoadingMore(false);
     }
   }, [uid, user, t]);
   useEffect(() => {
     generation.current += 1;
+    historyRequest.current += 1;
     setItems([]); setLoaded(false); setNextCursor(null); setLoadingMore(false);
     setExpanded(false); setEditingId(null); setConfirmReset(false);
     setBusyId(null); setError('');
@@ -71,7 +80,7 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   }, [user]);
   useEffect(() => { if (expanded && !loaded) void load(); }, [expanded, loaded, load]);
   const correct = async (id: string) => {
-    if (busyId || !uid || auth.currentUser?.uid !== uid) return;
+    if (busyId || !uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
     setBusyId(id);
     setError('');
@@ -80,6 +89,8 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
         method: 'POST', data: { decisionId: id, action: 'completed', helpfulness: editValue },
       });
       if (auth.currentUser !== user || generation.current !== requestGeneration) return;
+      historyRequest.current += 1;
+      setLoadingMore(false);
       setItems(previous => previous.map(item => item.id === id
         ? { ...item, helpfulness: editValue } : item));
       setEditingId(null);
@@ -90,7 +101,7 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
     }
   };
   const resetLearning = async () => {
-    if (busyId || !uid || auth.currentUser?.uid !== uid) return;
+    if (busyId || !uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
     setBusyId('reset');
     setError('');
@@ -100,6 +111,8 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       });
       const result = await res.json() as { complete: boolean };
       if (auth.currentUser !== user || generation.current !== requestGeneration) return;
+      historyRequest.current += 1;
+      setLoadingMore(false);
       setConfirmReset(false);
       setItems([]);
       setNextCursor(null);
@@ -112,13 +125,15 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
     }
   };
   const remove = async (id: string) => {
-    if (busyId || !uid || auth.currentUser?.uid !== uid) return;
+    if (busyId || !uid || auth.currentUser !== user) return;
     const requestGeneration = generation.current;
     setBusyId(id);
     setError('');
     try {
       await secureApiFetch('/api/recovery/my-feedback/' + encodeURIComponent(id), { method: 'DELETE' });
       if (auth.currentUser !== user || generation.current !== requestGeneration) return;
+      historyRequest.current += 1;
+      setLoadingMore(false);
       setItems(previous => previous.filter(item => item.id !== id));
     } catch {
       if (auth.currentUser === user && generation.current === requestGeneration) setError(t('feedback.error.forget'));

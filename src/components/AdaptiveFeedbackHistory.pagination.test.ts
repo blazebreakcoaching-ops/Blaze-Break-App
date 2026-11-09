@@ -14,6 +14,8 @@ describe('Adaptive feedback review navigation', () => {
     expect(feedbackUi).toContain("'?cursor=' + encodeURIComponent(cursor)");
     expect(feedbackUi).toContain("t('feedback.older')");
     expect(feedbackUi).toContain("t('feedback.loadingOlder')");
+    expect(feedbackUi).toContain('historyRequest.current !== listRequest');
+    expect(feedbackUi).toContain('historyRequest.current += 1;');
     expect(feedbackUi).toContain('setNextCursor(null)');
     expect(feedbackUi).toContain('secureApiFetch(path)');
   });

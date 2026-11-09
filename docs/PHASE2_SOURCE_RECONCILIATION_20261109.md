@@ -101,3 +101,17 @@ Runtime testing and staging privacy verification are still mandatory.
   Auth's active Firebase User is the same session as the parent React view.
 - Source contract assertions extended. Automated Vitest/browser tests not
   executed; no live functions, indices, permissions or deployment touched.
+
+## Phase 2 — feedback pagination consistency after correction or erasure
+
+- The existing feedback history list now assigns a monotonic request ID to
+  each page load. A successful correction, forget or reset invalidates
+  any in-flight list/page response and clears stale pagination spinner.
+- A delayed older page can no longer restore the rating the user just erased,
+  overwrite a corrected score, or repopulate a just-reset list.
+- Retained account session generation guards and server-side withdrawn-feedback
+  markers. These list changes are frontend-only; no new retention policy
+  or database collection was introduced.
+- Added an actual rendered-component test with an older page deliberately
+  resolving **after** a member's erasure. This test is authored but not
+  run; staging and Firestore emulator checks remain mandatory.
