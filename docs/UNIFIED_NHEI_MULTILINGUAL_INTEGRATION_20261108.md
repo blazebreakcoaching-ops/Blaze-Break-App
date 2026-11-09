@@ -168,3 +168,11 @@ No merge to main, GitHub Actions or deployment.
 - Missing default Gemini key retains its existing 401 response; unavailable alternative providers return 503.
 - Unit and API regression tests added, provider documentation corrected. No live credentials or remote runtime settings changed.
 - These source changes are committed in development, NOT runtime tested. Sign-in, App Check and staging remain separate acceptance gates.
+
+## Phase 1F — Firebase emulator-target race fix (9 November 2026)
+
+- Corrected the shared client-side Firestore initialization: `getDb()` now publishes its cached instance only **after** emulator hookup completes.
+- Two overlapping callers share a single connection promise. A failed hookup remains a failure, instead of leaving a globally marked “connected” flag or returning a live-targeted Firestore instance on retry.
+- Added a hard Vite `DEV` guard so a production bundle cannot enable the localhost emulator solely because a mistaken `VITE_USE_FIREBASE_EMULATOR=true` variable was supplied.
+- Added isolated jsdom/Vitest regressions for concurrent calls, failed and retried setup, and production flag leakage.
+- Staging/production credentials, project IDs, deployment, Firebase rules and Actions untouched. Tests authored, not executed in this environment.

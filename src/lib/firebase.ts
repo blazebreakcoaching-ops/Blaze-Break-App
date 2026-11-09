@@ -19,7 +19,9 @@ export const auth = getAuth(app);
 // connection must happen before any Auth SDK call, so it runs here
 // synchronously, immediately after getAuth(app) - the Firestore equivalent
 // lives in getDb() below, right after getFirestore() is first called.
-const USE_FIREBASE_EMULATOR = typeof window !== 'undefined' && (import.meta as any).env?.VITE_USE_FIREBASE_EMULATOR === 'true';
+const USE_FIREBASE_EMULATOR = typeof window !== 'undefined'
+  && (import.meta as any).env?.DEV === true
+  && (import.meta as any).env?.VITE_USE_FIREBASE_EMULATOR === 'true';
 if (USE_FIREBASE_EMULATOR) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
 }
@@ -33,11 +35,23 @@ if (USE_FIREBASE_EMULATOR) {
 // call sites call it unconditionally and safely - only the first call
 // actually connects the emulator, whichever call site runs first.
 let _firestoreEmulatorConnected = false;
+let _firestoreEmulatorConnection: Promise<void> | null = null;
 export async function connectFirestoreEmulatorIfNeeded(firestoreDb: Firestore): Promise<void> {
   if (!USE_FIREBASE_EMULATOR || _firestoreEmulatorConnected) return;
-  _firestoreEmulatorConnected = true;
-  const { connectFirestoreEmulator } = await import('firebase/firestore');
-  connectFirestoreEmulator(firestoreDb, '127.0.0.1', 8080);
+  // Both call sites must await ONE installation. Do not mark connected
+  // before the dynamic import and SDK hookup actually succeed.
+  if (!_firestoreEmulatorConnection) {
+    _firestoreEmulatorConnection = import('firebase/firestore')
+      .then(({ connectFirestoreEmulator }) => {
+        connectFirestoreEmulator(firestoreDb, '127.0.0.1', 8080);
+        _firestoreEmulatorConnected = true;
+      })
+      .catch(error => {
+        _firestoreEmulatorConnection = null;
+        throw error;
+      });
+  }
+  await _firestoreEmulatorConnection;
 }
 
 // getAuth(app) alone relies on Firebase's implicit default (IndexedDB-backed
@@ -83,9 +97,13 @@ export async function getDb(): Promise<Firestore> {
   if (_db) return _db;
   if (!_dbPromise) {
     _dbPromise = import('firebase/firestore').then(async ({ getFirestore }) => {
-      _db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-      await connectFirestoreEmulatorIfNeeded(_db);
-      return _db;
+      const firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+      // Never expose the database until the intended target is connected.
+      // In particular, a failed emulator connection must not leave a
+      // cached production-targeted database object available on retry.
+      await connectFirestoreEmulatorIfNeeded(firestoreDb);
+      _db = firestoreDb;
+      return firestoreDb;
     });
   }
   return _dbPromise;
