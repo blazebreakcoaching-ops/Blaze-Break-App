@@ -39,6 +39,16 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     throw new SecureApiError("Unauthorized: User not signed in.", 401);
   }
 
+  // Capture the original Firebase session object, not just its UID. A user
+  // may sign out and back into the same UID while a request is pending.
+  // In that case, responses from the old session are no longer authorised
+  // to update the current screen. The E2E fake-auth preview is isolated.
+  const ensureOriginalSession = () => {
+    if (!e2eMockAuth && auth.currentUser !== user) {
+      throw new SecureApiError('Your account changed while this request was in progress. Please retry.', 409);
+    }
+  };
+
   // Force refresh ID token if retrying
   const forceRefresh = retryCount > 0;
   const idToken = e2eMockAuth ? 'e2e-mock-id-token' : await user!.getIdToken(forceRefresh);
@@ -85,6 +95,9 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     redirect: 'error', // Auth headers cannot follow an HTTP redirect.
   };
 
+  // Prevent an asynchronous ID-token/App-Check lookup from submitting an
+  // account-A request after account B has become the active identity.
+  ensureOriginalSession();
   let response: Response;
   try {
     response = await fetch(path, fetchOptions);
@@ -92,6 +105,9 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
     throw new SecureApiError('Network error. Check your connection and try again.', 0);
   }
 
+  // A request sent before an account switch might still finish on the
+  // server. Never deliver its body to the newly active account's UI.
+  ensureOriginalSession();
   if (response.ok) {
     return response;
   }

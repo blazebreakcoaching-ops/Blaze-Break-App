@@ -293,3 +293,10 @@ staging identity and real cross-account journeys remain release gates.
 - Fixed `getDb()` failure caching: concurrent initialization requests still share one attempt; a failed attempt no longer permanently poisons later explicit attempts. The cached database is published only after emulator connection succeeds.
 - Expanded the already-existing targeted tests to cover GET retry, 401/403 POST refusal, MFA challenge refusal, network failure, concurrent Firestore initialization failure and later recovery.
 - Source and regression tests are committed for offline verification. Not yet executed with the complete repository/dependencies. No production, Firebase configuration, GitHub Actions, `main`, or deployment changed.
+
+## Phase 1O — same-session response ownership (9 November 2026)
+
+- The protected API client now checks that the original Firebase User session is still active **after** asynchronous token acquisition and **after** receiving the HTTP response. Results from account A are rejected with 409 rather than delivered to account B.
+- Checks compare the original Firebase User object, so sign-out/sign-in to the **same UID** also rejects stale results. Dev-only E2E mock-auth is preserved.
+- Added four isolated unit tests: stable session, account switch while awaiting a token, switch after request dispatch, and same-UID new session. Existing quota, MFA, App Check, transport and provider boundaries remain unchanged.
+- This cannot undo a server-side action that completed before an account change, so mutating requests still rely on server-side auth, transactions and idempotency. Runtime tests and live account-switch E2E remain required.
