@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from './playwright-browser';
 import { defineConfig, devices } from '@playwright/test';
 
 // Phase 5M (directive §1/§2) - browser-level tests against the REAL,
@@ -107,7 +108,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 900 },
         baseURL: `http://127.0.0.1:${FLAG_OFF_PORT}`,
-        launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
+        launchOptions: chromiumLaunchOptions(),
       },
       // Phase 5N (directive §3/§4) - real-app-account-continuity.spec.ts
       // added alongside real-app-nova-journey.spec.ts: both need the
@@ -120,7 +121,7 @@ export default defineConfig({
       use: {
         ...devices['Pixel 7'],
         baseURL: `http://127.0.0.1:${FLAG_OFF_PORT}`,
-        launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
+        launchOptions: chromiumLaunchOptions(),
       },
       testMatch: /real-app-nova-journey\.spec\.ts/,
     },
@@ -130,7 +131,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 900 },
         baseURL: `http://127.0.0.1:${FLAG_ON_PORT}`,
-        launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
+        launchOptions: chromiumLaunchOptions(),
       },
       testMatch: [/real-app-flag-gating\.spec\.ts/, /real-app-agentic-journey\.spec\.ts/],
     },

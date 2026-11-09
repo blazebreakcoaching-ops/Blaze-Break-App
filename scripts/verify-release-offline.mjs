@@ -68,7 +68,8 @@ if (git.status !== 0 || !git.stdout.trim()) {
 // finishes its top-level script and exits 0, no error thrown. Those two
 // stages get a derived env with TEST_MODE removed so the real webServer
 // actually starts.
-const playwrightEnv = { ...env };
+// Never reuse an unrelated already-running localhost server during release verification.
+const playwrightEnv = { ...env, CI: '1' };
 delete playwrightEnv.TEST_MODE;
 const results = [];
 function run(label, argv, runEnv = env) {
