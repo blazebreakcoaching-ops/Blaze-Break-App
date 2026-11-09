@@ -28,24 +28,40 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
   const [editValue, setEditValue] = useState<FeedbackItem['helpfulness']>('not_sure');
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const load = useCallback(async () => {
+  const load = useCallback(async (cursor?: string) => {
     if (!uid || auth.currentUser?.uid !== uid) return;
     const requestGeneration = generation.current;
     setError('');
+    if (cursor) setLoadingMore(true);
     try {
-      const res = await secureApiFetch('/api/recovery/my-feedback');
-      const data = await res.json() as { items?: FeedbackItem[] };
+      const path = '/api/recovery/my-feedback' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : '');
+      const res = await secureApiFetch(path);
+      const data = await res.json() as { items?: FeedbackItem[]; nextCursor?: string | null };
       if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
-      setItems(data.items ?? []);
+      if (cursor) {
+        // Defensive dedup in case data changed between page requests.
+        setItems(previous => {
+          const seen = new Set(previous.map(item => item.id));
+          return [...previous, ...(data.items ?? []).filter(item => !seen.has(item.id))];
+        });
+      } else {
+        setItems(data.items ?? []);
+      }
+      setNextCursor(data.nextCursor ?? null);
       setLoaded(true);
     } catch {
       if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setError('Feedback history is unavailable. Please try again.');
+    } finally {
+      if (auth.currentUser?.uid === uid && generation.current === requestGeneration) setLoadingMore(false);
     }
   }, [uid]);
   useEffect(() => {
     generation.current += 1;
-    setItems([]); setLoaded(false); setExpanded(false); setEditingId(null); setConfirmReset(false);
+    setItems([]); setLoaded(false); setNextCursor(null); setLoadingMore(false);
+    setExpanded(false); setEditingId(null); setConfirmReset(false);
     setBusyId(null); setError('');
     return () => { generation.current += 1; };
   }, [uid]);
@@ -82,6 +98,7 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       if (auth.currentUser?.uid !== uid || generation.current !== requestGeneration) return;
       setConfirmReset(false);
       setItems([]);
+      setNextCursor(null);
       onReset?.();
       if (!result.complete) setError('Learning is off, but some older ratings still need clearing. You can run reset again.');
     } catch {
@@ -139,7 +156,8 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
       </button>
       {expanded && (
         <div className="space-y-2">
-          {loaded && items.length === 0 && <p className="text-xs text-text-muted">No recent ratings to review.</p>}
+          {loaded && items.length === 0 && !nextCursor && <p className="text-xs text-text-muted">No ratings to review.</p>}
+          {!loaded && !error && <p className="text-xs text-text-muted">Loading feedback…</p>}
           {items.map(item => (
             <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2">
               <div>
@@ -173,9 +191,23 @@ export function AdaptiveFeedbackHistory({ onReset }: { onReset?: () => void }) {
               )}
             </div>
           ))}
+          {nextCursor && (
+            <button type="button" className="text-xs text-primary underline"
+              disabled={busyId !== null || loadingMore}
+              onClick={() => void load(nextCursor)}>
+              {loadingMore ? 'Loading older ratings…' : 'Show older ratings'}
+            </button>
+          )}
         </div>
       )}
-      {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
+      {error && (
+        <div role="alert" className="text-xs text-red-600">
+          {error}{expanded && <button type="button" className="ml-2 underline"
+            disabled={loadingMore || busyId !== null} onClick={() => void load()}>
+            Reload feedback
+          </button>}
+        </div>
+      )}
     </section>
   );
 }

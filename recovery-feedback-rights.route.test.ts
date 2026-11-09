@@ -119,3 +119,54 @@ describe('Recovery feedback withdrawal and reset are durable member rights', () 
     expect(getDocRaw('users/another_user/recovery_routing_decisions/d1')?.helpfulness).toBe('better');
   });
 });
+
+describe('GET /api/recovery/my-feedback cursor pagination', () => {
+  const older = (index: number) => new Date(Date.now() - (index + 1) * 60_000).toISOString();
+  it('pages all 70 ratings with no omission or duplicate across 30-entry UI pages', async () => {
+    for (let i = 0; i < 70; i++) {
+      seedDoc(`users/${USER}/recovery_routing_decisions/d${i}`, {
+        createdAt: older(i), selectedModule: 'guided_reset', outcome: 'completed', helpfulness: 'better',
+      });
+    }
+    let cursor: string | null = null;
+    const allIds: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const result = await request(app).get('/api/recovery/my-feedback' +
+        (cursor ? '?cursor=' + encodeURIComponent(cursor) : '')).set(auth());
+      expect(result.status).toBe(200);
+      allIds.push(...result.body.items.map((item: any) => item.id));
+      cursor = result.body.nextCursor;
+      if (!cursor) break;
+    }
+    expect(allIds).toHaveLength(70);
+    expect(new Set(allIds).size).toBe(70);
+  });
+
+  it('finds older rated records beyond 60 recent unrated offers', async () => {
+    for (let i = 0; i < 95; i++) {
+      seedDoc(`users/${USER}/recovery_routing_decisions/no_rating_${i}`, {
+        createdAt: older(i), selectedModule: 'guided_reset', outcome: 'declined',
+      });
+    }
+    seedDoc(path(), {
+      createdAt: older(100), selectedModule: 'guided_reset', outcome: 'completed', helpfulness: 'better',
+    });
+    const response = await request(app).get('/api/recovery/my-feedback').set(auth());
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].id).toBe('item1');
+    expect(response.body.nextCursor).toBeNull();
+  });
+
+  it('rejects malformed or cross-account cursors and preserves member isolation', async () => {
+    seedDoc('users/another_user/recovery_routing_decisions/private1', {
+      createdAt: older(0), selectedModule: 'guided_reset',
+      outcome: 'completed', helpfulness: 'better',
+    });
+    expect((await request(app).get('/api/recovery/my-feedback?cursor=../../other')
+      .set(auth())).status).toBe(400);
+    expect((await request(app).get('/api/recovery/my-feedback?cursor=private1')
+      .set(auth())).status).toBe(400);
+    expect((await request(app).get('/api/recovery/my-feedback').set(auth())).body.items).toEqual([]);
+  });
+});

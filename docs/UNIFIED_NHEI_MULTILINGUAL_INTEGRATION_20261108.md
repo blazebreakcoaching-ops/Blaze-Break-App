@@ -252,3 +252,20 @@ staging identity and real cross-account journeys remain release gates.
   Do not claim the corresponding API routes are release-ready yet.
 - No Firestore rules, code routes, GitHub Actions, secrets or staging/production
   environments changed. Static inventory validated; Vitest not executed.
+
+## Phase 1L — member feedback history pagination and privacy UX (9 November 2026)
+
+- The member-specific `GET /api/recovery/my-feedback` now accepts a
+  validated, owner-scoped document cursor and scans only bounded chunks
+  of the existing chronologically indexed decisions (3 x 60 max).
+- Continues until it finds up to 30 real rated completions, instead of
+  silently dropping earlier feedback whenever the 60 newest decisions
+  are unrated. Returns `nextCursor` without exposing foreign records.
+- The existing Adaptive Feedback History UI now supports "Show older
+  ratings", loading state, refresh-on-error, cross-account generation
+  guards and cursor reset after member changes or learning reset.
+- Added API tests for 70-entry pagination, sparse historical ratings,
+  malformed/foreign cursors and a UI-source contract.
+- No new customer navigation, Firestore indexes/rules, backend data
+  model, GitHub Actions or deployments. Source committed for offline
+  runtime/component tests and authenticated staging review.

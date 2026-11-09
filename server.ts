@@ -19125,21 +19125,55 @@ type RoutingOutcomeHelpfulness = typeof ROUTING_OUTCOME_HELPFULNESS[number];
 app.get("/api/recovery/my-feedback", verifyAppCheck, authenticateFirebaseUser, async (req, res) => {
   try {
     const user = requireAuth(req);
-    const snap = await getDb().collection("users").doc(user.uid)
-      .collection("recovery_routing_decisions")
-      .orderBy("createdAt", "desc").limit(60).get();
-    const items = snap.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        module: typeof data.selectedModule === 'string' && isKnownRoutingModule(data.selectedModule)
-          ? data.selectedModule : null,
-        outcome: data.outcome === 'completed' ? 'completed' : data.outcome === 'declined' ? 'declined' : null,
-        helpfulness: ROUTING_OUTCOME_HELPFULNESS.includes(data.helpfulness) ? data.helpfulness : null,
-        date: typeof data.createdAt === 'string' ? data.createdAt : null,
-      };
-    }).filter(item => item.outcome === 'completed' && item.helpfulness && item.module).slice(0, 30);
-    res.json({ items });
+    // Cursor-based history: do not silently lose older ratings when 60
+    // recent decisions happen to contain few/no helpfulness answers.
+    // This uses the existing collection-scope createdAt index; no new
+    // composite index or unbounded full-user-history read is needed.
+    const cursorId = req.query.cursor;
+    if (cursorId !== undefined && (typeof cursorId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(cursorId))) {
+      return res.status(400).json({ error: 'Invalid feedback cursor.' });
+    }
+    const decisions = getDb().collection("users").doc(user.uid).collection("recovery_routing_decisions");
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot | null = null;
+    if (cursorId) {
+      const anchor = await decisions.doc(cursorId).get();
+      if (!anchor.exists) return res.status(400).json({ error: 'Feedback cursor is no longer available. Refresh the list.' });
+      cursor = anchor;
+    }
+
+    const items: Array<{ id: string; module: string; outcome: string; helpfulness: string; date: string | null }> = [];
+    let possibleOlder = false;
+    // At most 3 bounded reads of 60 decisions per UI request. Continue
+    // from the exact last SCANNED document, not the last matching rating:
+    // skipping across unread matches would defeat the user's right to review.
+    for (let page = 0; page < 3; page++) {
+      let query = decisions.orderBy('createdAt', 'desc');
+      if (cursor) query = query.startAfter(cursor);
+      const snap = await query.limit(60).get();
+      if (snap.empty) { possibleOlder = false; break; }
+      let fullPage = false;
+      for (const entry of snap.docs) {
+        cursor = entry;
+        const data = entry.data();
+        if (data.outcome === 'completed' &&
+          typeof data.selectedModule === 'string' && isKnownRoutingModule(data.selectedModule) &&
+          ROUTING_OUTCOME_HELPFULNESS.includes(data.helpfulness)) {
+          items.push({
+            id: entry.id,
+            module: data.selectedModule,
+            outcome: 'completed',
+            helpfulness: data.helpfulness,
+            date: typeof data.createdAt === 'string' ? data.createdAt : null,
+          });
+        }
+        if (items.length === 30) { fullPage = true; break; }
+      }
+      // There may still be older ratings even when the current chunk
+      // contained none. A caller can page again without repeating reads.
+      possibleOlder = fullPage || snap.size === 60;
+      if (fullPage || snap.size < 60) break;
+    }
+    res.json({ items, nextCursor: possibleOlder && cursor ? cursor.id : null });
   } catch (err: any) {
     logger.error("Personal recovery feedback read failed", errorFields(err));
     res.status(500).json({ error: GENERIC_SERVER_ERROR });
