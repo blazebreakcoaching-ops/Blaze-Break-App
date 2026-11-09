@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
   auth: { currentUser: { uid: 'account-A' } as { uid: string } | null },
   getDocs: vi.fn(),
   getDoc: vi.fn(),
+  getDb: vi.fn(async () => ({})),
   setDoc: vi.fn(),
+  deleteDoc: vi.fn(),
 }));
 
 vi.mock('./firebase', () => ({
   auth: mocks.auth,
-  getDb: async () => ({}),
+  getDb: mocks.getDb,
 }));
 vi.mock('firebase/firestore', () => ({
   collection: vi.fn(() => ({})),
@@ -20,6 +22,7 @@ vi.mock('firebase/firestore', () => ({
   getDoc: mocks.getDoc,
   doc: vi.fn(() => ({})),
   setDoc: mocks.setDoc,
+  deleteDoc: mocks.deleteDoc,
 }));
 vi.mock('../../nova-memory-governance', () => ({
   NOVA_MEMORY_DATA_ZONE: 'personal',
@@ -29,7 +32,7 @@ vi.mock('../../nova-memory-governance', () => ({
 import {
   initNovaBrain, clearNovaBrainCache, getNovaBrain, addNovaMemory,
   isNovaLearningAllowed, setNovaLearningAllowedForUid,
-  isNovaBrainReadyForAutoSync, updateNovaMemoryBySourceAndType,
+  isNovaBrainReadyForAutoSync, updateNovaMemoryBySourceAndType, deleteNovaMemory,
 } from './nova-brain';
 
 function deferred<T>() {
@@ -45,6 +48,8 @@ const snap = (id: string) => ({
 beforeEach(() => {
   mocks.auth.currentUser = { uid: 'account-A' };
   mocks.getDocs.mockReset();
+  mocks.getDb.mockReset().mockResolvedValue({});
+  mocks.deleteDoc.mockReset().mockResolvedValue(undefined);
   mocks.getDoc.mockReset().mockResolvedValue({
     exists: () => true,
     data: () => ({
@@ -169,6 +174,42 @@ describe('Nova local memory cache isolation', () => {
     expect(isNovaBrainReadyForAutoSync('account-A')).toBe(true);
     mocks.auth.currentUser = { uid: 'account-B' };
     expect(isNovaBrainReadyForAutoSync('account-A')).toBe(false);
+  });
+
+  it('never submits a delayed memory write after a same-UID new login', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
+    mocks.getDocs.mockResolvedValueOnce(snap('previous'));
+    await initNovaBrain('account-A');
+    const pendingDatabase = deferred<object>();
+    mocks.getDb.mockImplementationOnce(() => pendingDatabase.promise);
+    addNovaMemory({
+      type: 'profile', content: 'Private old-session note',
+      source: 'test', confidence: 'verified', canEdit: true,
+    });
+    await vi.waitFor(() => expect(mocks.getDb).toHaveBeenCalledTimes(3));
+    mocks.auth.currentUser = { uid: 'account-A' };
+    pendingDatabase.resolve({});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(mocks.setDoc).not.toHaveBeenCalled();
+  });
+
+  it('never submits a pending memory deletion under a different session', async () => {
+    setNovaLearningAllowedForUid('account-A', true);
+    mocks.getDocs.mockResolvedValueOnce({
+      docs: [{ id: 'editable', data: () => ({
+        type: 'profile', content: 'Remove me', source: 'test',
+        canEdit: true, confidence: 'verified', createdAt: '2026-01-01T00:00:00Z',
+      }) }],
+    });
+    await initNovaBrain('account-A');
+    const pendingDatabase = deferred<object>();
+    mocks.getDb.mockImplementationOnce(() => pendingDatabase.promise);
+    deleteNovaMemory('editable');
+    await vi.waitFor(() => expect(mocks.getDb).toHaveBeenCalledTimes(3));
+    mocks.auth.currentUser = { uid: 'account-B' };
+    pendingDatabase.resolve({});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(mocks.deleteDoc).not.toHaveBeenCalled();
   });
 
   it('does not persist a memory again when its canonical values are identical', async () => {

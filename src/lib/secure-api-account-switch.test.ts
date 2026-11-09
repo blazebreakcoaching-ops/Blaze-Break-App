@@ -71,6 +71,60 @@ describe('secureApiFetch account-switch isolation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not send a 401 retry under a different account after the error body is read', async () => {
+    const former = user('account-a');
+    state.currentUser = former;
+    let releaseBody!: (text: string) => void;
+    let bodyReadStarted!: () => void;
+    const entered = new Promise<void>(resolve => { bodyReadStarted = resolve; });
+    const textPending = new Promise<string>(resolve => { releaseBody = resolve; });
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      text: () => { bodyReadStarted(); return textPending; },
+    });
+    const pending = secureApiFetch('/api/org/me');
+    await entered;
+    state.currentUser = user('account-b');
+    releaseBody(JSON.stringify({ error: 'Token expired' }));
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a token-refresh retry if a same-UID reauthentication happens while refreshing', async () => {
+    const former = user('account-a');
+    state.currentUser = former;
+    let refreshStarted!: () => void;
+    let releaseRefresh!: (token: string) => void;
+    const entered = new Promise<void>(resolve => { refreshStarted = resolve; });
+    const pendingToken = new Promise<string>(resolve => { releaseRefresh = resolve; });
+    former.getIdToken
+      .mockResolvedValueOnce('first-token')
+      .mockImplementationOnce(() => { refreshStarted(); return pendingToken; });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Expired' }), { status: 401 }));
+    const pending = secureApiFetch('/api/org/me');
+    await entered;
+    state.currentUser = user('account-a');
+    releaseRefresh('refreshed-old-session-token');
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(former.getIdToken).toHaveBeenCalledTimes(2);
+    expect(former.getIdToken).toHaveBeenLastCalledWith(true);
+  });
+
+  it('retries an expired read only within the originating session', async () => {
+    const original = user('account-a');
+    state.currentUser = original;
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Expired' }), { status: 401 }))
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    const res = await secureApiFetch('/api/org/me');
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(original.getIdToken).toHaveBeenNthCalledWith(1, false);
+    expect(original.getIdToken).toHaveBeenNthCalledWith(2, true);
+  });
+
   it('rejects a new Firebase session for the same UID rather than accepting a stale result', async () => {
     let completeRequest!: (response: Response) => void;
     let requestStarted!: () => void;

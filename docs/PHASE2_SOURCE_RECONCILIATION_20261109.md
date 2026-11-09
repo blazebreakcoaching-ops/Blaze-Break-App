@@ -61,3 +61,25 @@ replace the new session's cache. An old-account `initNovaBrain` call also cannot
 evict the active user's cache. Added targeted race tests to the existing pure/
 jsdom memory-privacy suite. This is one cache, not a second memory store.
 Runtime testing and staging privacy verification are still mandatory.
+
+## Phase 2 service-level identity and delayed memory persistence
+
+- Fixed protected API **401 GET/HEAD retry session handoff**: the helper
+  now captures the initiating Firebase User object once and reuses exactly
+  that session for the token refresh, App Check, MFA header and response
+  validation. Even a sign-in to the same UID does not allow the old request
+  to reach the new session or deliver its data to the previous caller.
+  An account switch during error-body parsing, refresh or network response
+  returns conflict status instead of retrying across identities.
+- Added explicit regression cases for a switch while the 401 error body
+  is being read, a same-UID new login during token refresh, and normal
+  safe same-session token refresh. Existing non-retryable mutation, 403
+  and MFA-error behaviour is preserved.
+- Nova Memory's existing background Firestore write/delete helpers now
+  retain their initiating Firebase User session and reject work after
+  identity changes or a local learning withdrawal. A pending operation
+  from account A may not run under account B or under a new login to A.
+  Added delayed-database tests for memory create and delete.
+- Only code/source checks and test declarations were performed through
+  the GitHub connector; the repository's Vitest, TypeScript, emulator
+  and real staging checks have **NOT** been executed or passed.

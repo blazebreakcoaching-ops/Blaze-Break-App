@@ -314,10 +314,14 @@ export const clearNovaBrainCache = () => {
 };
 
 const persistMemory = (uid: string, memory: NovaMemory) => {
+  const session = auth.currentUser;
+  if (!session || session.uid !== uid || cachedSession !== session) return;
   (async () => {
     try {
       const db = await getDb();
+      if (auth.currentUser !== session || cachedSession !== session || !isNovaLearningAllowed()) return;
       const { doc, setDoc } = await import('firebase/firestore');
+      if (auth.currentUser !== session || cachedSession !== session || !isNovaLearningAllowed()) return;
       await setDoc(doc(db, 'users', uid, 'nova_memories', memory.id), {
         type: memory.type,
         content: memory.content,
@@ -338,10 +342,14 @@ const persistMemory = (uid: string, memory: NovaMemory) => {
 };
 
 const persistDelete = (uid: string, id: string) => {
+  const session = auth.currentUser;
+  if (!session || session.uid !== uid || cachedSession !== session) return;
   (async () => {
     try {
       const db = await getDb();
+      if (auth.currentUser !== session || cachedSession !== session) return;
       const { doc, deleteDoc } = await import('firebase/firestore');
+      if (auth.currentUser !== session || cachedSession !== session) return;
       await deleteDoc(doc(db, 'users', uid, 'nova_memories', id));
     } catch {
       // Non-fatal, same reasoning as persistMemory.

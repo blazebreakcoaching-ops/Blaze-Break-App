@@ -22,6 +22,15 @@ interface SecureApiOptions extends RequestInit {
 }
 
 export async function secureApiFetch(path: string, options: SecureApiOptions = {}, retryCount = 0): Promise<Response> {
+  // Capture the initiating session once, not once per 401 retry. A stale
+  // account-A request must never be replayed as account B's request.
+  return secureApiFetchForSession(path, options, retryCount, auth.currentUser);
+}
+
+async function secureApiFetchForSession(
+  path: string, options: SecureApiOptions, retryCount: number,
+  originalSession: typeof auth.currentUser,
+): Promise<Response> {
   // Fail closed before reading credentials; callers may only target our /api/.
   assertWebApiRoute(path, window.location.origin);
   // Phase 5E (directive §8) browser-level test escape hatch ONLY: a real
@@ -33,7 +42,7 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   // only that dev-only entry ever sets, so this can never fire for a real
   // user or in a production bundle.
   const e2eMockAuth = (import.meta as any).env.DEV && (window as any).__E2E_MOCK_AUTH__ === true;
-  const user = e2eMockAuth ? null : auth.currentUser;
+  const user = e2eMockAuth ? null : originalSession;
 
   if (!e2eMockAuth && !user) {
     throw new SecureApiError("Unauthorized: User not signed in.", 401);
@@ -139,7 +148,10 @@ export async function secureApiFetch(path: string, options: SecureApiOptions = {
   const canRetryRead = requestMethod === 'GET' || requestMethod === 'HEAD';
   if (status === 401 && canRetryRead && retryCount === 0 && !noAuthRetry
     && errorCode !== 'MFA_SESSION_REQUIRED') {
-    return secureApiFetch(path, options, 1);
+    // The caller must still own the FIRST Firebase session after the error
+    // body was consumed. The retry reuses it, and checks again before fetch.
+    ensureOriginalSession();
+    return secureApiFetchForSession(path, options, 1, originalSession);
   }
 
   if (status === 401 || status === 403) {
