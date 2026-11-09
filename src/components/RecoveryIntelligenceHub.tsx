@@ -137,13 +137,13 @@ export const RecoveryIntelligenceHub = () => {
   // A display preference only: no wellness information is written when this is toggled.
   useEffect(() => {
     setFloorMode(false);
-    if (!accountUid || auth.currentUser?.uid !== accountUid) return;
+    if (!accountUid || auth.currentUser !== user) return;
     try { setFloorMode(localStorage.getItem('blaze_floor_mode_' + accountUid) === 'true'); } catch { /* optional */ }
-  }, [accountUid]);
+  }, [accountUid, user]);
 
   const toggleFloorMode = () => {
-    const uid = auth.currentUser?.uid;
-    if (!uid || uid !== accountUid) return;
+    const uid = user?.uid;
+    if (!uid || auth.currentUser !== user) return;
     setFloorMode(previous => {
       const next = !previous;
       try { localStorage.setItem('blaze_floor_mode_' + uid, String(next)); } catch { /* optional */ }
@@ -152,24 +152,24 @@ export const RecoveryIntelligenceHub = () => {
   };
 
   const reportOutcome = useCallback(async (decisionId: string | null, action: 'started' | 'declined' | 'completed' | 'abandoned', helpfulness?: string): Promise<boolean> => {
-    const uid = auth.currentUser?.uid;
-    if (!decisionId || !uid || uid !== accountUid) return false;
+    const session = user;
+    if (!decisionId || !session || session.uid !== accountUid || auth.currentUser !== session) return false;
     const generation = requestGeneration.current;
     setOutcomeError('');
     try {
       await secureApiFetch('/api/recovery/routing-outcome', { method: 'POST', data: { decisionId, action, helpfulness } });
-      return auth.currentUser?.uid === uid && generation === requestGeneration.current;
+      return auth.currentUser === session && generation === requestGeneration.current;
     } catch {
-      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+      if (auth.currentUser === session && generation === requestGeneration.current) {
         setOutcomeError('Your feedback could not be saved. Please try again.');
       }
       return false;
     }
-  }, [accountUid]);
+  }, [accountUid, user]);
 
   const fetchDecision = useCallback(async (body: Record<string, unknown> = {}) => {
-    const uid = auth.currentUser?.uid;
-    if (!uid || uid !== accountUid) return;
+    const session = user;
+    if (!session || session.uid !== accountUid || auth.currentUser !== session) return;
     const generation = requestGeneration.current;
     setLoading(true);
     setError('');
@@ -177,47 +177,48 @@ export const RecoveryIntelligenceHub = () => {
     try {
       const res = await secureApiFetch('/api/recovery/routing-decision', { method: 'POST', data: body });
       const data = await res.json() as RoutingDecisionResponse;
-      if (auth.currentUser?.uid !== uid || generation !== requestGeneration.current) return;
+      if (auth.currentUser !== session || generation !== requestGeneration.current) return;
       setDecision(data);
       setPendingOutcomeCheck(data.pendingOutcomeCheck ?? null);
     } catch {
-      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+      if (auth.currentUser === session && generation === requestGeneration.current) {
         setError('Your latest recommendation isn\'t available yet.');
       }
     } finally {
-      if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setLoading(false);
+      if (auth.currentUser === session && generation === requestGeneration.current) setLoading(false);
     }
-  }, [accountUid]);
+  }, [accountUid, user]);
 
   useEffect(() => {
     requestGeneration.current += 1;
     setDecision(null); setDirection(null); setPendingOutcomeCheck(null); setResumePrompt(null);
+    setShowExplore(false); setExpandedTool(null); setShowMoodCheck(false);
     setError(''); setOutcomeError(''); setDismissed(false); setLoading(!!accountUid);
-    const uid = auth.currentUser?.uid;
-    if (!uid || uid !== accountUid) return;
+    const session = user;
+    if (!session || session.uid !== accountUid || auth.currentUser !== session) return;
     const generation = requestGeneration.current;
     void fetchDecision();
     void secureApiFetch('/api/user/resume-prompt')
       .then(response => response.json())
       .then((data: ResumePrompt) => {
-        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) {
+        if (auth.currentUser === session && generation === requestGeneration.current) {
           setResumePrompt(data?.hasIncomplete && typeof data.tab === 'string' && RESUME_TABS.has(data.tab) ? data : null);
         }
       })
       .catch(() => {
-        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setResumePrompt(null);
+        if (auth.currentUser === session && generation === requestGeneration.current) setResumePrompt(null);
       });
     void secureApiFetch('/api/recovery/direction')
       .then((res) => res.json())
       .then((data: RecoveryDirectionResponse) => {
-        if (auth.currentUser?.uid === uid && generation === requestGeneration.current) setDirection(data);
+        if (auth.currentUser === session && generation === requestGeneration.current) setDirection(data);
       })
       .catch(() => { /* Optional: do not display outdated direction after an account switch. */ });
     return () => { requestGeneration.current += 1; };
-  }, [accountUid, fetchDecision]);
+  }, [accountUid, user, fetchDecision]);
 
   const handleStart = () => {
-    if (!decision?.selectedModule) return;
+    if (!decision?.selectedModule || auth.currentUser !== user) return;
     reportOutcome(decision.decisionId, 'started');
     const tab = MODULE_TARGET_TAB[decision.selectedModule];
     if (tab) navigateToTab(tab);
@@ -242,6 +243,7 @@ export const RecoveryIntelligenceHub = () => {
   };
 
   const handleSomethingElse = (intent: { label: string; routeType: RouteType | 'browse' }) => {
+    if (auth.currentUser !== user) return;
     if (intent.routeType === 'browse') {
       setShowExplore(true);
       return;
@@ -255,11 +257,13 @@ export const RecoveryIntelligenceHub = () => {
   };
 
   const handleNotNow = () => {
+    if (auth.currentUser !== user) return;
     reportOutcome(decision?.decisionId ?? null, 'declined');
     setDismissed(true);
   };
 
   const handleImOkay = () => {
+    if (auth.currentUser !== user) return;
     reportOutcome(decision?.decisionId ?? null, 'declined');
     setDismissed(true);
   };
@@ -269,7 +273,7 @@ export const RecoveryIntelligenceHub = () => {
   };
 
   const handlePendingOutcomeAnswer = async (helpfulness: 'better' | 'same' | 'not_really' | 'not_sure') => {
-    if (!pendingOutcomeCheck) return;
+    if (!pendingOutcomeCheck || auth.currentUser !== user) return;
     const saved = await reportOutcome(pendingOutcomeCheck.decisionId, 'completed', helpfulness);
     if (saved) setPendingOutcomeCheck(null);
   };
