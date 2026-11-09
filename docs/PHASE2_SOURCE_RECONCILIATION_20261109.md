@@ -169,3 +169,18 @@ Runtime testing and staging privacy verification are still mandatory.
 - Added a source contract for these asynchronous boundaries. A rendered
   export/print-browser acceptance test is still needed; not represented
   here as executed.
+
+## Phase 2 — single existing App lifecycle for protected surfaces
+
+- `src/App.tsx` now uses a WeakMap-backed, session-unique React key
+  based on Firebase User **object identity**, not UID alone. It remounts
+  the actual Recovery Hub, Memory/Privacy Vault, Organisation, Team/HR,
+  Executive Work Design, personal Intelligence Layer, Recovery Report,
+  Evolution Engine and Command Centre when an Auth session changes.
+- This gives the large legacy admin/organisation views a shared
+  fail-closed view lifecycle without introducing a second router, state
+  store, member dataset or admin privilege. Backend role/consent checks
+  remain authoritative.
+- Added source contract covering ten existing protected components and
+  their real API connectors; runtime/real multi-account tests remain
+  outstanding before this is accepted as secure.

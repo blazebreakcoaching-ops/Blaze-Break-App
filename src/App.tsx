@@ -1111,6 +1111,23 @@ const Header = ({
   );
 };
 
+// A Firebase UID is an account identifier, not a login-session identifier.
+// Large read-only admin and personal views must remount on reauthentication
+// to avoid showing stale role-specific or private state from a prior login.
+// WeakMap ensures a stable React key per Firebase User object while allowing
+// old sessions to be garbage-collected. No data is stored or persisted here.
+const SESSION_VIEW_KEYS = new WeakMap<object, string>();
+let nextSessionViewKey = 0;
+const sessionViewKey = (user: { uid: string } | null | undefined): string => {
+  if (!user) return 'signed-out';
+  let key = SESSION_VIEW_KEYS.get(user);
+  if (!key) {
+    key = `session-${++nextSessionViewKey}`;
+    SESSION_VIEW_KEYS.set(user, key);
+  }
+  return key;
+};
+
 export default function App() {
   const { t, setLocale: setUiLocale } = useI18n();
   const { user, appRole, loading: authLoading, accessToken, mfaPending, continueAsGuest } = useAuth();
@@ -2858,7 +2875,7 @@ export default function App() {
             )}
 
             {activeTab === "recovery_intelligence" && (
-              <RecoveryIntelligenceHub />
+              <RecoveryIntelligenceHub key={sessionViewKey(user)} />
             )}
 
             {activeTab === "diagnose" &&
@@ -3235,7 +3252,7 @@ export default function App() {
 
             {activeTab === "privacy" && (
               <div className="space-y-32">
-                <PrivacyVault
+                <PrivacyVault key={sessionViewKey(user)}
                   profile={
                     stats.profile || {
                       fullName: "",
@@ -3256,37 +3273,37 @@ export default function App() {
 
             {activeTab === "org" && (
               <div className="space-y-32">
-                <OrgDashboard onNavigate={safeSetActiveTab as any} />
+                <OrgDashboard key={sessionViewKey(user)} onNavigate={safeSetActiveTab as any} />
               </div>
             )}
 
             {activeTab === "myteam" && (
               <div className="space-y-32">
-                <TeamDashboard />
+                <TeamDashboard key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "hr_escalation" && (
               <div className="space-y-32">
-                <HrEscalationDashboard />
+                <HrEscalationDashboard key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "executive_work_design" && (
               <div className="space-y-32 max-w-7xl mx-auto">
-                <ExecutiveWorkDesignReport />
+                <ExecutiveWorkDesignReport key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "evolution" && (
               <div className="space-y-32">
-                <EvolutionEngine />
+                <EvolutionEngine key={sessionViewKey(user)} />
               </div>
             )}
 
             {activeTab === "executive" && (
               <div className="space-y-32 max-w-7xl mx-auto">
-                <ExecutiveBoardReport
+                <ExecutiveBoardReport key={sessionViewKey(user)}
                   stats={stats}
                   onAwardPoints={awardPoints}
                 />
@@ -3297,7 +3314,7 @@ export default function App() {
 
             {activeTab === "intelligence" && (
               <div className="space-y-32">
-                <RecoveryIntelligenceLayer
+                <RecoveryIntelligenceLayer key={sessionViewKey(user)}
                   fingerprint={fingerprint}
                   isDemoSession={isDemoSession}
                 />
@@ -3316,7 +3333,7 @@ export default function App() {
 
             {activeTab === "admin" && (
               <div className="space-y-32">
-                <AdminDashboard />
+                <AdminDashboard key={sessionViewKey(user)} />
               </div>
             )}
             </>
